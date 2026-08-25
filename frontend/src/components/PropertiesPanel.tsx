@@ -303,6 +303,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
       let footpathWidth = f.footpathWidth || 1.5;
 
       if (field === 'laneCount') laneCount = Number(value);
+      else if (field === 'lanesForward') {
+        const bwdLanes = f.isOneWay ? 0 : Math.floor(f.laneCount / 2);
+        laneCount = Number(value) + bwdLanes;
+      } else if (field === 'lanesBackward') {
+        const fwdLanes = Math.ceil(f.laneCount / (f.isOneWay ? 1 : 2));
+        laneCount = fwdLanes + Number(value);
+      }
       else if (field === 'laneWidth') laneWidth = Number(value);
       else if (field === 'hasDivider') hasDivider = Boolean(value);
       else if (field === 'dividerWidth') dividerWidth = Number(value);
