@@ -10,7 +10,8 @@ import {
   Color, 
   Primitive, 
   GroundPrimitive, 
-  PerInstanceColorAppearance 
+  PerInstanceColorAppearance,
+  GeometryPipeline
 } from 'cesium';
 import type { MeshData } from '../types';
 
@@ -60,12 +61,18 @@ export class CesiumAdapter {
     const center = new Cartesian3(centerX, centerY, centerZ);
     const boundingSphere = new BoundingSphere(center, radius);
 
-    return new Geometry({
+    const geometry = new Geometry({
       attributes,
       indices: uintIndices,
       primitiveType: PrimitiveType.TRIANGLES,
       boundingSphere
     });
+
+    try {
+      return GeometryPipeline.computeNormal(geometry);
+    } catch (e) {
+      return geometry;
+    }
   }
 
   /**
@@ -119,7 +126,7 @@ export class CesiumAdapter {
     return new Primitive({
       geometryInstances: instance,
       appearance: new PerInstanceColorAppearance({
-        flat: true,
+        flat: false,
         translucent: isTranslucent
       }),
       asynchronous: false

@@ -845,14 +845,23 @@ export class ProceduralGeometryGenerator {
       layerId: 'transit_deck_details'
     });
 
-    // 4. Central Concrete Divider (if two-way with median)
+    // 4. Central Concrete Divider (if two-way with median) — Jersey barrier style
     if (flyover.hasDivider && dividerWidth > 0.1) {
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.02, 0.3);
+      // Main concrete barrier body — raised 0.8m above asphalt surface
+      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.8);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: '#475569' }, // Darker concrete grey
-        layerId: 'transit_deck'
+        material: { type: 'solid', color: '#b0bec5' }, // Light concrete grey — clearly visible
+        layerId: 'transit_deck_details'
+      });
+      // Yellow stripe on top of barrier for visibility
+      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.85, 0);
+      meshes.push({
+        positions: new Float64Array(dividerStripe.positions),
+        indices: new Uint32Array(dividerStripe.indices),
+        material: { type: 'solid', color: '#fbbf24' }, // Yellow top stripe
+        layerId: 'transit_deck_details'
       });
     } else if (!flyover.isOneWay) {
       // 4b. Double yellow line markings for two-way undivided roads
@@ -933,6 +942,10 @@ export class ProceduralGeometryGenerator {
       allObjects
     );
     meshes.push(...pillarMeshes);
+
+    // 8. Solid Ramp Abutments (where deck is close to ground)
+    const abutments = this.generateFlyoverRampAbutments(flyover, slabWidth);
+    meshes.push(...abutments);
 
     return meshes;
   }
@@ -1017,9 +1030,10 @@ export class ProceduralGeometryGenerator {
         ] as [number, number, number];
 
         // --- 2. Tapered Rectangular Pier (Pillar) ---
-        const topWidth = 2.0; // transverse width
+        // Scale pillar width relative to deck width to look structurally sound (like metro)
+        const topWidth = Math.max(2.0, deckSlabWidth * 0.4); 
         const topLength = 1.4; // longitudinal length
-        const botWidth = 1.6;
+        const botWidth = topWidth * 0.8;
         const botLength = 1.2;
         
         // Height of column: reaches the bottom of the pier cap, which is deckZ - 1.7
@@ -1209,6 +1223,120 @@ export class ProceduralGeometryGenerator {
     };
   }
 
+  private generateFlyoverRampAbutments(flyover: FlyoverObject, deckSlabWidth: number): MeshData[] {
+    const meshes: MeshData[] = [];
+    const coords = flyover.coordinates;
+    const groundCoords = flyover.groundCoordinates;
+    if (!groundCoords || coords.length < 2) return meshes;
+
+    const positionsList: number[] = [];
+    const indicesList: number[] = [];
+    let indexOffset = 0;
+    
+    // Half width of the slab
+    const halfW = deckSlabWidth / 2;
+
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p1 = coords[i];
+      const p2 = coords[i + 1];
+      const g1 = groundCoords[i];
+      const g2 = groundCoords[i + 1];
+
+      // Calculate heights
+      const h1 = (p1[2] || 0) - (g1[2] || 0);
+      const h2 = (p2[2] || 0) - (g2[2] || 0);
+
+      // Only generate abutments where the deck is close to the ground (< 3.5m)
+      if (h1 >= 3.5 && h2 >= 3.5) continue;
+
+      // Calculate tangent to get perpendicular left/right vectors
+      const c1 = wgs84ToCartesian(p1[0], p1[1], 0);
+      const c2 = wgs84ToCartesian(p2[0], p2[1], 0);
+      
+      // Normalizing vectors (length)
+      const dx = c2[0] - c1[0];
+      const dy = c2[1] - c1[1];
+      const dz = c2[2] - c1[2];
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      const tangent = [dx / len, dy / len, dz / len] as [number, number, number];
+      
+      const up1 = normalize(wgs84ToCartesian(p1[0], p1[1], p1[2] || 0));
+      const right1 = normalize(cross(tangent, up1));
+      
+      const up2 = normalize(wgs84ToCartesian(p2[0], p2[1], p2[2] || 0));
+      const right2 = normalize(cross(tangent, up2));
+
+      // 4 points for Left Wall
+      const deckLeft1 = wgs84ToCartesian(p1[0], p1[1], p1[2]);
+      deckLeft1[0] -= right1[0] * halfW;
+      deckLeft1[1] -= right1[1] * halfW;
+      deckLeft1[2] -= right1[2] * halfW;
+
+      const groundLeft1 = wgs84ToCartesian(g1[0], g1[1], g1[2]);
+      groundLeft1[0] -= right1[0] * halfW;
+      groundLeft1[1] -= right1[1] * halfW;
+      groundLeft1[2] -= right1[2] * halfW;
+
+      const deckLeft2 = wgs84ToCartesian(p2[0], p2[1], p2[2]);
+      deckLeft2[0] -= right2[0] * halfW;
+      deckLeft2[1] -= right2[1] * halfW;
+      deckLeft2[2] -= right2[2] * halfW;
+
+      const groundLeft2 = wgs84ToCartesian(g2[0], g2[1], g2[2]);
+      groundLeft2[0] -= right2[0] * halfW;
+      groundLeft2[1] -= right2[1] * halfW;
+      groundLeft2[2] -= right2[2] * halfW;
+      
+      // Left Wall Quads (counter-clockwise)
+      positionsList.push(...deckLeft1, ...groundLeft1, ...groundLeft2, ...deckLeft2);
+      indicesList.push(
+        indexOffset, indexOffset + 1, indexOffset + 2, 
+        indexOffset, indexOffset + 2, indexOffset + 3
+      );
+      indexOffset += 4;
+
+      // 4 points for Right Wall
+      const deckRight1 = wgs84ToCartesian(p1[0], p1[1], p1[2]);
+      deckRight1[0] += right1[0] * halfW;
+      deckRight1[1] += right1[1] * halfW;
+      deckRight1[2] += right1[2] * halfW;
+
+      const groundRight1 = wgs84ToCartesian(g1[0], g1[1], g1[2]);
+      groundRight1[0] += right1[0] * halfW;
+      groundRight1[1] += right1[1] * halfW;
+      groundRight1[2] += right1[2] * halfW;
+
+      const deckRight2 = wgs84ToCartesian(p2[0], p2[1], p2[2]);
+      deckRight2[0] += right2[0] * halfW;
+      deckRight2[1] += right2[1] * halfW;
+      deckRight2[2] += right2[2] * halfW;
+
+      const groundRight2 = wgs84ToCartesian(g2[0], g2[1], g2[2]);
+      groundRight2[0] += right2[0] * halfW;
+      groundRight2[1] += right2[1] * halfW;
+      groundRight2[2] += right2[2] * halfW;
+
+      // Right Wall Quads (reverse winding)
+      positionsList.push(...deckRight1, ...deckRight2, ...groundRight2, ...groundRight1);
+      indicesList.push(
+        indexOffset, indexOffset + 1, indexOffset + 2, 
+        indexOffset, indexOffset + 2, indexOffset + 3
+      );
+      indexOffset += 4;
+    }
+
+    if (positionsList.length > 0) {
+      meshes.push({
+        positions: new Float64Array(positionsList),
+        indices: new Uint32Array(indicesList),
+        material: { type: 'solid', color: '#475569' }, // Darker slate grey for side walls
+        layerId: 'transit_deck_details'
+      });
+    }
+
+    return meshes;
+  }
+
   private generateMetroFlyoverMeshes(mf: MetroFlyoverObject, allObjects?: Map<string, CityObject>): MeshData[] {
     const meshes: MeshData[] = [];
     const coords = mf.coordinates;
@@ -1263,14 +1391,23 @@ export class ProceduralGeometryGenerator {
       layerId: 'transit_deck_details'
     });
 
-    // D. Central Divider Concrete Median / Yellow lines
+    // D. Central Divider Concrete Median — Jersey barrier style
     if (mf.hasDivider && dividerWidth > 0.1) {
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.02, 0.3);
+      // Main concrete barrier body — raised 0.8m above asphalt surface
+      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.8);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: '#475569' },
-        layerId: 'transit_deck'
+        material: { type: 'solid', color: '#b0bec5' }, // Light concrete grey
+        layerId: 'transit_deck_details'
+      });
+      // Yellow stripe on top of barrier for visibility
+      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.85, 0);
+      meshes.push({
+        positions: new Float64Array(dividerStripe.positions),
+        indices: new Uint32Array(dividerStripe.indices),
+        material: { type: 'solid', color: '#fbbf24' },
+        layerId: 'transit_deck_details'
       });
     } else if (!mf.isOneWay) {
       const lineLeft = this.generateRibbon(coords, -0.12, -0.04, 0.03, 0);

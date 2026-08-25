@@ -15,10 +15,40 @@ function getDistanceMeters(lon1: number, lat1: number, lon2: number, lat2: numbe
   return R * c;
 }
 
+function resampleCoordinates(coords: number[][], interval: number): number[][] {
+  if (coords.length < 2) return coords;
+  const newCoords: number[][] = [];
+  
+  for (let i = 0; i < coords.length - 1; i++) {
+    const p1 = coords[i];
+    const p2 = coords[i + 1];
+    newCoords.push(p1);
+    
+    const dist = getDistanceMeters(p1[0], p1[1], p2[0], p2[1]);
+    const numSegments = Math.floor(dist / interval);
+    
+    if (numSegments > 1) {
+      for (let j = 1; j < numSegments; j++) {
+        const t = j / numSegments;
+        newCoords.push([
+          p1[0] + (p2[0] - p1[0]) * t,
+          p1[1] + (p2[1] - p1[1]) * t,
+          (p1[2] || 0) + ((p2[2] || 0) - (p1[2] || 0)) * t
+        ]);
+      }
+    }
+  }
+  newCoords.push(coords[coords.length - 1]);
+  return newCoords;
+}
+
 export function applyFlyoverElevationProfile(flyover: any) {
   if (!flyover.coordinates || flyover.coordinates.length < 2) return;
 
   const elevation = flyover.elevation || 6.0;
+
+  // Resample coordinates to have at most 10m spacing
+  flyover.coordinates = resampleCoordinates(flyover.coordinates, 10.0);
 
   // Calculate cumulative distance along path
   const distanceList: number[] = [0];
