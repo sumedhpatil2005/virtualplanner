@@ -176,8 +176,10 @@ export class SimulationManager {
   private runTrafficSim(objects: CityObject[], onComplete?: () => void) {
     const engine = (window as any).engineInstance;
     if (!engine) {
+      console.warn('Traffic simulation aborted: engine instance not ready.');
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.('Traffic simulation failed: TwinCity Engine not ready.', 'error');
       return;
     }
 
@@ -186,9 +188,15 @@ export class SimulationManager {
     const viewer = engine.getViewer();
 
     if (!network || network.nodes.size === 0 || !viewer) {
-      console.warn('Traffic simulation aborted: network or viewer not ready.');
+      const reason = !viewer 
+        ? '3D Viewport canvas not initialized' 
+        : (!network || network.nodes.size === 0)
+          ? 'No road network found. Draw roads or import OSM infrastructure first'
+          : 'Traffic network not ready';
+      console.warn('Traffic simulation aborted:', reason);
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.(`Traffic simulation aborted: ${reason}.`, 'error');
       return;
     }
 
@@ -254,9 +262,11 @@ export class SimulationManager {
     console.log(`[SIMULATION] Spawned ${this.initialAgentCount} agents.`);
 
     if (this.initialAgentCount === 0) {
-      console.warn('Traffic simulation aborted: no routable paths could be resolved.');
+      const msg = 'Traffic simulation aborted: No valid routable paths could be resolved between network nodes. Ensure roads connect at shared junctions.';
+      console.warn(msg);
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.(msg, 'error');
       return;
     }
 

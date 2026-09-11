@@ -65,7 +65,7 @@ export class TwinCityEngine {
     this.layers = new LayerManager();
     this.scenarios = new ScenarioManager();
     this.simulations = new SimulationManager();
-    this.history = new HistoryManager();
+    this.history = new HistoryManager(this.objects);
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork());
 
     (window as any).engineInstance = this;

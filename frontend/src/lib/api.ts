@@ -56,15 +56,28 @@ export type ConnectionState = 'online' | 'saving' | 'offline';
 
 type StateListener = (state: ConnectionState) => void;
 
+let activeRequests = 0;
+
 class ConnectionStateStore {
   private state: ConnectionState = 'online';
   private listeners: Set<StateListener> = new Set();
+  private isOffline = false;
 
   get current(): ConnectionState {
     return this.state;
   }
 
+  get isCurrentlyOffline(): boolean {
+    return this.isOffline;
+  }
+
   set(next: ConnectionState): void {
+    if (next === 'offline') {
+      this.isOffline = true;
+    } else if (next === 'online') {
+      this.isOffline = false;
+    }
+
     if (this.state !== next) {
       this.state = next;
       this.listeners.forEach((l) => l(next));
@@ -74,6 +87,29 @@ class ConnectionStateStore {
   subscribe(listener: StateListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Actively ping the backend to verify connection status.
+   */
+  async checkConnection(): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${API_BASE}/api/sim/status`, {
+        signal: controller.signal,
+      }).catch(() => null);
+      clearTimeout(timeoutId);
+
+      if (res && res.ok) {
+        this.set('online');
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    this.set('offline');
+    return false;
   }
 }
 
@@ -95,6 +131,7 @@ async function request<T = void>(
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
 
+  activeRequests++;
   connectionState.set('saving');
 
   let res: Response;
@@ -108,17 +145,22 @@ async function request<T = void>(
     });
   } catch (networkErr) {
     // fetch itself threw — network unreachable, DNS failure, etc.
+    activeRequests--;
     connectionState.set('offline');
     throw networkErr; // caller decides how to handle
   }
 
   if (!res.ok) {
+    activeRequests--;
     connectionState.set('offline');
     const body = await res.text().catch(() => '(no body)');
     throw new ApiError(res.status, path, body);
   }
 
-  connectionState.set('online');
+  activeRequests--;
+  if (activeRequests === 0 && !connectionState.isCurrentlyOffline) {
+    connectionState.set('online');
+  }
 
   // 204 No Content — return undefined cast to T
   if (res.status === 204 || res.headers.get('Content-Length') === '0') {

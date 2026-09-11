@@ -119,9 +119,6 @@ export class EditingEngine {
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
 
-    // Push history snapshot before modifying objects
-    this.historyManager.pushState(this.objectManager.getAll());
-
     const id = Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
     const name = `${this.activeMode.split('_')[1].toUpperCase()} #${id.slice(0, 4)}`;
@@ -375,6 +372,7 @@ export class EditingEngine {
     }
 
     if (newObj) {
+      this.historyManager?.recordAdd?.(newObj, `Add ${newObj.type} ${newObj.name || newObj.id}`);
       this.objectManager.add(newObj);
     }
     
@@ -392,6 +390,7 @@ export class EditingEngine {
       this.notify();
     } catch (e) {
       console.warn('[EditingEngine] fetchSavedAreas failed:', e);
+      (window as any).showToast?.('Failed to load saved areas: Backend server may be offline.', 'error');
     }
   }
 
@@ -472,7 +471,10 @@ export class EditingEngine {
       if (deleteAssociatedData) {
         const allObjects = this.objectManager.getAll();
         const objsToDelete = allObjects.filter(obj => this.isObjectInArea(obj, area));
-        this.objectManager.deleteMultiple(objsToDelete);
+        if (objsToDelete.length > 0) {
+          this.historyManager?.recordDelete?.(objsToDelete, `Delete infrastructure in "${area.name}"`);
+          this.objectManager.deleteMultiple(objsToDelete);
+        }
       }
 
       this.notify();
@@ -711,7 +713,10 @@ export class EditingEngine {
         count++;
       }
 
-      this.objectManager.addMultiple(roadObjs);
+      if (roadObjs.length > 0) {
+        this.historyManager?.recordAdd?.(roadObjs, `Import ${roadObjs.length} OSM Roads`);
+        this.objectManager.addMultiple(roadObjs);
+      }
       return count;
     } catch (err) {
       console.error("OSM Import failed:", err);
@@ -873,7 +878,10 @@ export class EditingEngine {
         count++;
       }
 
-      this.objectManager.addMultiple(buildingObjs);
+      if (buildingObjs.length > 0) {
+        this.historyManager?.recordAdd?.(buildingObjs, `Import ${buildingObjs.length} OSM Buildings`);
+        this.objectManager.addMultiple(buildingObjs);
+      }
       return count;
     } catch (err) {
       console.error("OSM Buildings Import failed:", err);
@@ -1016,7 +1024,10 @@ export class EditingEngine {
         }
       }
 
-      this.objectManager.addMultiple(metroObjs);
+      if (metroObjs.length > 0) {
+        this.historyManager?.recordAdd?.(metroObjs, `Import ${metroObjs.length} OSM Metro objects`);
+        this.objectManager.addMultiple(metroObjs);
+      }
       return { lines: linesCount, stations: stationsCount };
     } catch (err) {
       console.error("OSM Metro Import failed:", err);

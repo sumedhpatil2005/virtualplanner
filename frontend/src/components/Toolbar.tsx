@@ -73,19 +73,11 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleUndo = () => {
-    const previousState = engineInstance.history.undo(engineInstance.objects.getAll());
-    if (previousState) {
-      engineInstance.objects.clear();
-      previousState.forEach(obj => engineInstance.objects.add(obj));
-    }
+    engineInstance.history.undo();
   };
 
   const handleRedo = () => {
-    const nextState = engineInstance.history.redo(engineInstance.objects.getAll());
-    if (nextState) {
-      engineInstance.objects.clear();
-      nextState.forEach(obj => engineInstance.objects.add(obj));
-    }
+    engineInstance.history.redo();
   };
 
   const handleFinishArea = () => {

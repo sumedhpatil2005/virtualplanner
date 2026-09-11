@@ -9,6 +9,7 @@ import {
   X
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 
@@ -20,6 +21,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
   const [selectedObj, setSelectedObj] = useState<CityObject | null>(null);
   const [isEditingBuilding, setIsEditingBuilding] = useState(false);
   const [draftBuilding, setDraftBuilding] = useState<BuildingObject | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const [cityStats, setCityStats] = useState({
     buildingsCount: 0,
@@ -388,14 +390,24 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
 
     // Apply & trigger updates
     const merged = { ...selectedObj, ...updates } as CityObject;
+    engineInstance.history.recordUpdate(selectedObj, merged, `Update ${selectedObj.name || selectedObj.id} ${field}`);
     setSelectedObj(merged);
     engineInstance.objects.update(selectedObj.id, updates);
   };
 
   const handleDelete = () => {
     if (!selectedObj) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!selectedObj) return;
+    engineInstance.history.recordDelete(selectedObj, `Delete ${selectedObj.name || selectedObj.type}`);
     engineInstance.objects.delete(selectedObj.id);
     engineInstance.selection.clearSelection();
+    setSelectedObj(null);
+    setShowDeleteConfirm(false);
+    (window as any).showToast?.('Object deleted', 'info');
   };
 
   return (
@@ -469,6 +481,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                       updatedAt: new Date().toISOString()
                     } as BuildingObject;
                     
+                    engineInstance.history.recordUpdate(selectedObj, finalObject, `Edit building ${finalObject.name || finalObject.id}`);
                     engineInstance.objects.update(selectedObj.id, finalObject);
                     setSelectedObj(finalObject);
                     setIsEditingBuilding(false);
@@ -699,6 +712,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete Object"
+        message={`Are you sure you want to delete "${selectedObj?.name || selectedObj?.type || 'this object'}"? You can undo this action anytime via Ctrl+Z or Toolbar.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 };

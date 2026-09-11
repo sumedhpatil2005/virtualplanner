@@ -193,6 +193,7 @@ export class ObjectManager {
     if (!skipSync) {
       this.syncPost(fresh).catch((e) => {
         console.warn('[ObjectManager] syncPost failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync with backend server', 'error');
       });
     }
   }
@@ -222,6 +223,7 @@ export class ObjectManager {
     if (!skipSync && freshObjs.length > 0) {
       this.syncPostMultiple(freshObjs).catch((e) => {
         console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
       });
     }
   }
@@ -247,6 +249,7 @@ export class ObjectManager {
     if (!skipSync) {
       this.syncPost(updated).catch((e) => {
         console.warn('[ObjectManager] syncPost (update) failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync update with backend server', 'error');
       });
     }
   }
@@ -259,6 +262,7 @@ export class ObjectManager {
       if (!skipSync) {
         this.syncDelete(id).catch((e) => {
           console.warn('[ObjectManager] syncDelete failed — connectionState updated:', e);
+          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
         });
       }
     }
@@ -281,6 +285,7 @@ export class ObjectManager {
       if (!skipSync && idsToSync.length > 0) {
         this.syncDeleteMultiple(idsToSync).catch((e) => {
           console.warn('[ObjectManager] syncDeleteMultiple failed — connectionState updated:', e);
+          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
         });
       }
     }

@@ -5,6 +5,7 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { SimulationPanel } from './components/SimulationPanel';
+import { ConnectionBadge } from './components/ui/ConnectionBadge';
 import { Compass, Layers, BarChart3, Activity, X } from 'lucide-react';
 
 function App() {
@@ -40,18 +41,21 @@ function App() {
       
       {/* 1. TOP LEFT: Branding + Scenario selection */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-auto w-80">
-        <div className="glass-panel rounded-2xl p-4 border border-indigo-500/10 flex items-center gap-3 shadow-2xl">
-          <div className="p-2 rounded-xl bg-indigo-950/80 border border-indigo-500/35 text-indigo-300">
-            <Compass size={22} className="animate-spin-slow" />
+        <div className="glass-panel rounded-2xl p-4 border border-indigo-500/10 flex items-center justify-between shadow-2xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-950/80 border border-indigo-500/35 text-indigo-300">
+              <Compass size={22} className="animate-spin-slow" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-slate-200 tracking-wider m-0 p-0 leading-none">
+                TwinCity Engine
+              </h1>
+              <p className="text-[9px] text-indigo-400/90 font-semibold font-mono tracking-wider mt-1 uppercase">
+                Digital Twin Platform v2.0
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-200 tracking-wider m-0 p-0 leading-none">
-              TwinCity Engine
-            </h1>
-            <p className="text-[9px] text-indigo-400/90 font-semibold font-mono tracking-wider mt-1 uppercase">
-              Digital Twin Platform v2.0
-            </p>
-          </div>
+          <ConnectionBadge />
         </div>
         <ScenarioSelector />
       </div>
