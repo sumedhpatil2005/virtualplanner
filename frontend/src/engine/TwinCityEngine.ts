@@ -28,6 +28,7 @@ import { SimulationManager } from './simulation/SimulationManager';
 import { HistoryManager } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
+import { apiGet } from '../lib/api';
 
 export class TwinCityEngine {
   public objects: ObjectManager;
@@ -671,51 +672,52 @@ export class TwinCityEngine {
   private async loadSampleData() {
     try {
       console.log('[STARTUP] Object fetch START');
-      const res = await fetch('http://localhost:8000/api/objects');
-      if (res.ok) {
-        const data = await res.json();
-        console.log('[STARTUP] Object fetch END');
-        if (data && data.length > 0) {
-          console.log(`Loaded ${data.length} objects from FastAPI database.`);
-          console.log('[STARTUP] ObjectManager load START');
-          this.objects.clear();
-          let hasBuildings = false;
-          let hasZones = false;
-          data.forEach((obj: any) => {
-            if (obj.type === 'building') hasBuildings = true;
-            if (obj.type === 'zone') hasZones = true;
-            const unpacked = {
-              id: obj.id,
-              type: obj.type as any,
-              name: obj.name,
-              layerId: obj.layerId,
-              scenarioId: obj.scenarioId,
-              coordinates: obj.coordinates,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              ...obj.properties
-            };
-            if (unpacked.type === 'road') {
-              this.objects.syncRoadProperties(unpacked as any);
-            }
-            (this.objects as any).objects.set(unpacked.id, unpacked);
-          });
-          console.log('[STARTUP] ObjectManager load END');
-          
-          if (!hasBuildings || !hasZones) {
-            console.log('Database missing buildings or zones. Seeding realistic Pune/Hinjewadi demand...');
-            this.seedPuneHinjewadiDemand();
-          }
+      const data = await apiGet<any[]>('/api/objects');
+      console.log('[STARTUP] Object fetch END');
 
-          this.objects.notify();
-          return;
-        } else {
-          console.log('FastAPI database is connected but empty. Seeding defaults...');
+      if (data && data.length > 0) {
+        console.log(`Loaded ${data.length} objects from FastAPI database.`);
+        console.log('[STARTUP] ObjectManager load START');
+        this.objects.clear();
+        let hasBuildings = false;
+        let hasZones = false;
+
+        data.forEach((obj: any) => {
+          if (obj.type === 'building') hasBuildings = true;
+          if (obj.type === 'zone') hasZones = true;
+          const unpacked = {
+            id: obj.id,
+            type: obj.type as any,
+            name: obj.name,
+            layerId: obj.layerId,
+            scenarioId: obj.scenarioId,
+            coordinates: obj.coordinates,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            ...obj.properties
+          };
+          if (unpacked.type === 'road') {
+            this.objects.syncRoadProperties(unpacked as any);
+          }
+          (this.objects as any).objects.set(unpacked.id, unpacked);
+        });
+
+        console.log('[STARTUP] ObjectManager load END');
+
+        if (!hasBuildings || !hasZones) {
+          console.log('Database missing buildings or zones. Seeding realistic Pune/Hinjewadi demand...');
+          this.seedPuneHinjewadiDemand();
         }
+
+        this.objects.notify();
+        return;
+      } else {
+        console.log('FastAPI database is connected but empty. Seeding defaults...');
       }
     } catch (e) {
       console.warn('Backend database offline or unreachable. Running in local memory-only mode:', e);
     }
+
 
     const baseLng = 73.8567;
     const baseLat = 18.5204;

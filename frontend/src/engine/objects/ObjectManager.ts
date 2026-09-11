@@ -1,11 +1,10 @@
 import type { CityObject, RoadObject, RoadSectionProfile, CarriagewayProfile, RoadsideProfile } from './types';
 import { applyFlyoverElevationProfile } from './flyoverHelper';
+import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
 
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
   private onChangeListener: ((changedTypes: Set<string>) => void)[] = [];
-
-  private API_URL = 'http://localhost:8000/api/objects';
 
   constructor() {}
 
@@ -23,47 +22,19 @@ export class ObjectManager {
   }
 
   public async syncPost(obj: CityObject) {
-    try {
-      await fetch(this.API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.mapToSchema(obj))
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiPost('/api/objects', this.mapToSchema(obj));
   }
 
   public async syncDelete(id: string) {
-    try {
-      await fetch(`${this.API_URL}/${id}`, { method: 'DELETE' });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiDelete(`/api/objects/${id}`);
   }
 
   public async syncDeleteMultiple(ids: string[]) {
-    try {
-      await fetch(`${this.API_URL}/batch/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids })
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiDeleteBatch('/api/objects', ids);
   }
 
   public async syncPostMultiple(objs: CityObject[]) {
-    try {
-      await fetch(`${this.API_URL}/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(objs.map(o => this.mapToSchema(o)))
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiPostBatch('/api/objects/batch', objs.map(o => this.mapToSchema(o)));
   }
 
   public onChange(callback: (changedTypes: Set<string>) => void) {
@@ -220,7 +191,9 @@ export class ObjectManager {
     this.objects.set(obj.id, fresh);
     this.notify(new Set([fresh.type]));
     if (!skipSync) {
-      this.syncPost(fresh);
+      this.syncPost(fresh).catch((e) => {
+        console.warn('[ObjectManager] syncPost failed — connectionState updated:', e);
+      });
     }
   }
 
@@ -247,7 +220,9 @@ export class ObjectManager {
     this.notify(new Set(freshObjs.map(o => o.type)));
 
     if (!skipSync && freshObjs.length > 0) {
-      this.syncPostMultiple(freshObjs);
+      this.syncPostMultiple(freshObjs).catch((e) => {
+        console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
+      });
     }
   }
 
@@ -270,7 +245,9 @@ export class ObjectManager {
     this.objects.set(id, updated);
     this.notify(new Set([updated.type]));
     if (!skipSync) {
-      this.syncPost(updated);
+      this.syncPost(updated).catch((e) => {
+        console.warn('[ObjectManager] syncPost (update) failed — connectionState updated:', e);
+      });
     }
   }
 
@@ -280,7 +257,9 @@ export class ObjectManager {
       this.objects.delete(id);
       this.notify(new Set([existing.type]));
       if (!skipSync) {
-        this.syncDelete(id);
+        this.syncDelete(id).catch((e) => {
+          console.warn('[ObjectManager] syncDelete failed — connectionState updated:', e);
+        });
       }
     }
   }
@@ -300,7 +279,9 @@ export class ObjectManager {
     if (changed) {
       this.notify(new Set(objs.map(o => o.type)));
       if (!skipSync && idsToSync.length > 0) {
-        this.syncDeleteMultiple(idsToSync);
+        this.syncDeleteMultiple(idsToSync).catch((e) => {
+          console.warn('[ObjectManager] syncDeleteMultiple failed — connectionState updated:', e);
+        });
       }
     }
   }

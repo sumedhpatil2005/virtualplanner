@@ -1,6 +1,7 @@
 import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
+import { apiGet, apiPost, apiDelete } from '../../lib/api';
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover';
 
@@ -9,7 +10,6 @@ export class EditingEngine {
   private drawingPoints: [number, number, number][] = [];
   private isImporting: boolean = false;
   private savedAreas: Area[] = [];
-  private areasAPI_URL = 'http://localhost:8000/api/areas';
   
   // Selected creation types
   public roadClass: RoadClassification = 'local';
@@ -388,13 +388,10 @@ export class EditingEngine {
 
   public async fetchSavedAreas(): Promise<void> {
     try {
-      const res = await fetch(this.areasAPI_URL);
-      if (res.ok) {
-        this.savedAreas = await res.json();
-        this.notify();
-      }
+      this.savedAreas = await apiGet<Area[]>('/api/areas');
+      this.notify();
     } catch (e) {
-      console.warn("Backend areas endpoint offline:", e);
+      console.warn('[EditingEngine] fetchSavedAreas failed:', e);
     }
   }
 
@@ -434,15 +431,7 @@ export class EditingEngine {
       createdAt: new Date().toISOString()
     };
 
-    const res = await fetch(this.areasAPI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(areaObj)
-    });
-
-    if (!res.ok) {
-      throw new Error("Failed to save area in backend database.");
-    }
+    await apiPost('/api/areas', areaObj);
 
     this.savedAreas.push(areaObj);
     this.clearDrawing();
@@ -477,22 +466,18 @@ export class EditingEngine {
       const area = this.savedAreas.find(a => a.id === id);
       if (!area) return;
 
-      const res = await fetch(`${this.areasAPI_URL}/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        this.savedAreas = this.savedAreas.filter(a => a.id !== id);
+      await apiDelete(`/api/areas/${id}`);
+      this.savedAreas = this.savedAreas.filter(a => a.id !== id);
 
-        if (deleteAssociatedData) {
-          const allObjects = this.objectManager.getAll();
-          const objsToDelete = allObjects.filter(obj => this.isObjectInArea(obj, area));
-          this.objectManager.deleteMultiple(objsToDelete);
-        }
-
-        this.notify();
+      if (deleteAssociatedData) {
+        const allObjects = this.objectManager.getAll();
+        const objsToDelete = allObjects.filter(obj => this.isObjectInArea(obj, area));
+        this.objectManager.deleteMultiple(objsToDelete);
       }
+
+      this.notify();
     } catch (e) {
-      console.warn("Failed to delete area in backend:", e);
+      console.warn('[EditingEngine] deleteArea failed:', e);
     }
   }
 
@@ -1050,6 +1035,7 @@ export class EditingEngine {
     ];
 
     let lastError: any = null;
+
     for (const endpoint of endpoints) {
       try {
         console.log(`[Overpass] Querying endpoint: ${endpoint}`);

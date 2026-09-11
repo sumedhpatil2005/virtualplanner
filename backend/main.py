@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.connection import engine, Base
 from api.router import router
+from api.sim_router import router as sim_router
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
@@ -23,6 +24,7 @@ app.add_middleware(
 
 # Mount core API router
 app.include_router(router, prefix="/api")
+app.include_router(sim_router, prefix="/api")
 
 @app.get("/")
 def read_root():
