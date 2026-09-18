@@ -15,8 +15,8 @@ export const Viewport3D: React.FC = () => {
     if (!containerRef.current) return;
 
     // Set Cesium Ion default token if available in env, otherwise blank
-    const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN || '';
-    if (ionToken) {
+    const ionToken = (import.meta.env.VITE_CESIUM_ION_TOKEN || '').trim();
+    if (ionToken && ionToken !== 'YOUR_CESIUM_ION_TOKEN_HERE') {
       Ion.defaultAccessToken = ionToken;
     }
 

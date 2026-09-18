@@ -93,6 +93,15 @@ export interface RoadObject extends BaseCityObject {
   
   // Provenance details
   osmProvenance?: OSMProvenance;
+
+  // Set when a flyover ramp merge/weave zone reduces this road's effective capacity
+  flyoverImpact?: {
+    flyoverId: string;
+    flyoverName: string;
+    capacityReductionPercent: number;
+    originalCapacity: number;
+    reason: string;
+  };
 }
 
 export type BuildingUsage = 'residential' | 'commercial' | 'industrial' | 'educational' | 'institutional' | 'mixed';
@@ -206,6 +215,11 @@ export interface FlyoverObject extends BaseCityObject {
   elevation: number; // base height of deck above terrain in meters (e.g. 6)
   pierSpacing: number; // spacing between support columns in meters (e.g. 30)
   groundCoordinates?: [number, number, number][];
+
+  // Populated by BridgeFeasibilityEngine at creation time
+  feasibilityResult?: import('../simulation/BridgeFeasibilityEngine').FeasibilityResult;
+  // IDs of surface RoadObjects whose capacity was reduced due to this flyover's ramps
+  surfaceRoadIds?: string[];
 }
 
 export interface MetroLineObject extends BaseCityObject {
@@ -258,6 +272,10 @@ export interface MetroFlyoverObject extends BaseCityObject {
   metroElevation: number; // top deck height above ground (e.g. 12)
   pierSpacing: number; // central column spacing (e.g. 30)
   groundCoordinates?: [number, number, number][];
+
+  // Populated by BridgeFeasibilityEngine at creation time
+  feasibilityResult?: import('../simulation/BridgeFeasibilityEngine').FeasibilityResult;
+  surfaceRoadIds?: string[];
 }
 
 export type CityObject = RoadObject | BuildingObject | JunctionObject | FlyoverObject | UtilityObject | MetroLineObject | MetroStationObject | ZoneObject | GatewayObject | MetroFlyoverObject;

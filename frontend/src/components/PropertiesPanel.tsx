@@ -494,6 +494,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
 
+            {/* Flyover Feasibility Report */}
+            {(selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (selectedObj as any).feasibilityResult && (
+              <FlyoverFeasibilityReport result={(selectedObj as any).feasibilityResult} />
+            )}
+
+            {/* Road: Flyover Impact Notice */}
+            {selectedObj.type === 'road' && (selectedObj as any).flyoverImpact && (
+              <FlyoverImpactNotice impact={(selectedObj as any).flyoverImpact} />
+            )}
+
             {/* Metro Line Specifics */}
             {selectedObj.type === 'metro_line' && (
               <MetroLineEditor m={selectedObj as MetroLineObject} onUpdate={handleUpdateField} />
@@ -2295,3 +2305,115 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
     </div>
   );
 };
+
+/* ─── Bridge Feasibility Report Panel ───────────────────────────────────────── */
+
+import type { FeasibilityResult, FeasibilityCheck } from '../engine/simulation/BridgeFeasibilityEngine';
+
+const statusIcon = (status: FeasibilityCheck['status']) => {
+  if (status === 'pass') return '✅';
+  if (status === 'warn') return '⚠️';
+  return '❌';
+};
+
+const statusColor = (status: FeasibilityCheck['status']) => {
+  if (status === 'pass') return 'text-emerald-400';
+  if (status === 'warn') return 'text-amber-400';
+  return 'text-red-400';
+};
+
+const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ result }) => {
+  const [expanded, setExpanded] = React.useState(true);
+
+  const overallColor = result.feasible ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/30 bg-red-950/20';
+  const overallLabel = result.feasible ? '✅ Feasible' : '❌ Not Feasible';
+  const overallTextColor = result.feasible ? 'text-emerald-400' : 'text-red-400';
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className={`w-full rounded-xl p-3 border text-left cursor-pointer transition-all ${overallColor}`}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+            🏗️ Bridge Feasibility Report
+          </span>
+          <span className={`text-xs font-bold ${overallTextColor}`}>{overallLabel}</span>
+        </div>
+        <div className="mt-1 flex gap-3 text-[10px] text-slate-500">
+          <span>Length: {result.totalFlyoverLength}m</span>
+          <span>Ramp reqd: {result.rampLengthRequired}m</span>
+          <span>Start avail: {result.rampLengthAvailable.start}m</span>
+          <span>End avail: {result.rampLengthAvailable.end}m</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="space-y-1.5 pl-1">
+          {/* Individual Checks */}
+          {result.checks.map(check => (
+            <div
+              key={check.id}
+              className="bg-slate-900/40 border border-white/5 rounded-lg p-2.5 text-xs space-y-0.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <span>{statusIcon(check.status)}</span>
+                  <span>{check.name}</span>
+                </span>
+                <span className={`text-[10px] font-bold font-mono ${statusColor(check.status)}`}>
+                  {check.actual} / {check.required} {check.unit}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed">{check.message}</p>
+            </div>
+          ))}
+
+          {/* Surface Road Impacts */}
+          {result.surfaceRoadImpacts.length > 0 && (
+            <div className="border-t border-white/5 pt-2 space-y-1.5">
+              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                Surface Road Impact
+              </div>
+              {result.surfaceRoadImpacts.map(impact => (
+                <div
+                  key={impact.roadId}
+                  className="bg-amber-950/20 border border-amber-500/20 rounded-lg p-2 text-[10px] space-y-0.5"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-amber-300 truncate max-w-[140px]">{impact.roadName}</span>
+                    <span className="font-bold text-amber-400">−{impact.capacityReductionPercent}% capacity</span>
+                  </div>
+                  <div className="text-slate-500">
+                    {impact.originalCapacity} → {impact.reducedCapacity} veh/hr
+                  </div>
+                  <div className="text-slate-600 leading-relaxed">{impact.reason}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── Road: Flyover Impact Notice ────────────────────────────────────────────── */
+
+const FlyoverImpactNotice: React.FC<{ impact: NonNullable<import('../engine/objects/types').RoadObject['flyoverImpact']> }> = ({ impact }) => (
+  <div className="bg-amber-950/20 border border-amber-500/20 rounded-xl p-3 space-y-1.5 text-xs">
+    <div className="font-semibold text-amber-300 flex items-center gap-1.5">
+      ⚠️ Capacity Reduced by Flyover
+    </div>
+    <div className="text-slate-400">
+      <span className="font-semibold text-slate-300">{impact.flyoverName}</span> ramp merge/weave zone reduced
+      this road's capacity by <span className="font-bold text-amber-400">{impact.capacityReductionPercent}%</span>.
+    </div>
+    <div className="text-slate-500 text-[10px]">
+      Original: {impact.originalCapacity} veh/hr → Current: {Math.round(impact.originalCapacity * (1 - impact.capacityReductionPercent / 100))} veh/hr
+    </div>
+    <div className="text-slate-600 text-[10px] leading-relaxed">{impact.reason}</div>
+  </div>
+);
+

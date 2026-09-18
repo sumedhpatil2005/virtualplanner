@@ -806,78 +806,96 @@ export class ProceduralGeometryGenerator {
     const asphaltWidth = laneCount * laneWidth + dividerWidth;
     const slabWidth = asphaltWidth + 1.2;
 
-    // 1. Concrete Deck Slab (supports asphalt and barriers)
-    // Thickness = 0.3m. Placed from z = -0.3 to z = 0.0.
+    // ─── Color palette (high contrast for engineering clarity) ────────────────
+    const COLOR_SLAB       = '#94a3b8'; // light concrete — clearly lighter than asphalt
+    const COLOR_ASPHALT    = flyover.roadClass === 'highway' ? '#0a0f1a' : '#111827'; // near-black
+    const COLOR_GIRDER     = '#334155'; // dark charcoal — reads as structural shadow
+    const COLOR_BARRIER    = '#94a3b8'; // same as slab — continuous parapet appearance
+    const COLOR_DIVIDER    = '#e2e8f0'; // near-white — divider stands out strongly
+    const COLOR_DIVIDER_STRIPE = '#f59e0b'; // amber yellow top stripe
+    const COLOR_UNDERSIDE  = '#c0cad4'; // slightly warm off-white for underside visibility
+
+    // 1. Concrete Deck Slab — with closed bottom face for visible underside
     const deckSlab = this.generateRibbon(coords, -slabWidth / 2, slabWidth / 2, -0.3, 0.3);
     meshes.push({
       positions: new Float64Array(deckSlab.positions),
       indices: new Uint32Array(deckSlab.indices),
-      material: { type: 'solid', color: '#64748b' }, // Medium concrete grey
+      material: { type: 'solid', color: COLOR_SLAB },
       layerId: 'transit_deck'
     });
 
-    // 2. Asphalt Driving Surface (raised by 2cm to prevent z-fighting on deck slab)
-    const asphaltColor = flyover.roadClass === 'highway' ? '#0f172a' : '#1e293b'; // slate-900 or slate-800
+    // 1b. Slab underside face — closed bottom so you see the bridge from the side
+    const slabBottom = this.generateRibbon(coords, -slabWidth / 2, slabWidth / 2, -0.3, 0);
+    // Flip the indices to make it face downward
+    const bottomIndicesFlipped = new Uint32Array(slabBottom.indices.length);
+    for (let bi = 0; bi < slabBottom.indices.length; bi += 3) {
+      bottomIndicesFlipped[bi]     = slabBottom.indices[bi + 2];
+      bottomIndicesFlipped[bi + 1] = slabBottom.indices[bi + 1];
+      bottomIndicesFlipped[bi + 2] = slabBottom.indices[bi];
+    }
+    meshes.push({
+      positions: new Float64Array(slabBottom.positions),
+      indices: bottomIndicesFlipped,
+      material: { type: 'solid', color: COLOR_UNDERSIDE },
+      layerId: 'transit_deck'
+    });
+
+    // 2. Asphalt Driving Surface (2cm above slab to prevent z-fighting)
     const asphalt = this.generateRibbon(coords, -asphaltWidth / 2, asphaltWidth / 2, 0.02, 0);
     meshes.push({
       positions: new Float64Array(asphalt.positions),
       indices: new Uint32Array(asphalt.indices),
-      material: { type: 'solid', color: asphaltColor },
+      material: { type: 'solid', color: COLOR_ASPHALT },
       layerId: 'transit_deck'
     });
 
-    // 3. Side Barriers/Parapets (LOD: transit_deck_details)
-    // Left barrier (outer slab edge to slab edge - 0.4)
-    const leftBarrier = this.generateRibbon(coords, -slabWidth / 2, -slabWidth / 2 + 0.4, 0.0, 0.8);
+    // 3. Side Barriers / Parapets (LOD: transit_deck_details)
+    const leftBarrier = this.generateRibbon(coords, -slabWidth / 2, -slabWidth / 2 + 0.4, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(leftBarrier.positions),
       indices: new Uint32Array(leftBarrier.indices),
-      material: { type: 'solid', color: '#64748b' },
+      material: { type: 'solid', color: COLOR_BARRIER },
       layerId: 'transit_deck_details'
     });
 
-    // Right barrier (slab edge - 0.4 to outer slab edge)
-    const rightBarrier = this.generateRibbon(coords, slabWidth / 2 - 0.4, slabWidth / 2, 0.0, 0.8);
+    const rightBarrier = this.generateRibbon(coords, slabWidth / 2 - 0.4, slabWidth / 2, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(rightBarrier.positions),
       indices: new Uint32Array(rightBarrier.indices),
-      material: { type: 'solid', color: '#64748b' },
+      material: { type: 'solid', color: COLOR_BARRIER },
       layerId: 'transit_deck_details'
     });
 
-    // 4. Central Concrete Divider (if two-way with median) — Jersey barrier style
+    // 4. Central Divider (Jersey barrier style — near white, very visible)
     if (flyover.hasDivider && dividerWidth > 0.1) {
-      // Main concrete barrier body — raised 0.8m above asphalt surface
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.8);
+      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.85);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: '#b0bec5' }, // Light concrete grey — clearly visible
+        material: { type: 'solid', color: COLOR_DIVIDER },
         layerId: 'transit_deck_details'
       });
-      // Yellow stripe on top of barrier for visibility
-      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.85, 0);
+      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.9, 0);
       meshes.push({
         positions: new Float64Array(dividerStripe.positions),
         indices: new Uint32Array(dividerStripe.indices),
-        material: { type: 'solid', color: '#fbbf24' }, // Yellow top stripe
+        material: { type: 'solid', color: COLOR_DIVIDER_STRIPE },
         layerId: 'transit_deck_details'
       });
     } else if (!flyover.isOneWay) {
-      // 4b. Double yellow line markings for two-way undivided roads
+      // Double yellow center line
       const lineLeft = this.generateRibbon(coords, -0.12, -0.04, 0.03, 0);
       meshes.push({
         positions: new Float64Array(lineLeft.positions),
         indices: new Uint32Array(lineLeft.indices),
-        material: { type: 'solid', color: '#fbbf24' }, // Yellow center divider
+        material: { type: 'solid', color: '#f59e0b' },
         layerId: 'transit_deck'
       });
-
       const lineRight = this.generateRibbon(coords, 0.04, 0.12, 0.03, 0);
       meshes.push({
         positions: new Float64Array(lineRight.positions),
         indices: new Uint32Array(lineRight.indices),
-        material: { type: 'solid', color: '#fbbf24' },
+        material: { type: 'solid', color: '#f59e0b' },
         layerId: 'transit_deck'
       });
     }
@@ -887,19 +905,18 @@ export class ProceduralGeometryGenerator {
     const lanesB = flyover.isOneWay ? 0 : Math.floor(laneCount / 2);
 
     if (lanesA > 1) {
-      const startOffset = flyover.hasDivider ? -asphaltWidth / 2 : -asphaltWidth / 2;
+      const startOffset = -asphaltWidth / 2;
       for (let i = 1; i < lanesA; i++) {
         const offset = startOffset + i * laneWidth;
         const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
         meshes.push({
           positions: new Float64Array(mark.positions),
           indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#cbd5e1' }, // white/light grey dashes
+          material: { type: 'solid', color: '#e2e8f0' },
           layerId: 'transit_deck'
         });
       }
     }
-
     if (lanesB > 1) {
       const startOffset = flyover.hasDivider ? dividerWidth / 2 : 0;
       for (let i = 1; i < lanesB; i++) {
@@ -908,44 +925,41 @@ export class ProceduralGeometryGenerator {
         meshes.push({
           positions: new Float64Array(mark.positions),
           indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#cbd5e1' },
+          material: { type: 'solid', color: '#e2e8f0' },
           layerId: 'transit_deck'
         });
       }
     }
 
-    // 6. Box Girders underneath (LOD: transit_deck_details)
-    // Left girder
-    const leftGirder = this.generateRibbon(coords, -slabWidth * 0.4, -slabWidth * 0.08, -0.9, 0.6);
+    // 6. Box Girders underneath — dark charcoal for structural shadow contrast
+    // Left girder with closed bottom
+    const leftGirder = this.generateRibbon(coords, -slabWidth * 0.42, -slabWidth * 0.10, -0.95, 0.65);
     meshes.push({
       positions: new Float64Array(leftGirder.positions),
       indices: new Uint32Array(leftGirder.indices),
-      material: { type: 'solid', color: '#475569' }, // slate-600 concrete
+      material: { type: 'solid', color: COLOR_GIRDER },
       layerId: 'transit_deck_details'
     });
-
-    // Right girder
-    const rightGirder = this.generateRibbon(coords, slabWidth * 0.08, slabWidth * 0.4, -0.9, 0.6);
+    const rightGirder = this.generateRibbon(coords, slabWidth * 0.10, slabWidth * 0.42, -0.95, 0.65);
     meshes.push({
       positions: new Float64Array(rightGirder.positions),
       indices: new Uint32Array(rightGirder.indices),
-      material: { type: 'solid', color: '#475569' },
+      material: { type: 'solid', color: COLOR_GIRDER },
       layerId: 'transit_deck_details'
     });
 
     // 7. Support Columns (Pillars) and horizontal Pier Caps
     const pierSpacing = flyover.pierSpacing || 30;
-    const pillarMeshes = this.generateFlyoverPillars(
-      flyover,
-      slabWidth,
-      pierSpacing,
-      allObjects
-    );
+    const pillarMeshes = this.generateFlyoverPillars(flyover, slabWidth, pierSpacing, allObjects);
     meshes.push(...pillarMeshes);
 
-    // 8. Solid Ramp Abutments (where deck is close to ground)
+    // 8. Ramp side walls (abutments) — solid concrete side walls down to ground
     const abutments = this.generateFlyoverRampAbutments(flyover, slabWidth);
     meshes.push(...abutments);
+
+    // 9. Ramp nose wedges — tapered solid fill at ramp feet to look like real abutments
+    const noseWedges = this.generateRampNoseWedges(flyover, slabWidth);
+    meshes.push(...noseWedges);
 
     return meshes;
   }
@@ -1329,8 +1343,103 @@ export class ProceduralGeometryGenerator {
       meshes.push({
         positions: new Float64Array(positionsList),
         indices: new Uint32Array(indicesList),
-        material: { type: 'solid', color: '#475569' }, // Darker slate grey for side walls
+        material: { type: 'solid', color: '#64748b' }, // Mid concrete grey for abutment walls
         layerId: 'transit_deck_details'
+      });
+    }
+
+    return meshes;
+  }
+
+  /**
+   * Generates solid tapered wedge geometry at both ramp feet — the visual transition
+   * from deck to ground that makes a flyover look like a real bridge abutment.
+   * Only renders where deckHeight is between 0 and 3.5m (the ramp zone).
+   */
+  private generateRampNoseWedges(flyover: FlyoverObject, deckSlabWidth: number): MeshData[] {
+    const meshes: MeshData[] = [];
+    const coords = flyover.coordinates;
+    const groundCoords = flyover.groundCoordinates;
+    if (!groundCoords || coords.length < 2) return meshes;
+
+    const halfW = deckSlabWidth / 2;
+    const positionsList: number[] = [];
+    const indicesList: number[] = [];
+    let idxOffset = 0;
+
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p1 = coords[i];
+      const p2 = coords[i + 1];
+      const g1 = groundCoords[i];
+      const g2 = groundCoords[i + 1];
+
+      const h1 = (p1[2] || 0) - (g1[2] || 0);
+      const h2 = (p2[2] || 0) - (g2[2] || 0);
+
+      // Only at the very ramp feet (height between 0 and 2m)
+      if (h1 > 2.0 && h2 > 2.0) continue;
+      if (h1 <= 0 && h2 <= 0) continue;
+
+      // Build tangent / right vectors at this segment
+      const c1 = wgs84ToCartesian(p1[0], p1[1], 0);
+      const c2 = wgs84ToCartesian(p2[0], p2[1], 0);
+      const dx = c2[0] - c1[0], dy = c2[1] - c1[1], dz = c2[2] - c1[2];
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      const tangent = [dx / len, dy / len, dz / len] as [number, number, number];
+
+      const deckPt1 = wgs84ToCartesian(p1[0], p1[1], p1[2] || 0);
+      const up1 = normalize(deckPt1);
+      const right1 = normalize(cross(tangent, up1));
+      const deckPt2 = wgs84ToCartesian(p2[0], p2[1], p2[2] || 0);
+      const up2 = normalize(deckPt2);
+      const right2 = normalize(cross(tangent, up2));
+
+      // Front face of the wedge: a quad from left-deck-bottom to right-deck-bottom,
+      // down to ground level. This fills the triangular gap at the ramp nose.
+      const deckBotL1 = [deckPt1[0] - up1[0] * 0.3 - right1[0] * halfW,
+                         deckPt1[1] - up1[1] * 0.3 - right1[1] * halfW,
+                         deckPt1[2] - up1[2] * 0.3 - right1[2] * halfW];
+      const deckBotR1 = [deckPt1[0] - up1[0] * 0.3 + right1[0] * halfW,
+                         deckPt1[1] - up1[1] * 0.3 + right1[1] * halfW,
+                         deckPt1[2] - up1[2] * 0.3 + right1[2] * halfW];
+      const gndL1 = wgs84ToCartesian(g1[0], g1[1], g1[2] || 0);
+      gndL1[0] -= right1[0] * halfW; gndL1[1] -= right1[1] * halfW; gndL1[2] -= right1[2] * halfW;
+      const gndR1 = wgs84ToCartesian(g1[0], g1[1], g1[2] || 0);
+      gndR1[0] += right1[0] * halfW; gndR1[1] += right1[1] * halfW; gndR1[2] += right1[2] * halfW;
+
+      const deckBotL2 = [deckPt2[0] - up2[0] * 0.3 - right2[0] * halfW,
+                         deckPt2[1] - up2[1] * 0.3 - right2[1] * halfW,
+                         deckPt2[2] - up2[2] * 0.3 - right2[2] * halfW];
+      const deckBotR2 = [deckPt2[0] - up2[0] * 0.3 + right2[0] * halfW,
+                         deckPt2[1] - up2[1] * 0.3 + right2[1] * halfW,
+                         deckPt2[2] - up2[2] * 0.3 + right2[2] * halfW];
+      const gndL2 = wgs84ToCartesian(g2[0], g2[1], g2[2] || 0);
+      gndL2[0] -= right2[0] * halfW; gndL2[1] -= right2[1] * halfW; gndL2[2] -= right2[2] * halfW;
+      const gndR2 = wgs84ToCartesian(g2[0], g2[1], g2[2] || 0);
+      gndR2[0] += right2[0] * halfW; gndR2[1] += right2[1] * halfW; gndR2[2] += right2[2] * halfW;
+
+      // Left wedge face: deckBotL1 → gndL1 → gndL2 → deckBotL2
+      positionsList.push(...deckBotL1, ...gndL1, ...gndL2, ...deckBotL2);
+      indicesList.push(idxOffset, idxOffset+1, idxOffset+2, idxOffset, idxOffset+2, idxOffset+3);
+      idxOffset += 4;
+
+      // Right wedge face: deckBotR1 → deckBotR2 → gndR2 → gndR1
+      positionsList.push(...deckBotR1, ...deckBotR2, ...gndR2, ...gndR1);
+      indicesList.push(idxOffset, idxOffset+1, idxOffset+2, idxOffset, idxOffset+2, idxOffset+3);
+      idxOffset += 4;
+
+      // Bottom fill: gndL1 → gndR1 → gndR2 → gndL2
+      positionsList.push(...gndL1, ...gndR1, ...gndR2, ...gndL2);
+      indicesList.push(idxOffset, idxOffset+1, idxOffset+2, idxOffset, idxOffset+2, idxOffset+3);
+      idxOffset += 4;
+    }
+
+    if (positionsList.length > 0) {
+      meshes.push({
+        positions: new Float64Array(positionsList),
+        indices: new Uint32Array(indicesList),
+        material: { type: 'solid', color: '#78909c' }, // Blue-grey concrete — visible ramp abutment
+        layerId: 'transit_deck'
       });
     }
 
@@ -1352,61 +1461,87 @@ export class ProceduralGeometryGenerator {
     const roadAsphaltWidth = laneCount * laneWidth + dividerWidth;
     const roadSlabWidth = roadAsphaltWidth + 1.2;
 
+    // ─── Road deck color palette (same high-contrast as solo flyover) ─────────
+    const RD_SLAB      = '#94a3b8'; // light concrete
+    const RD_ASPHALT   = mf.roadClass === 'highway' ? '#0a0f1a' : '#111827';
+    const RD_BARRIER   = '#94a3b8';
+    const RD_DIVIDER   = '#e2e8f0';
+    const RD_DIVIDER_S = '#f59e0b';
+    const RD_GIRDER    = '#334155';
+
+    // ─── Metro deck color palette (blue-tinted — instantly distinguishable) ───
+    const MT_BEAM      = '#1e3a5f'; // dark navy blue concrete beam
+    const MT_SURFACE   = '#0f172a'; // near-black track bed
+    const MT_BARRIER   = '#1d4ed8'; // bright blue parapet
+    const MT_RAIL      = '#bae6fd'; // steel blue rail
+    const MT_UNDERSIDE = '#1e40af'; // deep blue underside of metro beam
+
     // ==========================================
     // 1. MIDDLE LEVEL: ROAD DECK
     // ==========================================
-    // A. Concrete Deck Slab
+    // A. Concrete Deck Slab (light concrete)
     const roadSlab = this.generateRibbon(coords, -roadSlabWidth / 2, roadSlabWidth / 2, -0.3, 0.3);
     meshes.push({
       positions: new Float64Array(roadSlab.positions),
       indices: new Uint32Array(roadSlab.indices),
-      material: { type: 'solid', color: '#64748b' }, // Medium concrete grey
+      material: { type: 'solid', color: RD_SLAB },
+      layerId: 'transit_deck'
+    });
+
+    // A2. Road slab underside (visible from below)
+    const roadSlabBot = this.generateRibbon(coords, -roadSlabWidth / 2, roadSlabWidth / 2, -0.3, 0);
+    const rdBotFlipped = new Uint32Array(roadSlabBot.indices.length);
+    for (let bi = 0; bi < roadSlabBot.indices.length; bi += 3) {
+      rdBotFlipped[bi] = roadSlabBot.indices[bi + 2];
+      rdBotFlipped[bi + 1] = roadSlabBot.indices[bi + 1];
+      rdBotFlipped[bi + 2] = roadSlabBot.indices[bi];
+    }
+    meshes.push({
+      positions: new Float64Array(roadSlabBot.positions),
+      indices: rdBotFlipped,
+      material: { type: 'solid', color: '#c0cad4' },
       layerId: 'transit_deck'
     });
 
     // B. Asphalt Surface
-    const asphaltColor = mf.roadClass === 'highway' ? '#0f172a' : '#1e293b';
     const roadAsphalt = this.generateRibbon(coords, -roadAsphaltWidth / 2, roadAsphaltWidth / 2, 0.02, 0);
     meshes.push({
       positions: new Float64Array(roadAsphalt.positions),
       indices: new Uint32Array(roadAsphalt.indices),
-      material: { type: 'solid', color: asphaltColor },
+      material: { type: 'solid', color: RD_ASPHALT },
       layerId: 'transit_deck'
     });
 
     // C. Outer Side Barriers (Parapets) (LOD Details)
-    const leftRoadBarrier = this.generateRibbon(coords, -roadSlabWidth / 2, -roadSlabWidth / 2 + 0.4, 0.0, 0.8);
+    const leftRoadBarrier = this.generateRibbon(coords, -roadSlabWidth / 2, -roadSlabWidth / 2 + 0.4, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(leftRoadBarrier.positions),
       indices: new Uint32Array(leftRoadBarrier.indices),
-      material: { type: 'solid', color: '#64748b' },
+      material: { type: 'solid', color: RD_BARRIER },
       layerId: 'transit_deck_details'
     });
-
-    const rightRoadBarrier = this.generateRibbon(coords, roadSlabWidth / 2 - 0.4, roadSlabWidth / 2, 0.0, 0.8);
+    const rightRoadBarrier = this.generateRibbon(coords, roadSlabWidth / 2 - 0.4, roadSlabWidth / 2, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(rightRoadBarrier.positions),
       indices: new Uint32Array(rightRoadBarrier.indices),
-      material: { type: 'solid', color: '#64748b' },
+      material: { type: 'solid', color: RD_BARRIER },
       layerId: 'transit_deck_details'
     });
 
-    // D. Central Divider Concrete Median — Jersey barrier style
+    // D. Central Divider
     if (mf.hasDivider && dividerWidth > 0.1) {
-      // Main concrete barrier body — raised 0.8m above asphalt surface
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.8);
+      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.85);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: '#b0bec5' }, // Light concrete grey
+        material: { type: 'solid', color: RD_DIVIDER },
         layerId: 'transit_deck_details'
       });
-      // Yellow stripe on top of barrier for visibility
-      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.85, 0);
+      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.9, 0);
       meshes.push({
         positions: new Float64Array(dividerStripe.positions),
         indices: new Uint32Array(dividerStripe.indices),
-        material: { type: 'solid', color: '#fbbf24' },
+        material: { type: 'solid', color: RD_DIVIDER_S },
         layerId: 'transit_deck_details'
       });
     } else if (!mf.isOneWay) {
@@ -1414,14 +1549,14 @@ export class ProceduralGeometryGenerator {
       meshes.push({
         positions: new Float64Array(lineLeft.positions),
         indices: new Uint32Array(lineLeft.indices),
-        material: { type: 'solid', color: '#fbbf24' },
+        material: { type: 'solid', color: '#f59e0b' },
         layerId: 'transit_deck'
       });
       const lineRight = this.generateRibbon(coords, 0.04, 0.12, 0.03, 0);
       meshes.push({
         positions: new Float64Array(lineRight.positions),
         indices: new Uint32Array(lineRight.indices),
-        material: { type: 'solid', color: '#fbbf24' },
+        material: { type: 'solid', color: '#f59e0b' },
         layerId: 'transit_deck'
       });
     }
@@ -1431,14 +1566,14 @@ export class ProceduralGeometryGenerator {
     const lanesB = mf.isOneWay ? 0 : Math.floor(laneCount / 2);
 
     if (lanesA > 1) {
-      const startOffset = mf.hasDivider ? -roadAsphaltWidth / 2 : -roadAsphaltWidth / 2;
+      const startOffset = -roadAsphaltWidth / 2;
       for (let i = 1; i < lanesA; i++) {
         const offset = startOffset + i * laneWidth;
         const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
         meshes.push({
           positions: new Float64Array(mark.positions),
           indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#cbd5e1' },
+          material: { type: 'solid', color: '#e2e8f0' },
           layerId: 'transit_deck'
         });
       }
@@ -1451,82 +1586,107 @@ export class ProceduralGeometryGenerator {
         meshes.push({
           positions: new Float64Array(mark.positions),
           indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#cbd5e1' },
+          material: { type: 'solid', color: '#e2e8f0' },
           layerId: 'transit_deck'
         });
       }
     }
 
-    // F. Twin Road Box Girders Underneath (LOD Details)
-    const leftRoadGirder = this.generateRibbon(coords, -roadSlabWidth * 0.4, -roadSlabWidth * 0.08, -0.9, 0.6);
+    // F. Twin Road Box Girders Underneath (dark charcoal)
+    const leftRoadGirder = this.generateRibbon(coords, -roadSlabWidth * 0.42, -roadSlabWidth * 0.10, -0.95, 0.65);
     meshes.push({
       positions: new Float64Array(leftRoadGirder.positions),
       indices: new Uint32Array(leftRoadGirder.indices),
-      material: { type: 'solid', color: '#475569' },
+      material: { type: 'solid', color: RD_GIRDER },
       layerId: 'transit_deck_details'
     });
-    const rightRoadGirder = this.generateRibbon(coords, roadSlabWidth * 0.08, roadSlabWidth * 0.4, -0.9, 0.6);
+    const rightRoadGirder = this.generateRibbon(coords, roadSlabWidth * 0.10, roadSlabWidth * 0.42, -0.95, 0.65);
     meshes.push({
       positions: new Float64Array(rightRoadGirder.positions),
       indices: new Uint32Array(rightRoadGirder.indices),
-      material: { type: 'solid', color: '#475569' },
+      material: { type: 'solid', color: RD_GIRDER },
       layerId: 'transit_deck_details'
     });
 
     // ==========================================
-    // 2. TOP LEVEL: METRO DECK
+    // 2. TOP LEVEL: METRO DECK (BLUE-TINTED — DISTINCT FROM ROAD DECK)
     // ==========================================
     const metroDeckWidth = 5.0;
-    
-    // A. Concrete Metro Deck slab
+
+    // A. Metro structural beam — dark navy blue
     const metroSlab = this.generateRibbon(metroCoords, -metroDeckWidth / 2, metroDeckWidth / 2, -0.4, 0.4);
     meshes.push({
       positions: new Float64Array(metroSlab.positions),
       indices: new Uint32Array(metroSlab.indices),
-      material: { type: 'solid', color: '#1e293b' }, // Dark transit slab
+      material: { type: 'solid', color: MT_BEAM },
       layerId: 'transit_deck'
     });
 
-    // B. Concrete Metro Girder Underneath (LOD Details)
+    // A2. Metro beam underside (deep blue — clearly different from road underside)
+    const metroSlabBot = this.generateRibbon(metroCoords, -metroDeckWidth / 2, metroDeckWidth / 2, -0.4, 0);
+    const mtBotFlipped = new Uint32Array(metroSlabBot.indices.length);
+    for (let bi = 0; bi < metroSlabBot.indices.length; bi += 3) {
+      mtBotFlipped[bi] = metroSlabBot.indices[bi + 2];
+      mtBotFlipped[bi + 1] = metroSlabBot.indices[bi + 1];
+      mtBotFlipped[bi + 2] = metroSlabBot.indices[bi];
+    }
+    meshes.push({
+      positions: new Float64Array(metroSlabBot.positions),
+      indices: mtBotFlipped,
+      material: { type: 'solid', color: MT_UNDERSIDE },
+      layerId: 'transit_deck'
+    });
+
+    // B. Near-black track bed surface
+    const metroSurface = this.generateRibbon(metroCoords, -metroDeckWidth / 2 + 0.35, metroDeckWidth / 2 - 0.35, 0.02, 0);
+    meshes.push({
+      positions: new Float64Array(metroSurface.positions),
+      indices: new Uint32Array(metroSurface.indices),
+      material: { type: 'solid', color: MT_SURFACE },
+      layerId: 'transit_deck'
+    });
+
+    // B. Metro Girder Underneath (deep charcoal)
     const metroGirder = this.generateRibbon(metroCoords, -metroDeckWidth * 0.4, metroDeckWidth * 0.4, -0.9, 0.5);
     meshes.push({
       positions: new Float64Array(metroGirder.positions),
       indices: new Uint32Array(metroGirder.indices),
-      material: { type: 'solid', color: '#475569' },
+      material: { type: 'solid', color: '#0f2744' },
       layerId: 'transit_deck_details'
     });
 
-    // C. Glowing rails (LOD Details)
+    // C. Steel-blue glowing rails
     const railLeft = this.generateRibbon(metroCoords, -1.5, -1.3, 0.1, 0.1);
     meshes.push({
       positions: new Float64Array(railLeft.positions),
       indices: new Uint32Array(railLeft.indices),
-      material: { type: 'solid', color: '#a5f3fc' }, // cyan glow
+      material: { type: 'solid', color: MT_RAIL },
       layerId: 'transit_rails'
     });
     const railRight = this.generateRibbon(metroCoords, 1.3, 1.5, 0.1, 0.1);
     meshes.push({
       positions: new Float64Array(railRight.positions),
       indices: new Uint32Array(railRight.indices),
-      material: { type: 'solid', color: '#a5f3fc' },
+      material: { type: 'solid', color: MT_RAIL },
       layerId: 'transit_rails'
     });
 
-    // D. Outer Side Barriers (Parapets) (LOD Details)
-    const leftMetroBarrier = this.generateRibbon(metroCoords, -metroDeckWidth / 2, -metroDeckWidth / 2 + 0.35, 0.0, 0.8);
+    // D. Blue Side Barriers — clearly different from road deck grey barriers
+    const leftMetroBarrier = this.generateRibbon(metroCoords, -metroDeckWidth / 2, -metroDeckWidth / 2 + 0.35, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(leftMetroBarrier.positions),
       indices: new Uint32Array(leftMetroBarrier.indices),
-      material: { type: 'solid', color: '#334155' },
+      material: { type: 'solid', color: MT_BARRIER },
       layerId: 'transit_deck_details'
     });
-    const rightMetroBarrier = this.generateRibbon(metroCoords, metroDeckWidth / 2 - 0.35, metroDeckWidth / 2, 0.0, 0.8);
+    const rightMetroBarrier = this.generateRibbon(metroCoords, metroDeckWidth / 2 - 0.35, metroDeckWidth / 2, 0.0, 0.9);
     meshes.push({
       positions: new Float64Array(rightMetroBarrier.positions),
       indices: new Uint32Array(rightMetroBarrier.indices),
-      material: { type: 'solid', color: '#334155' },
+      material: { type: 'solid', color: MT_BARRIER },
       layerId: 'transit_deck_details'
     });
+
 
     // ==========================================
     // 3. PILLARS & PIER CAPS (DOUBLE-DECKER SYSTEM)
