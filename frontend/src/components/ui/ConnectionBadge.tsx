@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { connectionState, ConnectionState } from '../../lib/api';
+import { connectionState, type ConnectionState } from '../../lib/api';
 import { RefreshCw, Wifi, WifiOff, Loader2 } from 'lucide-react';
 
 export const ConnectionBadge: React.FC = () => {
@@ -12,8 +12,13 @@ export const ConnectionBadge: React.FC = () => {
     });
     // Check initial connection
     connectionState.checkConnection();
+    // While offline, poll so the badge recovers on its own when the backend returns
+    const poll = setInterval(() => {
+      if (connectionState.current === 'offline') connectionState.checkConnection();
+    }, 10000);
     return () => {
       unsubscribe();
+      clearInterval(poll);
     };
   }, []);
 

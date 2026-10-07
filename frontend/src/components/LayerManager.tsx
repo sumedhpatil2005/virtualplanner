@@ -51,8 +51,8 @@ export const LayerManager: React.FC = () => {
               <div className="space-y-1">
                 {catLayers.map((layer) => {
                   return (
-                    <div 
-                      key={layer.id} 
+                    <div
+                      key={layer.id}
                       className={`flex flex-col gap-1.5 p-1.5 rounded-lg transition-all ${
                         layer.visible ? 'bg-slate-900/20' : 'opacity-60'
                       }`}
@@ -63,23 +63,32 @@ export const LayerManager: React.FC = () => {
                         </span>
                         <button
                           onClick={() => handleToggle(layer.id, layer.visible)}
+                          aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
+                          aria-pressed={layer.visible}
                           className="text-slate-400 hover:text-slate-200 cursor-pointer transition"
                         >
                           {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
                       </div>
 
-                      {/* Opacity slider for visible layers */}
-                      {layer.visible && (
+                      {layer.id === 'terrain' && (
+                        <span className="text-[9px] text-slate-500 leading-snug">
+                          Needs a Cesium ion token. Models sit at sea level, so terrain can hide them.
+                        </span>
+                      )}
+
+                      {/* Opacity slider for visible layers that can actually render transparency */}
+                      {layer.visible && layer.supportsOpacity && (
                         <div className="flex items-center gap-1.5 px-0.5">
                           <Sliders size={9} className="text-slate-500" />
-                          <input 
+                          <input
                             type="range"
                             min="0"
                             max="1"
                             step="0.05"
                             value={layer.opacity}
                             onChange={(e) => handleOpacityChange(layer.id, Number(e.target.value))}
+                            aria-label={`${layer.name} opacity`}
                             className="w-full h-0.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                           />
                           <span className="text-[8px] text-slate-500 w-5 text-right">

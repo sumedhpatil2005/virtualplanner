@@ -52,7 +52,11 @@ vi.mock('cesium', () => ({
     toDegrees: vi.fn((c: any) => c),
   },
   Color: {
-    fromCssColorString: vi.fn(() => ({})),
+    // Minimal colour value: renderers scale alpha for layer opacity
+    fromCssColorString: vi.fn(() => {
+      const make = (alpha: number): any => ({ alpha, withAlpha: (a: number) => make(a) });
+      return make(1);
+    }),
     fromBytes: vi.fn(() => ({})),
     WHITE: {},
     RED: {},

@@ -247,8 +247,6 @@ async def _run_spike_in_dir(
         "--edge-files", str(edg_file),
         "--output-file", str(net_file),
         "--junctions.join",                 # merge close junctions (common OSM issue)
-        "--remove-edges.isolated",          # drop orphan edges
-        "--geometry.remove",                # simplify straight edges
         "--no-turnarounds",                 # no U-turns on arterials
         "--verbose",
     ]
@@ -287,6 +285,7 @@ async def _run_spike_in_dir(
         "--seed", str(vehicle_seed),
         "-p", "5",    # one departure every 5 seconds ≈ 120 vehicles
         "--validate",
+        "--allow-fringe",
     ]
     logger.info("[SUMO spike] Generating random trips…")
     rt_result = await asyncio.to_thread(

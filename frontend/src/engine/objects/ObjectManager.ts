@@ -1,10 +1,23 @@
 import type { CityObject, RoadObject, RoadSectionProfile, CarriagewayProfile, RoadsideProfile } from './types';
 import { applyFlyoverElevationProfile } from './flyoverHelper';
+import { bridgeHeights } from './bridgeElevation';
+import { cacheGetMany, cachePutMany } from '../storage/localCache';
+import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
+
+/** Objects per save request, and requests in flight at once, when saving many objects. */
+const SAVE_CHUNK = 1000;
+const SAVES_AT_ONCE = 3;
 
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
   private onChangeListener: ((changedTypes: Set<string>) => void)[] = [];
+  /**
+   * OpenStreetMap roads the user deleted, kept on this device so that filling
+   * in missing OSM roads never brings them back.
+   */
+  private deletedOsm: Set<string> | null = null;
+  private deletedOsmLoad: Promise<Set<string>> | null = null;
 
   constructor() {}
 
@@ -37,6 +50,47 @@ export class ObjectManager {
     await apiPostBatch('/api/objects/batch', objs.map(o => this.mapToSchema(o)));
   }
 
+  /** Ids of OpenStreetMap roads the user deleted. */
+  public deletedOsmIds(): Promise<Set<string>> {
+    if (this.deletedOsm) return Promise.resolve(this.deletedOsm);
+    this.deletedOsmLoad ??= cacheGetMany<string[]>('osm-deleted', ['ids']).then(([ids]) => {
+      // Deletions made before the list finished loading are kept too
+      this.deletedOsm = new Set([...(ids ?? []), ...(this.deletedOsm ?? [])]);
+      return this.deletedOsm;
+    });
+    return this.deletedOsmLoad;
+  }
+
+  private noteOsmDeletions(ids: string[], deleted: boolean) {
+    const osm = ids.filter(id => id.startsWith('osm_'));
+    if (osm.length === 0) return;
+    this.deletedOsm ??= new Set();
+    for (const id of osm) {
+      if (deleted) this.deletedOsm.add(id);
+      else this.deletedOsm.delete(id);
+    }
+    void cachePutMany('osm-deleted', [['ids', [...this.deletedOsm]]]);
+  }
+
+  /**
+   * Adds objects (all at once: one update for the map and the network) and
+   * waits until the backend has saved them, in chunks, a few at a time.
+   * Rejects if any chunk was not saved, so the caller can avoid recording
+   * work as done when it is not.
+   */
+  public async addMultipleAndSave(objs: CityObject[], chunk = SAVE_CHUNK): Promise<void> {
+    if (objs.length === 0) return;
+    this.addMultiple(objs, true);
+    const saved = objs.map(o => this.objects.get(o.id)!).filter(Boolean);
+    const chunks: CityObject[][] = [];
+    for (let i = 0; i < saved.length; i += chunk) chunks.push(saved.slice(i, i + chunk));
+    let nextChunk = 0;
+    const worker = async () => {
+      while (nextChunk < chunks.length) await this.syncPostMultiple(chunks[nextChunk++]);
+    };
+    await Promise.all(Array.from({ length: Math.min(SAVES_AT_ONCE, chunks.length) }, worker));
+  }
+
   public onChange(callback: (changedTypes: Set<string>) => void) {
     this.onChangeListener.push(callback);
     return () => {
@@ -47,6 +101,17 @@ export class ObjectManager {
   public notify(changedTypes?: Set<string>) {
     const types = changedTypes || new Set<string>();
     this.onChangeListener.forEach(cb => cb(types));
+  }
+
+  /**
+   * Raises imported OSM bridges and flyovers to deck height (in memory; see
+   * bridgeElevation). Changed roads are stored as new objects, as with any
+   * update, so the renderer redraws them.
+   */
+  public liftBridges() {
+    bridgeHeights(this.objects.values()).forEach((coordinates, road) => {
+      this.objects.set(road.id, { ...road, coordinates });
+    });
   }
 
   public getAll(): CityObject[] {
@@ -189,6 +254,7 @@ export class ObjectManager {
     }
 
     this.objects.set(obj.id, fresh);
+    if (this.deletedOsm?.has(obj.id)) this.noteOsmDeletions([obj.id], false);
     this.notify(new Set([fresh.type]));
     if (!skipSync) {
       this.syncPost(fresh).catch((e) => {
@@ -217,6 +283,9 @@ export class ObjectManager {
     freshObjs.forEach(obj => {
       this.objects.set(obj.id, obj);
     });
+    if (this.deletedOsm && freshObjs.some(o => this.deletedOsm!.has(o.id))) this.noteOsmDeletions(freshObjs.map(o => o.id), false);
+    // New OSM bridges get their deck heights, and their approaches may be among these roads
+    if (freshObjs.some(o => o.type === 'road' && o.osmProvenance)) this.liftBridges();
 
     this.notify(new Set(freshObjs.map(o => o.type)));
 
@@ -258,6 +327,7 @@ export class ObjectManager {
     const existing = this.objects.get(id);
     if (existing) {
       this.objects.delete(id);
+      if (existing.scenarioId === BASE_SCENARIO_ID) this.noteOsmDeletions([id], true);
       this.notify(new Set([existing.type]));
       if (!skipSync) {
         this.syncDelete(id).catch((e) => {
@@ -281,6 +351,7 @@ export class ObjectManager {
     });
 
     if (changed) {
+      this.noteOsmDeletions(objs.filter(o => o.scenarioId === BASE_SCENARIO_ID).map(o => o.id), true);
       this.notify(new Set(objs.map(o => o.type)));
       if (!skipSync && idsToSync.length > 0) {
         this.syncDeleteMultiple(idsToSync).catch((e) => {

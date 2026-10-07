@@ -5,3 +5,4 @@ pydantic>=2.0.0
 geoalchemy2>=0.14.0
 psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
+osmium>=4.0

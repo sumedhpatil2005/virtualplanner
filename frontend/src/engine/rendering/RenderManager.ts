@@ -6,12 +6,13 @@ import { SpatialHashGrid } from './spatial/SpatialHashGrid';
 import { RoadRenderer } from './renderers/RoadRenderer';
 import { BuildingRenderer } from './renderers/BuildingRenderer';
 import { TransitRenderer } from './renderers/TransitRenderer';
+import { GeometryContext } from './geometry/GeometryContext';
 
 export class RenderManager {
   private generator = new ProceduralGeometryGenerator();
   private meshCache = new MeshCache();
   private spatialGrid = new SpatialHashGrid(300); // 300m uniform metric cells
-  
+
   private roadRenderer!: RoadRenderer;
   private buildingRenderer!: BuildingRenderer;
   private transitRenderer!: TransitRenderer;
@@ -20,22 +21,72 @@ export class RenderManager {
   private loadedTiles = new Set<string>();
   private activeSelectedId: string | null = null;
 
+  // Opacity per registry layer id, plus a resolver from object layer id to registry id
+  private layerOpacity = new Map<string, number>();
+  private resolveLayer: (rawLayerId: string) => string = id => id;
+  private opacityRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  /** Lookup index over allObjects; dropped whenever the object set changes and rebuilt on demand. */
+  private sceneContext: GeometryContext | null = null;
+
+  constructor() {
+    // Meshes are generated lazily when a tile first needs them (and regenerated
+    // after LRU eviction), so objects in tiles never viewed cost nothing.
+    this.meshCache.setLoader(objId => {
+      const obj = this.allObjects.get(objId);
+      if (!obj) return undefined;
+      this.sceneContext ??= new GeometryContext(this.allObjects);
+      return this.generator.generateMeshData(obj, this.sceneContext);
+    });
+  }
+
   public initialize(viewer: Viewer): void {
-    this.roadRenderer = new RoadRenderer(viewer, this.meshCache, this.spatialGrid);
-    this.buildingRenderer = new BuildingRenderer(viewer, this.meshCache, this.spatialGrid);
-    this.transitRenderer = new TransitRenderer(viewer, this.meshCache, this.spatialGrid);
+    const getOpacity = (objId: string) => this.getObjectOpacity(objId);
+    this.roadRenderer = new RoadRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
+    this.buildingRenderer = new BuildingRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
+    this.transitRenderer = new TransitRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
+  }
+
+  public getObjectOpacity(objId: string): number {
+    const obj = this.allObjects.get(objId);
+    if (!obj) return 1;
+    return this.layerOpacity.get(this.resolveLayer(obj.layerId)) ?? 1;
+  }
+
+  /**
+   * Applies layer opacities. Changed values rebuild the loaded tiles, debounced
+   * so dragging a slider does not rebuild on every intermediate value.
+   */
+  public setLayerOpacities(opacities: Map<string, number>, resolveLayer?: (rawLayerId: string) => string): void {
+    if (resolveLayer) this.resolveLayer = resolveLayer;
+    let changed = opacities.size !== this.layerOpacity.size;
+    opacities.forEach((v, k) => {
+      if (this.layerOpacity.get(k) !== v) changed = true;
+    });
+    if (!changed) return;
+    this.layerOpacity = new Map(opacities);
+    if (!this.roadRenderer) return;
+
+    if (this.opacityRefreshTimeout) clearTimeout(this.opacityRefreshTimeout);
+    this.opacityRefreshTimeout = setTimeout(() => {
+      this.opacityRefreshTimeout = null;
+      this.roadRenderer.refreshAll();
+      this.buildingRenderer.refreshAll();
+      this.transitRenderer.refreshAll();
+    }, 120);
   }
 
   /**
    * Reconciles the RenderManager's scene state against the ObjectManager's state
    */
   public reconcile(currentObjects: CityObject[]): void {
-    console.log('[STARTUP] Rendering START');
     const currentMap = new Map(currentObjects.map(o => [o.id, o]));
 
     // 1. Identify deleted objects
-    this.allObjects.forEach((_, id) => {
+    const removedTypes = new Set<string>();
+    this.allObjects.forEach((obj, id) => {
       if (!currentMap.has(id)) {
+        removedTypes.add(obj.type);
         this.deregisterObject(id);
       }
     });
@@ -48,15 +99,80 @@ export class RenderManager {
       const existing = this.allObjects.get(obj.id);
       if (!existing) {
         toRegister.push(obj);
-      } else if (existing.updatedAt !== obj.updatedAt || JSON.stringify(existing) !== JSON.stringify(obj)) {
+      } else if (existing !== obj) {
+        // ObjectManager never mutates a stored object: every add/update stores a
+        // new object, so identity is the change version. This replaces two
+        // JSON.stringify calls per object on every change (~15k for one layer toggle).
         toUpdate.push(obj);
       }
     });
+
+    if (toRegister.length === 0 && toUpdate.length === 0 && removedTypes.size === 0) return;
 
     // 2. Pre-populate allObjects map with all current objects so that nearest-track lookups succeed
     currentObjects.forEach(obj => {
       this.allObjects.set(obj.id, obj);
     });
+    this.sceneContext = null;
+
+    // Track-aligned stations orient themselves from nearby tracks, so when a
+    // track appears, moves or disappears those stations must be rebuilt too.
+    const trackChanged =
+      removedTypes.has('metro_line') || removedTypes.has('metro_flyover') ||
+      [...toRegister, ...toUpdate].some(o => o.type === 'metro_line' || o.type === 'metro_flyover');
+    if (trackChanged) {
+      const pending = new Set([...toRegister, ...toUpdate].map(o => o.id));
+      currentObjects.forEach(o => {
+        if (o.type === 'metro_station' && o.alignToTrack !== false && !pending.has(o.id)) {
+          toUpdate.push(o);
+        }
+      });
+    }
+
+    // Roads leave footpaths and markings out where other roads meet them, so the
+    // roads around a new or changed road are rebuilt to fit their junctions
+    const isRoadLike = (o: CityObject) => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover';
+    const changedRoads = [...toRegister, ...toUpdate].filter(isRoadLike);
+    if (changedRoads.length > 0 && changedRoads.length < currentObjects.length / 2) {
+      const pad = 0.0003; // about 30 m
+      const box = (o: CityObject) => {
+        const c = o.coordinates as number[][];
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of c) {
+          if (p[0] < x0) x0 = p[0];
+          if (p[0] > x1) x1 = p[0];
+          if (p[1] < y0) y0 = p[1];
+          if (p[1] > y1) y1 = p[1];
+        }
+        return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+      };
+      // Changed roads' boxes in a coarse grid, so each road checks only the few nearby
+      const cell = (v: number) => Math.floor(v / 0.002);
+      const grid = new Map<string, number[][]>();
+      for (const b of changedRoads.map(box)) {
+        for (let x = cell(b[0]); x <= cell(b[2]); x++) {
+          for (let y = cell(b[1]); y <= cell(b[3]); y++) {
+            const key = x + ':' + y;
+            const list = grid.get(key);
+            if (list) list.push(b);
+            else grid.set(key, [b]);
+          }
+        }
+      }
+      const pending = new Set([...toRegister, ...toUpdate].map(o => o.id));
+      currentObjects.forEach(o => {
+        if (!isRoadLike(o) || pending.has(o.id) || !o.coordinates?.length) return;
+        const [x0, y0, x1, y1] = box(o);
+        for (let x = cell(x0); x <= cell(x1); x++) {
+          for (let y = cell(y0); y <= cell(y1); y++) {
+            if (grid.get(x + ':' + y)?.some(b => b[0] <= x1 && b[2] >= x0 && b[1] <= y1 && b[3] >= y0)) {
+              toUpdate.push(o);
+              return;
+            }
+          }
+        }
+      });
+    }
 
     // 3. Register and update the new or changed objects
     toRegister.forEach(obj => {
@@ -72,6 +188,7 @@ export class RenderManager {
    */
   public registerObject(obj: CityObject): void {
     this.allObjects.set(obj.id, obj);
+    this.sceneContext = null;
 
     // 1. Get location coordinates for spatial grid
     const coords: [number, number, number] | [number, number, number][] | undefined = obj.coordinates;
@@ -79,9 +196,7 @@ export class RenderManager {
       this.spatialGrid.insertObject(obj.id, coords);
     }
 
-    // 2. Pre-generate MeshData and store in cache ahead of rendering
-    const meshes = this.generator.generateMeshData(obj, this.allObjects);
-    this.meshCache.set(obj.id, meshes);
+    // 2. Meshes are generated on demand by the cache loader when a tile builds
 
     // 3. If the object resides in any already loaded tile, render it immediately
     if (coords && coords.length > 0) {
@@ -118,6 +233,7 @@ export class RenderManager {
    */
   public deregisterObject(objId: string): void {
     this.allObjects.delete(objId);
+    this.sceneContext = null;
     this.spatialGrid.remove(objId);
     this.meshCache.invalidate(objId);
 
@@ -177,7 +293,12 @@ export class RenderManager {
    * Selection highlight toggle
    */
   public setSelection(objId: string | null, isSelected: boolean): void {
-    if (isSelected && objId) {
+    // Nothing selected any more: take the highlight off whatever had it
+    if (!objId) {
+      if (this.activeSelectedId) this.setSelection(this.activeSelectedId, false);
+      return;
+    }
+    if (isSelected) {
       if (this.activeSelectedId && this.activeSelectedId !== objId) {
         this.setSelection(this.activeSelectedId, false);
       }
@@ -185,7 +306,7 @@ export class RenderManager {
       this.roadRenderer.setSelection(objId, true);
       this.buildingRenderer.setSelection(objId, true);
       this.transitRenderer.setSelection(objId, true);
-    } else if (objId) {
+    } else {
       if (this.activeSelectedId === objId) {
         this.activeSelectedId = null;
       }
@@ -199,9 +320,15 @@ export class RenderManager {
    * Clears everything
    */
   public clear(): void {
-    this.roadRenderer.clear();
-    this.buildingRenderer.clear();
-    this.transitRenderer.clear();
+    if (this.opacityRefreshTimeout) {
+      clearTimeout(this.opacityRefreshTimeout);
+      this.opacityRefreshTimeout = null;
+    }
+    this.roadRenderer?.clear();
+    this.buildingRenderer?.clear();
+    this.transitRenderer?.clear();
+    this.allObjects.forEach((_, id) => this.spatialGrid.remove(id));
+    this.sceneContext = null;
     this.meshCache.clear();
     this.allObjects.clear();
     this.loadedTiles.clear();
@@ -215,13 +342,11 @@ export class RenderManager {
     const obj = this.allObjects.get(objId);
     if (!obj) return;
 
-    const meshes = this.meshCache.get(objId);
-    if (!meshes || meshes.length === 0) return;
-
+    // Meshes are fetched (and generated if needed) when the tile batch is built
     if (obj.type === 'road') {
-      this.roadRenderer.render(objId, meshes);
+      this.roadRenderer.render(objId);
     } else if (obj.type === 'building') {
-      this.buildingRenderer.render(objId, meshes);
+      this.buildingRenderer.render(objId);
     } else if (
       obj.type === 'flyover' ||
       obj.type === 'metro_flyover' ||
@@ -230,7 +355,7 @@ export class RenderManager {
       obj.type === 'utility' ||
       obj.type === 'junction'
     ) {
-      this.transitRenderer.render(objId, meshes);
+      this.transitRenderer.render(objId);
     }
   }
 

@@ -1,22 +1,36 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Viewport3D } from './components/Viewport3D';
 import { Toolbar } from './components/Toolbar';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { InfoPanel } from './components/InfoPanel';
 import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { SimulationPanel } from './components/SimulationPanel';
+import { ModeBar } from './components/ModeBar';
 import { ConnectionBadge } from './components/ui/ConnectionBadge';
-import { Compass, Layers, BarChart3, Activity, X } from 'lucide-react';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
+import { ShortcutsOverlay } from './components/ui/ShortcutsOverlay';
+import { CoachMarks } from './components/ui/CoachMarks';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useAppMode, useSelectedId } from './hooks/useAppMode';
+import { engineInstance } from './engine/TwinCityEngine';
+import { Compass, Layers, X, Keyboard, FolderOpen } from 'lucide-react';
+
+const pillBase = 'h-11 px-4 rounded-full flex items-center gap-2 border border-white/10 shadow-xl cursor-pointer transition text-sm font-semibold backdrop-blur-xl';
+const pillClass = `${pillBase} bg-slate-950/90 text-slate-200 hover:text-white`;
 
 function App() {
+  const mode = useAppMode();
+  const selectedId = useSelectedId();
   const [isLayersOpen, setIsLayersOpen] = useState(false);
-  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(true);
-  const [isSimulationOpen, setIsSimulationOpen] = useState(false);
+  // View mode's project list can be put away; picking something brings the panel back
+  const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Expose global showToast helper
   useEffect(() => {
-    console.log('[STARTUP] UI ready');
     let timeoutId: any;
     (window as any).showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
       setToast({ message, type });
@@ -29,41 +43,77 @@ function App() {
     };
   }, []);
 
+  useKeyboardShortcuts({
+    onRequestDelete: setPendingDeleteId,
+    onToggleHelp: () => setIsHelpOpen(open => !open),
+  });
+
+  const closeHelp = useCallback(() => setIsHelpOpen(false), []);
+  const cancelDelete = useCallback(() => setPendingDeleteId(null), []);
+  const confirmDelete = useCallback(() => {
+    if (pendingDeleteId && engineInstance.deleteObjectWithHistory(pendingDeleteId)) {
+      (window as any).showToast?.('Deleted. Ctrl+Z to undo.', 'info');
+    }
+    setPendingDeleteId(null);
+  }, [pendingDeleteId]);
+
+  const pendingDeleteObj = pendingDeleteId ? engineInstance.objects.getById(pendingDeleteId) : undefined;
+
+  // One panel on the right, depending on what the user is doing
+  const isDebugSelection = !!selectedId && selectedId.startsWith('debug_');
+  const panel =
+    mode === 'simulate' ? <SimulationPanel />
+    : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
+    : isProjectsOpen || selectedId ? <InfoPanel onClose={() => setIsProjectsOpen(false)} />
+    : null;
+
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 select-none z-0">
-      
-      {/* 3D Immersive Workspace (CesiumJS Canvas) */}
-      <div className="absolute inset-0 w-full h-full z-0">
+    <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''}`}>
+      {/* 3D map */}
+      <div className="absolute inset-0 w-full h-full z-0 select-none">
         <Viewport3D />
       </div>
 
-      {/* Floating GUI Panels (Overlaid on top of Cesium) */}
-      
-      {/* 1. TOP LEFT: Branding + Scenario selection */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-auto w-80">
-        <div className="glass-panel rounded-2xl p-4 border border-indigo-500/10 flex items-center justify-between shadow-2xl">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-indigo-950/80 border border-indigo-500/35 text-indigo-300">
-              <Compass size={22} className="animate-spin-slow" />
+      {/* Top left: name, connection, scenario */}
+      <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-2 pointer-events-auto w-72">
+        <div className="w-full rounded-2xl px-3 py-2.5 flex items-center justify-between bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-indigo-500/15 text-indigo-300">
+              <Compass size={18} />
             </div>
-            <div>
-              <h1 className="text-sm font-bold text-slate-200 tracking-wider m-0 p-0 leading-none">
-                TwinCity Engine
-              </h1>
-              <p className="text-[9px] text-indigo-400/90 font-semibold font-mono tracking-wider mt-1 uppercase">
-                Digital Twin Platform v2.0
-              </p>
-            </div>
+            <span className="text-base font-semibold text-white">TwinCity</span>
           </div>
-          <ConnectionBadge />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsHelpOpen(true)}
+              title="Keyboard shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer transition"
+            >
+              <Keyboard size={16} />
+            </button>
+            <ConnectionBadge />
+          </div>
         </div>
         <ScenarioSelector />
       </div>
 
-      {/* 2. FAR LEFT CENTER: Collapsible horizontal CAD toolbar */}
-      <Toolbar />
+      {/* Top centre: mode, and Build's tools */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
+        <ModeBar />
+        {mode === 'build' && <Toolbar />}
+      </div>
 
-      {/* 3. BOTTOM LEFT: Collapsible Layer Control Panel */}
+      {/* Right: the panel for the current mode */}
+      <div className="absolute right-4 top-4 bottom-4 z-20 flex flex-col items-end pointer-events-none">
+        {panel ?? (mode === 'view' && (
+          <button onClick={() => setIsProjectsOpen(true)} className={`${pillClass} pointer-events-auto`}>
+            <FolderOpen size={16} /> Your projects
+          </button>
+        ))}
+      </div>
+
+      {/* Bottom left: layers */}
       <div className="absolute bottom-4 left-4 z-20 pointer-events-auto flex flex-col items-start gap-2">
         {isLayersOpen && (
           <div className="animate-fade-in mb-1">
@@ -72,77 +122,46 @@ function App() {
         )}
         <button
           onClick={() => setIsLayersOpen(!isLayersOpen)}
-          title={isLayersOpen ? "Collapse Layers" : "Expand Layers"}
-          className={`w-12 h-12 rounded-full flex items-center justify-center border shadow-xl cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95 ${
-            isLayersOpen 
-              ? 'bg-indigo-600 text-white border-indigo-500/30 shadow-indigo-600/20' 
-              : 'bg-slate-900/95 text-indigo-400 border-white/5 hover:text-indigo-300'
-          }`}
+          aria-expanded={isLayersOpen}
+          className={isLayersOpen ? `${pillBase} bg-indigo-500 text-white` : pillClass}
         >
-          <Layers size={20} />
+          <Layers size={16} />
+          <span>Layers</span>
         </button>
       </div>
 
-      {/* 4. RIGHT SIDE: Collapsible Properties Inspector / City Analytics */}
-      <div className="absolute right-4 top-4 bottom-4 z-20 pointer-events-auto flex flex-col items-end gap-2">
-        {!isAnalyticsOpen && (
-          <button
-            onClick={() => setIsAnalyticsOpen(true)}
-            title="Open City Analytics & Properties"
-            className="w-12 h-12 rounded-full bg-slate-900/95 text-indigo-400 border border-white/5 flex items-center justify-center shadow-xl cursor-pointer transition-all duration-300 hover:scale-105 hover:text-indigo-300 active:scale-95"
-          >
-            <BarChart3 size={20} />
-          </button>
-        )}
-        {isAnalyticsOpen && (
-          <PropertiesPanel onClose={() => setIsAnalyticsOpen(false)} />
-        )}
-      </div>
-
-      {/* 5. BOTTOM RIGHT/CENTER: Collapsible Simulation Panel */}
-      <div className={`absolute bottom-4 z-20 pointer-events-auto flex flex-col items-end gap-2 transition-all duration-300 ${
-        isAnalyticsOpen ? 'right-[22rem]' : 'right-4'
-      }`}>
-        {isSimulationOpen && (
-          <div className="animate-fade-in mb-1">
-            <SimulationPanel onClose={() => setIsSimulationOpen(false)} />
-          </div>
-        )}
-        {!isSimulationOpen && (
-          <button
-            onClick={() => setIsSimulationOpen(true)}
-            title="Open Model Simulations"
-            className="w-12 h-12 rounded-full bg-slate-900/95 text-indigo-400 border border-white/5 flex items-center justify-center shadow-xl cursor-pointer transition-all duration-300 hover:scale-105 hover:text-indigo-300 active:scale-95"
-          >
-            <Activity size={20} />
-          </button>
-        )}
-      </div>
-
-      {/* 6. TOP CENTER: Floating Toast Notifications */}
+      {/* Notifications, bottom centre above the drawing hints */}
       {toast && (
-        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[10000] pointer-events-auto animate-fade-in">
-          <div className={`glass-panel px-4 py-3 rounded-2xl border flex items-center gap-3 text-xs shadow-2xl max-w-md ${
-            toast.type === 'error' 
-              ? 'border-red-500/20 text-red-300 bg-red-950/80 backdrop-blur-md' 
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-10000 pointer-events-auto animate-fade-in" role="status" aria-live="polite">
+          <div className={`px-4 py-3 rounded-2xl border flex items-center gap-3 text-sm shadow-2xl max-w-lg backdrop-blur-xl ${
+            toast.type === 'error'
+              ? 'border-rose-400/30 text-rose-100 bg-rose-950/90'
               : toast.type === 'success'
-                ? 'border-emerald-500/20 text-emerald-300 bg-emerald-950/80 backdrop-blur-md'
-                : 'border-indigo-500/20 text-indigo-300 bg-slate-900/90 backdrop-blur-md'
+                ? 'border-emerald-400/30 text-emerald-100 bg-emerald-950/90'
+                : 'border-white/10 text-slate-100 bg-slate-950/90'
           }`}>
-            <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
-              toast.type === 'error' ? 'bg-red-400' : toast.type === 'success' ? 'bg-emerald-400' : 'bg-indigo-400'
-            }`} />
-            <span className="font-medium tracking-wide">{toast.message}</span>
-            <button 
-              onClick={() => setToast(null)} 
-              className="ml-2 text-slate-500 hover:text-slate-300 transition cursor-pointer"
+            <span>{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              aria-label="Dismiss notification"
+              className="ml-1 text-slate-400 hover:text-white transition cursor-pointer"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
         </div>
       )}
 
+      <ConfirmDialog
+        isOpen={!!pendingDeleteObj}
+        title="Delete"
+        message={`Delete "${pendingDeleteObj?.name || pendingDeleteObj?.type || 'this object'}"? You can undo this with Ctrl+Z.`}
+        confirmText="Delete"
+        onConfirm={confirmDelete}
+        onCancel={cancelDelete}
+      />
+      <ShortcutsOverlay isOpen={isHelpOpen} onClose={closeHelp} />
+      <CoachMarks />
     </div>
   );
 }

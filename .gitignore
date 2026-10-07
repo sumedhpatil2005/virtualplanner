@@ -65,3 +65,6 @@ npm-debug.log*
 
 # ─── TypeScript build cache ───────────────────────────────────────────────────
 *.tsbuildinfo
+
+# ─── OpenStreetMap extracts and the road index built from them ───────────────
+backend/data/

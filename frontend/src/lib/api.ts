@@ -131,8 +131,10 @@ async function request<T = void>(
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
 
+  const isWrite = (init.method ?? 'GET') !== 'GET';
+
   activeRequests++;
-  connectionState.set('saving');
+  if (isWrite) connectionState.set('saving');
 
   let res: Response;
   try {
@@ -150,24 +152,24 @@ async function request<T = void>(
     throw networkErr; // caller decides how to handle
   }
 
+  activeRequests--;
+  // Any HTTP response (even an error status) proves the server is reachable,
+  // so a previous "offline" state is cleared here. HTTP errors are reported
+  // to the caller via ApiError rather than by marking the connection offline.
+  if (activeRequests === 0) {
+    connectionState.set('online');
+  }
+
   if (!res.ok) {
-    activeRequests--;
-    connectionState.set('offline');
     const body = await res.text().catch(() => '(no body)');
     throw new ApiError(res.status, path, body);
   }
 
-  activeRequests--;
-  if (activeRequests === 0 && !connectionState.isCurrentlyOffline) {
-    connectionState.set('online');
-  }
-
-  // 204 No Content — return undefined cast to T
-  if (res.status === 204 || res.headers.get('Content-Length') === '0') {
+  const text = await res.text();
+  if (!text) {
     return undefined as unknown as T;
   }
-
-  return res.json() as Promise<T>;
+  return JSON.parse(text) as T;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -202,7 +204,7 @@ export function apiPostBatch<T = void>(path: string, items: unknown[]): Promise<
 
 /** POST /api/<path>/batch/delete (array of IDs) */
 export function apiDeleteBatch(path: string, ids: string[]): Promise<void> {
-  return request<void>(path, {
+  return request<void>(`${path}/batch/delete`, {
     method: 'POST',
     body: JSON.stringify({ ids }),
   });

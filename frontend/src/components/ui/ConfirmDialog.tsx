@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
 
 export interface ConfirmDialogProps {
@@ -39,10 +40,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to <body>: panels use backdrop-filter, which would otherwise make
+  // this "fixed" overlay cover only the panel instead of the whole screen.
+  return createPortal(
     <div 
       className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4"
       onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
     >
       <div 
         className="glass-panel w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl space-y-4"
@@ -94,6 +100,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

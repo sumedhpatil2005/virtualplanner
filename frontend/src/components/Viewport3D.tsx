@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { 
-  Viewer, 
-  Ion, 
-  Cartesian3, 
+import {
+  Viewer,
+  Ion,
+  Cartesian3,
   Math as CesiumMath,
   ScreenSpaceEventType
 } from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
+import type { EditingMode } from '../engine/editing/EditingEngine';
 
 export const Viewport3D: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,8 +57,9 @@ export const Viewport3D: React.FC = () => {
     // Register Cesium viewer inside our master TwinCityEngine
     engineInstance.setViewer(viewer);
 
-    // Cleanup
+    // Cleanup: release engine resources bound to this viewer before destroying it
     return () => {
+      engineInstance.dispose();
       viewer.destroy();
     };
   }, []);
@@ -66,11 +68,27 @@ export const Viewport3D: React.FC = () => {
     <div className="relative w-full h-full">
       {/* Target element for Cesium container */}
       <div ref={containerRef} className="w-full h-full absolute inset-0" />
-      
+
       {/* Overlay to show current drawing tool tips */}
       <DrawingHUD />
     </div>
   );
+};
+
+const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = {
+  draw_road: n => `Drawing Road: click to add points, double-click or Enter to finish (${n} points)`,
+  draw_flyover: n => `Drawing Elevated Flyover: click to add points, double-click or Enter to finish (${n} points)`,
+  draw_metro: n => `Drawing Elevated Metro Line: click to add points, double-click or Enter to finish (${n} points)`,
+  draw_metro_flyover: n => `Drawing Metro + Flyover: click to add points, double-click or Enter to finish (${n} points)`,
+  draw_building: n => `Drawing Building Footprint: click 3+ corners, double-click or Enter to extrude (${n} corners)`,
+  draw_utility: n => `Laying Utility Conduit: click to add points, double-click or Enter to finish (${n} points)`,
+  draw_zone: n => `Drawing Demand Zone: click 3+ corners, double-click or Enter to finish (${n} corners)`,
+  draw_junction: () => 'Placing Junction: click on the map to place one',
+  place_station: () => 'Placing Metro Station: click on the map to place one',
+  draw_gateway: () => 'Placing Gateway: click on or near a boundary road to place one',
+  import_osm: n => n > 0
+    ? `Import OSM: ${n} boundary points placed. Add more, then press "Save Area" in the tool panel`
+    : 'Import OSM: click 3+ points to outline an area, Save Area, then select it and choose what to import',
 };
 
 const DrawingHUD: React.FC = () => {
@@ -87,26 +105,22 @@ const DrawingHUD: React.FC = () => {
 
   if (mode === 'select') return null;
 
+  const multiPoint = !engineInstance.editing.isSingleClickMode(mode);
+
   return (
-    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 glass-panel px-4 py-2 rounded-full border border-indigo-500/30 flex items-center gap-3 text-sm z-[999] animate-bounce pointer-events-auto">
-      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-      <span>
-        {mode === 'draw_road' && `Drawing Road: Click to add points. Double-click to complete (${pointsCount} points)`}
-        {mode === 'draw_flyover' && `Drawing Elevated Flyover: Click to add points. Double-click to complete (${pointsCount} points)`}
-        {mode === 'draw_metro' && `Drawing Elevated Metro Line: Click to add points. Double-click to complete (${pointsCount} points)`}
-        {mode === 'place_station' && 'Placing Metro Station: Click once on the map to place'}
-        {mode === 'draw_building' && `Drawing Building Footprint: Click nodes. Double-click to extrude (${pointsCount} nodes)`}
-        {mode === 'draw_junction' && 'Drawing Junction: Click once on the map to place'}
-        {mode === 'draw_utility' && `Drawing Sub-surface Utility: Click to draw lines. Double-click to finalize (${pointsCount} points)`}
-        {mode === 'import_osm' && 'Import OSM Roads: Click anywhere on the map to import real 3D roads in a 1km area'}
-        {mode === 'draw_zone' && `Drawing Zone: Click 3+ points on the map. Double-click to complete (${pointsCount} vertices)`}
-        {mode === 'draw_gateway' && 'Placing Gateway: Click once on or near a boundary road to place'}
-      </span>
-      <button 
-        onClick={() => engineInstance.editing.setMode('select')}
-        className="px-2 py-0.5 rounded bg-red-950 text-red-300 hover:bg-red-900 border border-red-500/20 text-xs transition cursor-pointer"
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-indigo-400/30 shadow-2xl flex items-center gap-3 text-sm z-999 animate-fade-in pointer-events-auto max-w-[min(42rem,calc(100vw-48rem))]">
+      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+      <div className="flex flex-col">
+        <span className="text-slate-100">{HUD_TEXT[mode](pointsCount)}</span>
+        <span className="text-xs text-slate-400">
+          {multiPoint && pointsCount > 0 ? 'Right-click a point to remove it · ' : ''}Tool stays active · Esc to exit
+        </span>
+      </div>
+      <button
+        onClick={() => engineInstance.editing.cancelDrawing()}
+        className="px-3 py-1 rounded-lg bg-white/[0.07] text-slate-100 hover:bg-white/[0.12] border border-white/10 text-sm font-semibold transition cursor-pointer shrink-0"
       >
-        Cancel
+        Done
       </button>
     </div>
   );

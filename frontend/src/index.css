@@ -1,6 +1,32 @@
 @import "tailwindcss";
 @import "cesium/Build/Cesium/Widgets/widgets.css";
 
+/* Animation utilities used across the UI (animate-fade-in, animate-scale-in, animate-spin-slow).
+   Opacity/scale only — never `transform` — so they don't fight translate-based centering. */
+@theme {
+  --animate-fade-in: fade-in 180ms ease-out both;
+  --animate-scale-in: scale-in 180ms ease-out both;
+  --animate-spin-slow: spin-slow 8s linear infinite;
+
+  @keyframes spin-slow {
+    to { rotate: 360deg; }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes scale-in {
+    from { opacity: 0; scale: 0.96; }
+    to { opacity: 1; scale: 1; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-scale-in, .animate-spin-slow { animation: none; }
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -50,6 +76,29 @@ html, body, #root {
 /* Cesium UI Overrides to maintain the TwinCity Theme */
 .cesium-viewer {
   font-family: inherit;
+}
+
+/* Cesium's home / 2D-3D / base-layer / fullscreen controls default to the top-right
+   corner, where the Properties panel covers them. Keep them clear of our panels
+   and below the centred drawing HUD. */
+.cesium-viewer-toolbar {
+  top: 4.5rem !important;
+  right: 1rem !important;
+}
+
+.panel-open .cesium-viewer-toolbar {
+  top: 1rem !important;
+  right: 24rem !important;
+}
+
+/* Fullscreen button: out from under the panel */
+.cesium-viewer-fullscreenContainer {
+  bottom: 1rem !important;
+  right: 1.25rem !important;
+}
+
+.panel-open .cesium-viewer-fullscreenContainer {
+  right: 24.25rem !important;
 }
 
 .cesium-viewer-bottom {

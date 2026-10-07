@@ -6,16 +6,28 @@ export class LODController {
   private lastHeight: number = -1;
   private lastEvaluationTime: number = 0;
   private evaluationTimeout: any = null;
+  private removeCameraListener: (() => void) | null = null;
 
   constructor(viewer: Viewer) {
     this.viewer = viewer;
   }
 
   public initCameraListeners(): void {
-    this.viewer.camera.changed.addEventListener(() => {
+    this.removeCameraListener?.();
+    this.removeCameraListener = this.viewer.camera.changed.addEventListener(() => {
       this.evaluateLODAndTilesThrottled();
     });
     this.evaluateLODAndTiles();
+  }
+
+  /** Detaches the camera listener and any pending throttled evaluation. */
+  public dispose(): void {
+    this.removeCameraListener?.();
+    this.removeCameraListener = null;
+    if (this.evaluationTimeout) {
+      clearTimeout(this.evaluationTimeout);
+      this.evaluationTimeout = null;
+    }
   }
 
   private evaluateLODAndTilesThrottled(): void {

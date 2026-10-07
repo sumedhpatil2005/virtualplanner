@@ -6,8 +6,8 @@ Idempotent database seed script.
 Usage:
     python seed.py
 
-Creates the schema (if not present) and inserts the four canonical
-scenario rows. Safe to re-run — uses INSERT OR IGNORE semantics.
+Creates the schema (if not present) and inserts the base scenario row.
+Safe to re-run — existing rows are skipped.
 
 Replace twincity.db with this script in version control:
   git rm --cached twincity.db
@@ -42,28 +42,23 @@ def create_schema() -> None:
 # Default scenarios
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Only the base scenario is seeded. Its id must be "base" — every object and the
+# frontend use that id. Proposals are created by users in the app, so no
+# scenario ever describes work that doesn't exist as data.
 DEFAULT_SCENARIOS: list[dict] = [
     {
-        "id": "baseline",
-        "name": "Baseline (Existing)",
-        "description": "Current road network and zoning — no interventions.",
-    },
-    {
-        "id": "flyover_nhwy48",
-        "name": "NH-48 Flyover Proposal",
-        "description": "Grade-separated flyover at the Hinjewadi Phase-1 junction.",
-    },
-    {
-        "id": "metro_phase3",
-        "name": "Metro Phase-3 Extension",
-        "description": "Extend Pune Metro from Hinjewadi to Wakad with 4 new stations.",
-    },
-    {
-        "id": "signal_retiming",
-        "name": "Signal Re-timing Only",
-        "description": "Optimise existing signal cycles — zero new construction.",
+        "id": "base",
+        "name": "Current City (Base)",
+        "description": "Existing layout of the city infrastructure.",
+        "year": 2026,
     },
 ]
+
+
+def ensure_base_scenario() -> None:
+    """Create the base scenario if missing. Safe to call on every startup."""
+    with SessionLocal() as session:
+        seed_scenarios(session)
 
 
 def seed_scenarios(session) -> None:

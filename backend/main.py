@@ -3,9 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from database.connection import engine, Base
 from api.router import router
 from api.sim_router import router as sim_router
+from api.osm_router import router as osm_router
+from seed import ensure_base_scenario
 
-# Initialize database tables
+# Initialize database tables and the mandatory base scenario
 Base.metadata.create_all(bind=engine)
+ensure_base_scenario()
 
 app = FastAPI(
     title="TwinCity Backend Service",
@@ -25,6 +28,7 @@ app.add_middleware(
 # Mount core API router
 app.include_router(router, prefix="/api")
 app.include_router(sim_router, prefix="/api")
+app.include_router(osm_router, prefix="/api")
 
 @app.get("/")
 def read_root():
