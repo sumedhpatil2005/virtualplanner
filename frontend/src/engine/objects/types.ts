@@ -243,6 +243,8 @@ export interface MetroStationObject extends BaseCityObject {
   height: number; // in meters (default 8)
   elevation: number; // platform floor level above ground (e.g. 12)
   capacity: number; // passenger capacity
+  heading?: number; // degrees clockwise from north along the platform's long axis (default 0)
+  alignToTrack?: boolean; // follow the nearest metro track within 100 m (default true)
 }
 
 export type UtilityType = 'water' | 'electricity' | 'sewage' | 'gas' | 'fiber';

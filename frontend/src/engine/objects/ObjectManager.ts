@@ -1,12 +1,25 @@
 import type { CityObject, RoadObject, RoadSectionProfile, CarriagewayProfile, RoadsideProfile } from './types';
 import { applyFlyoverElevationProfile } from './flyoverHelper';
+import { bridgeGeometry } from './bridgeElevation';
+import { remapRoadSections, repairRoadSections } from './roadSections';
+import { cacheGetMany, cachePutMany } from '../storage/localCache';
+import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
+import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
 import { BridgeFeasibilityEngine } from '../simulation/BridgeFeasibilityEngine';
+
+/** Objects per save request, and requests in flight at once, when saving many objects. */
+const SAVE_CHUNK = 1000;
+const SAVES_AT_ONCE = 3;
 
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
   private onChangeListener: ((changedTypes: Set<string>) => void)[] = [];
-
-  private API_URL = 'http://localhost:8000/api/objects';
+  /**
+   * OpenStreetMap roads the user deleted, kept on this device so that filling
+   * in missing OSM roads never brings them back.
+   */
+  private deletedOsm: Set<string> | null = null;
+  private deletedOsmLoad: Promise<Set<string>> | null = null;
 
   constructor() {}
 
@@ -24,47 +37,60 @@ export class ObjectManager {
   }
 
   public async syncPost(obj: CityObject) {
-    try {
-      await fetch(this.API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.mapToSchema(obj))
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiPost('/api/objects', this.mapToSchema(obj));
   }
 
   public async syncDelete(id: string) {
-    try {
-      await fetch(`${this.API_URL}/${id}`, { method: 'DELETE' });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiDelete(`/api/objects/${id}`);
   }
 
   public async syncDeleteMultiple(ids: string[]) {
-    try {
-      await fetch(`${this.API_URL}/batch/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids })
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
-    }
+    await apiDeleteBatch('/api/objects', ids);
   }
 
   public async syncPostMultiple(objs: CityObject[]) {
-    try {
-      await fetch(`${this.API_URL}/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(objs.map(o => this.mapToSchema(o)))
-      });
-    } catch (e) {
-      console.warn('Backend offline, running in offline mode:', e);
+    await apiPostBatch('/api/objects/batch', objs.map(o => this.mapToSchema(o)));
+  }
+
+  /** Ids of OpenStreetMap roads the user deleted. */
+  public deletedOsmIds(): Promise<Set<string>> {
+    if (this.deletedOsm) return Promise.resolve(this.deletedOsm);
+    this.deletedOsmLoad ??= cacheGetMany<string[]>('osm-deleted', ['ids']).then(([ids]) => {
+      // Deletions made before the list finished loading are kept too
+      this.deletedOsm = new Set([...(ids ?? []), ...(this.deletedOsm ?? [])]);
+      return this.deletedOsm;
+    });
+    return this.deletedOsmLoad;
+  }
+
+  private noteOsmDeletions(ids: string[], deleted: boolean) {
+    const osm = ids.filter(id => id.startsWith('osm_'));
+    if (osm.length === 0) return;
+    this.deletedOsm ??= new Set();
+    for (const id of osm) {
+      if (deleted) this.deletedOsm.add(id);
+      else this.deletedOsm.delete(id);
     }
+    void cachePutMany('osm-deleted', [['ids', [...this.deletedOsm]]]);
+  }
+
+  /**
+   * Adds objects (all at once: one update for the map and the network) and
+   * waits until the backend has saved them, in chunks, a few at a time.
+   * Rejects if any chunk was not saved, so the caller can avoid recording
+   * work as done when it is not.
+   */
+  public async addMultipleAndSave(objs: CityObject[], chunk = SAVE_CHUNK): Promise<void> {
+    if (objs.length === 0) return;
+    this.addMultiple(objs, true);
+    const saved = objs.map(o => this.objects.get(o.id)!).filter(Boolean);
+    const chunks: CityObject[][] = [];
+    for (let i = 0; i < saved.length; i += chunk) chunks.push(saved.slice(i, i + chunk));
+    let nextChunk = 0;
+    const worker = async () => {
+      while (nextChunk < chunks.length) await this.syncPostMultiple(chunks[nextChunk++]);
+    };
+    await Promise.all(Array.from({ length: Math.min(SAVES_AT_ONCE, chunks.length) }, worker));
   }
 
   public onChange(callback: (changedTypes: Set<string>) => void) {
@@ -77,6 +103,18 @@ export class ObjectManager {
   public notify(changedTypes?: Set<string>) {
     const types = changedTypes || new Set<string>();
     this.onChangeListener.forEach(cb => cb(types));
+  }
+
+  /**
+   * Raises imported OSM bridges and flyovers to deck height (in memory; see
+   * bridgeElevation). Changed roads are stored as new objects, as with any
+   * update, so the renderer redraws them.
+   */
+  public liftBridges() {
+    bridgeGeometry(this.objects.values()).forEach(({ coordinates, originalIndices }, road) => {
+      const sections = remapRoadSections(repairRoadSections(road), road.coordinates, coordinates, originalIndices);
+      this.objects.set(road.id, { ...road, coordinates, sections });
+    });
   }
 
   public getAll(): CityObject[] {
@@ -92,11 +130,12 @@ export class ObjectManager {
   }
 
   public syncRoadProperties(road: RoadObject) {
-    if (!road.sections || road.sections.length === 0) {
+    road.sections = repairRoadSections(road);
+    if (road.sections.length === 0) {
       road.sections = this.synthesizeDefaultSections(road);
     }
     if (!road.sourceCoordinates) {
-      road.sourceCoordinates = [...road.coordinates];
+      road.sourceCoordinates = road.coordinates.map(point => [...point] as [number, number, number]);
     }
     
     const sec = road.sections[0];
@@ -266,9 +305,13 @@ export class ObjectManager {
     }
 
     this.objects.set(obj.id, fresh);
+    if (this.deletedOsm?.has(obj.id)) this.noteOsmDeletions([obj.id], false);
     this.notify(new Set([fresh.type]));
     if (!skipSync) {
-      this.syncPost(fresh);
+      this.syncPost(fresh).catch((e) => {
+        console.warn('[ObjectManager] syncPost failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync with backend server', 'error');
+      });
     }
   }
 
@@ -291,11 +334,17 @@ export class ObjectManager {
     freshObjs.forEach(obj => {
       this.objects.set(obj.id, obj);
     });
+    if (this.deletedOsm && freshObjs.some(o => this.deletedOsm!.has(o.id))) this.noteOsmDeletions(freshObjs.map(o => o.id), false);
+    // New OSM bridges get their deck heights, and their approaches may be among these roads
+    if (freshObjs.some(o => o.type === 'road' && o.osmProvenance)) this.liftBridges();
 
     this.notify(new Set(freshObjs.map(o => o.type)));
 
     if (!skipSync && freshObjs.length > 0) {
-      this.syncPostMultiple(freshObjs);
+      this.syncPostMultiple(freshObjs.map(obj => this.objects.get(obj.id)!)).catch((e) => {
+        console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
+      });
     }
   }
 
@@ -310,6 +359,11 @@ export class ObjectManager {
     } as CityObject;
 
     if (updated.type === 'road') {
+      // Explicit sections (undo/redo and section-aware editors) already refer
+      // to the supplied geometry. Otherwise carry profiles through the edit.
+      if (existing.type === 'road' && updates.coordinates && !Object.hasOwn(updates, 'sections')) {
+        updated.sections = remapRoadSections(existing.sections ?? [], existing.coordinates, updated.coordinates);
+      }
       this.syncRoadProperties(updated as RoadObject);
     } else if (updated.type === 'flyover' || updated.type === 'metro_flyover') {
       applyFlyoverElevationProfile(updated);
@@ -318,7 +372,10 @@ export class ObjectManager {
     this.objects.set(id, updated);
     this.notify(new Set([updated.type]));
     if (!skipSync) {
-      this.syncPost(updated);
+      this.syncPost(updated).catch((e) => {
+        console.warn('[ObjectManager] syncPost (update) failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync update with backend server', 'error');
+      });
     }
   }
 
@@ -326,9 +383,13 @@ export class ObjectManager {
     const existing = this.objects.get(id);
     if (existing) {
       this.objects.delete(id);
+      if (existing.scenarioId === BASE_SCENARIO_ID) this.noteOsmDeletions([id], true);
       this.notify(new Set([existing.type]));
       if (!skipSync) {
-        this.syncDelete(id);
+        this.syncDelete(id).catch((e) => {
+          console.warn('[ObjectManager] syncDelete failed — connectionState updated:', e);
+          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
+        });
       }
     }
   }
@@ -346,9 +407,13 @@ export class ObjectManager {
     });
 
     if (changed) {
+      this.noteOsmDeletions(objs.filter(o => o.scenarioId === BASE_SCENARIO_ID).map(o => o.id), true);
       this.notify(new Set(objs.map(o => o.type)));
       if (!skipSync && idsToSync.length > 0) {
-        this.syncDeleteMultiple(idsToSync);
+        this.syncDeleteMultiple(idsToSync).catch((e) => {
+          console.warn('[ObjectManager] syncDeleteMultiple failed — connectionState updated:', e);
+          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
+        });
       }
     }
   }

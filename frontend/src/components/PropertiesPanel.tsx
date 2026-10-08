@@ -1,34 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Settings, 
-  Trash2, 
-  Users, 
-  Droplet, 
-  Zap, 
-  Compass,
-  X
-} from 'lucide-react';
+import { Trash2, ArrowLeft } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
+import { ConfirmDialog } from './ui/ConfirmDialog';
+import { RoadGapPanel } from './RoadGapPanel';
+import { TYPE_LABELS } from '../engine/objects/builtBy';
+import { MODE_SPLIT_KEYS, rebalanceSplit } from '../engine/simulation/modeSplit';
+
+const BUILDING_SPLIT_KEYS = ['car', 'twoWheeler', 'bus', 'metro', 'walk', 'other'] as const;
+type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
+import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 
-interface PropertiesPanelProps {
-  onClose?: () => void;
-}
-
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => {
+/** Build mode: edit the selected object. */
+export const PropertiesPanel: React.FC = () => {
   const [selectedObj, setSelectedObj] = useState<CityObject | null>(null);
   const [isEditingBuilding, setIsEditingBuilding] = useState(false);
   const [draftBuilding, setDraftBuilding] = useState<BuildingObject | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const [cityStats, setCityStats] = useState({
-    buildingsCount: 0,
-    roadsCount: 0,
-    junctionsCount: 0,
-    totalPopulation: 0,
-    totalWater: 0,
-    totalElectricity: 0
-  });
+
 
   // Track state changes in selection & objects
   useEffect(() => {
@@ -79,38 +70,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
       }
     };
 
-    const updateStats = () => {
-      const all = engineInstance.objects.getAll();
-      console.log('DEBUG: All objects in database:', all.map(o => ({ id: o.id, type: o.type, scenarioId: o.scenarioId })));
-      const activeScenarioId = engineInstance.scenarios.getActiveScenarioId();
-      
-      // Filter objects for the active scenario, deduping overrides
-      const scenarioObjects = all.filter(obj => {
-        const isBaseObj = obj.scenarioId === 'base';
-        const isScenarioObj = obj.scenarioId === activeScenarioId;
-        if (!isBaseObj && !isScenarioObj) return false;
-        
-        if (isBaseObj && activeScenarioId !== 'base') {
-          const overrideExists = all.some(o => o.id === obj.id && o.scenarioId === activeScenarioId);
-          if (overrideExists) return false;
-        }
-        return true;
-      });
-
-      const buildings = scenarioObjects.filter(o => o.type === 'building') as BuildingObject[];
-      const roads = scenarioObjects.filter(o => o.type === 'road') as RoadObject[];
-      const junctions = scenarioObjects.filter(o => o.type === 'junction') as JunctionObject[];
-
-      setCityStats({
-        buildingsCount: buildings.length,
-        roadsCount: roads.length,
-        junctionsCount: junctions.length,
-        totalPopulation: buildings.reduce((acc, b) => acc + b.population, 0),
-        totalWater: buildings.reduce((acc, b) => acc + b.waterDemand, 0),
-        totalElectricity: buildings.reduce((acc, b) => acc + b.electricityDemand, 0)
-      });
-
-      // Also refresh the selected object details if it was updated
+    const refreshSelected = () => {
+      // Refresh the selected object details if it was updated
       const activeSelection = engineInstance.selection.getSelection();
       if (activeSelection.length > 0) {
         const current = engineInstance.objects.getById(activeSelection[0]);
@@ -119,10 +80,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
     };
 
     const unsubSelection = engineInstance.selection.onChange(updateSelection);
-    const unsubObjects = engineInstance.objects.onChange(updateStats);
+    const unsubObjects = engineInstance.objects.onChange(refreshSelected);
 
     // Initial update
-    updateStats();
+    updateSelection(engineInstance.selection.getSelection());
 
     return () => {
       unsubSelection();
@@ -153,7 +114,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
       // Re-estimate population and demands based on zoning & floor sizes
       const floors = bUpdates.floors !== undefined ? bUpdates.floors : b.floors;
       const usage = bUpdates.usageType !== undefined ? bUpdates.usageType : b.usageType;
-      
+
       let popFactor = 10;
       let waterFactor = 150;
       let elecFactor = 6;
@@ -179,12 +140,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
     } else if (selectedObj.type === 'road') {
       const r = selectedObj as RoadObject;
       const rUpdates = updates as Partial<RoadObject>;
-      
+
       let sections = r.sections ? JSON.parse(JSON.stringify(r.sections)) : engineInstance.objects.synthesizeDefaultSections(r);
       if (!sections || sections.length === 0) {
         sections = engineInstance.objects.synthesizeDefaultSections(r);
       }
-      
+
       const firstSection = sections[0];
       let carriagewayA = firstSection.carriagewayA;
       let carriagewayB = firstSection.carriagewayB;
@@ -294,7 +255,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
     } else if (selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') {
       const f = selectedObj as any;
       const fUpdates = updates as any;
-      
+
       let laneCount = f.laneCount;
       let laneWidth = f.laneWidth || 3.5;
       let hasDivider = f.hasDivider;
@@ -347,13 +308,22 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
       const sUpdates = updates as Partial<MetroStationObject>;
       if (field === 'length' || field === 'width' || field === 'height' || field === 'elevation' || field === 'capacity') {
         (sUpdates as any)[field] = Number(value);
+      } else if (field === 'heading') {
+        // Turning the station by hand takes it off automatic track alignment
+        sUpdates.heading = normalizeHeading(Number(value));
+        sUpdates.alignToTrack = false;
+      } else if (field === 'alignToTrack') {
+        sUpdates.alignToTrack = Boolean(value);
+        // Remember the current orientation so switching back to manual doesn't jump
+        const resolved = resolveStationHeading(selectedObj as MetroStationObject, engineInstance.objects.getAll());
+        sUpdates.heading = resolved.heading;
       } else if (field === 'name' || field === 'stationName') {
         (sUpdates as any)[field] = value;
       }
     } else if (selectedObj.type === 'junction') {
       const jUpdates = updates as Partial<JunctionObject>;
       if (field === 'signalTiming') {
-        jUpdates.signalTiming = Number(value);
+        jUpdates.signalTiming = Math.max(20, Math.min(300, Number(value) || 90));
       } else if (field === 'hasSignals') {
         jUpdates.hasSignals = Boolean(value);
       } else if (field === 'hasPedestrianCrossing') {
@@ -388,44 +358,47 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
 
     // Apply & trigger updates
     const merged = { ...selectedObj, ...updates } as CityObject;
+    // Coalesce per object+field so typing or dragging a slider is one Undo step
+    engineInstance.history.recordUpdate(selectedObj, merged, `Update ${selectedObj.name || selectedObj.id} ${field}`, `${selectedObj.id}:${field}`);
     setSelectedObj(merged);
     engineInstance.objects.update(selectedObj.id, updates);
   };
 
   const handleDelete = () => {
     if (!selectedObj) return;
-    engineInstance.objects.delete(selectedObj.id);
-    engineInstance.selection.clearSelection();
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!selectedObj) return;
+    engineInstance.deleteObjectWithHistory(selectedObj.id);
+    setSelectedObj(null);
+    setShowDeleteConfirm(false);
+    (window as any).showToast?.('Object deleted', 'info');
   };
 
   return (
-    <div className="w-80 glass-panel rounded-2xl flex flex-col h-full pointer-events-auto shadow-2xl border border-white/5 overflow-hidden">
-      {/* Header */}
-      <div className="p-4 border-b border-white/5 bg-slate-900/40 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-200 flex items-center gap-2 text-sm tracking-wide uppercase">
-          <Settings size={15} className="text-indigo-400" />
-          {selectedObj ? 'Object Properties' : 'City Analytics'}
-        </h3>
-        <div className="flex items-center gap-1.5">
-          {selectedObj && (
-            <button 
-              onClick={handleDelete}
-              title="Delete Object"
-              className="p-1 rounded bg-red-950/40 text-red-400 hover:bg-red-900/60 border border-red-500/10 cursor-pointer transition mr-1"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-          {onClose && (
-            <button 
-              onClick={onClose}
-              title="Collapse Panel"
-              className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800/40 cursor-pointer transition"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+    <div className="w-[22rem] max-h-full rounded-2xl flex flex-col pointer-events-auto bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden animate-fade-in">
+      <div className="px-4 pt-3.5 pb-3 border-b border-white/10 flex items-center gap-2">
+        <button
+          onClick={() => engineInstance.selection.clearSelection()}
+          className="-ml-1 inline-flex items-center gap-1.5 px-1.5 py-1 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 cursor-pointer transition"
+        >
+          <ArrowLeft size={16} /> Back
+        </button>
+        <span className="flex-1 text-sm text-slate-400 truncate text-right">
+          {selectedObj ? `Editing ${(TYPE_LABELS as Record<string, string>)[selectedObj.type]?.toLowerCase() ?? 'object'}` : ''}
+        </span>
+        {selectedObj && engineInstance.objects.getById(selectedObj.id) && (
+          <button
+            onClick={handleDelete}
+            title="Delete"
+            aria-label="Delete"
+            className="p-1.5 rounded-lg text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 cursor-pointer transition"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -434,14 +407,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
           <div className="space-y-4">
             {/* Identity Group */}
             <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-              <div className="flex justify-between items-center text-[10px] text-indigo-400 uppercase font-mono">
+              <div className="flex justify-between items-center text-xs text-indigo-400 uppercase font-mono">
                 <span>{selectedObj.type} ID: {selectedObj.id.slice(0, 8)}</span>
-                <span className="bg-indigo-950/80 px-2 py-0.5 rounded text-[9px] border border-indigo-500/20">
+                <span className="bg-indigo-950/80 px-2 py-0.5 rounded text-xs border border-indigo-500/20">
                   {selectedObj.scenarioId === 'base' ? 'BASE STATE' : 'PROPOSED STATE'}
                 </span>
               </div>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={isEditingBuilding && draftBuilding ? draftBuilding.name : selectedObj.name}
                 disabled={selectedObj.type === 'building' && !isEditingBuilding}
                 onChange={(e) => {
@@ -458,7 +431,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
             {/* Building Specifics */}
             {selectedObj.type === 'building' && (
               isEditingBuilding && draftBuilding ? (
-                <BuildingEditorDraft 
+                <BuildingEditorDraft
                   draft={draftBuilding}
                   onUpdateDraft={(updated) => setDraftBuilding({ ...draftBuilding, ...updated })}
                   onSave={() => {
@@ -468,7 +441,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                       source: draftBuilding.source === 'OSM' ? 'OSM' : draftBuilding.source || 'manual',
                       updatedAt: new Date().toISOString()
                     } as BuildingObject;
-                    
+
+                    engineInstance.history.recordUpdate(selectedObj, finalObject, `Edit building ${finalObject.name || finalObject.id}`);
                     engineInstance.objects.update(selectedObj.id, finalObject);
                     setSelectedObj(finalObject);
                     setIsEditingBuilding(false);
@@ -480,7 +454,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                   }}
                 />
               ) : (
-                <BuildingInspector 
+                <BuildingInspector
                   b={selectedObj as BuildingObject}
                   onEdit={() => {
                     setDraftBuilding(JSON.parse(JSON.stringify(selectedObj)));
@@ -493,6 +467,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
+            {selectedObj.type === 'road' && <RoadGapPanel road={selectedObj as RoadObject} />}
 
             {/* Flyover Feasibility Report */}
             {(selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (selectedObj as any).feasibilityResult && (
@@ -537,7 +512,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
             {/* Traffic Node Debug Specifics */}
             {selectedObj.type === ('debug_node' as any) && (
               <div className="space-y-4">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
                   Traffic Node Details
                 </div>
                 <div className="bg-slate-900/30 border border-white/5 rounded-xl p-3 space-y-2">
@@ -554,12 +529,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
                     Incoming Segments ({ (selectedObj as any).properties.incomingSegments.length })
                   </div>
                   <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                     {(selectedObj as any).properties.incomingSegments.map((id: string) => (
-                      <div key={id} className="bg-slate-900/25 border border-white/5 rounded-lg px-2.5 py-1.5 text-[10px] text-indigo-300 font-mono">
+                      <div key={id} className="bg-slate-900/25 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-indigo-300 font-mono">
                         {id}
                       </div>
                     ))}
@@ -567,12 +542,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
                     Outgoing Segments ({ (selectedObj as any).properties.outgoingSegments.length })
                   </div>
                   <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                     {(selectedObj as any).properties.outgoingSegments.map((id: string) => (
-                      <div key={id} className="bg-slate-900/25 border border-white/5 rounded-lg px-2.5 py-1.5 text-[10px] text-emerald-300 font-mono">
+                      <div key={id} className="bg-slate-900/25 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono">
                         {id}
                       </div>
                     ))}
@@ -580,12 +555,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
                     Allowed Turn Movements ({ (selectedObj as any).properties.allowedMovements.length })
                   </div>
                   <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
                     {(selectedObj as any).properties.allowedMovements.map((move: any, idx: number) => (
-                      <div key={idx} className="bg-slate-900/40 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1 text-[10px]">
+                      <div key={idx} className="bg-slate-900/40 border border-white/5 rounded-xl p-2.5 flex flex-col gap-1 text-xs">
                         <div className="flex justify-between">
                           <span className="text-slate-400 font-mono">{move.fromSegmentId.split('_seg_')[1] || move.fromSegmentId} &rarr; {move.toSegmentId.split('_seg_')[1] || move.toSegmentId}</span>
                           <span className="font-semibold text-slate-200 capitalize font-mono text-indigo-400">{move.direction}</span>
@@ -600,7 +575,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
             {/* Traffic Edge Debug Specifics */}
             {selectedObj.type === ('debug_edge' as any) && (
               <div className="space-y-4">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
                   Traffic Edge Details
                 </div>
                 <div className="bg-slate-900/30 border border-white/5 rounded-xl p-3.5 space-y-2.5 text-xs">
@@ -644,71 +619,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ onClose }) => 
               </div>
             )}
           </div>
-        ) : (
-          /* General Analytics / Stats */
-          <div className="space-y-5">
-            {/* City Overview */}
-            <div className="space-y-3">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest font-mono">
-                Asset Registry
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-slate-900/30 border border-white/5 rounded-xl p-3 flex flex-col justify-between">
-                  <span className="text-slate-400 text-[10px] font-medium">Buildings</span>
-                  <span className="text-slate-100 font-bold text-lg">{cityStats.buildingsCount}</span>
-                </div>
-                <div className="bg-slate-900/30 border border-white/5 rounded-xl p-3 flex flex-col justify-between">
-                  <span className="text-slate-400 text-[10px] font-medium">Roads</span>
-                  <span className="text-slate-100 font-bold text-lg">{cityStats.roadsCount}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Demand Metrics */}
-            <div className="space-y-3">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest font-mono">
-                Resource Demands
-              </div>
-              <div className="bg-slate-900/30 border border-white/5 rounded-xl p-4 space-y-3">
-                {/* Population */}
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <div className="flex items-center gap-2 text-slate-400 text-xs">
-                    <Users size={14} className="text-emerald-400" />
-                    <span>Total Population</span>
-                  </div>
-                  <span className="text-slate-200 font-semibold text-sm">{cityStats.totalPopulation.toLocaleString()}</span>
-                </div>
-                {/* Water */}
-                <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                  <div className="flex items-center gap-2 text-slate-400 text-xs">
-                    <Droplet size={14} className="text-sky-400" />
-                    <span>Water Demand</span>
-                  </div>
-                  <span className="text-slate-200 font-semibold text-sm">{(cityStats.totalWater / 1000).toFixed(1)} m³/day</span>
-                </div>
-                {/* Electricity */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-400 text-xs">
-                    <Zap size={14} className="text-yellow-400" />
-                    <span>Electricity Grid</span>
-                  </div>
-                  <span className="text-slate-200 font-semibold text-sm">{(cityStats.totalElectricity / 1000).toFixed(1)} MWh/day</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Instruction Callout */}
-            <div className="bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-3.5 space-y-1">
-              <span className="font-semibold text-indigo-300 text-xs flex items-center gap-1.5">
-                <Compass size={13} /> Selection Guide
-              </span>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Click on any 3D model, building block, road path, or junction node on the globe map to examine engineering metrics and edit coordinates.
-              </p>
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete Object"
+        message={`Are you sure you want to delete "${selectedObj?.name || selectedObj?.type || 'this object'}"? You can undo this action anytime via Ctrl+Z or Toolbar.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 };
@@ -728,8 +651,8 @@ const getBuildingCenter = (coords: [number, number, number][]): [number, number,
   return [sumLon / coords.length, sumLat / coords.length, sumAlt / coords.length];
 };
 
-const BuildingInspector: React.FC<{ 
-  b: BuildingObject; 
+const BuildingInspector: React.FC<{
+  b: BuildingObject;
   onEdit: () => void;
 }> = ({ b, onEdit }) => {
   const [showTags, setShowTags] = useState(false);
@@ -740,10 +663,10 @@ const BuildingInspector: React.FC<{
     <div className="space-y-4">
       {/* Action Header */}
       <div className="flex justify-between items-center bg-slate-950/20 p-2 rounded-lg border border-white/5">
-        <span className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wider">Building Info Panel</span>
-        <button 
+        <span className="text-xs text-indigo-400 font-semibold uppercase tracking-wider">Building Info Panel</span>
+        <button
           onClick={onEdit}
-          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-semibold rounded cursor-pointer transition flex items-center gap-1 shadow-md shadow-indigo-950/40"
+          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded cursor-pointer transition flex items-center gap-1 shadow-md shadow-indigo-950/40"
         >
           Edit Building
         </button>
@@ -752,26 +675,26 @@ const BuildingInspector: React.FC<{
       {/* Basic Metrics Grid */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
-          <span className="text-[10px] text-slate-400 font-medium uppercase">Category</span>
+          <span className="text-xs text-slate-400 font-medium uppercase">Category</span>
           <span className="text-slate-100 font-bold capitalize mt-0.5">{b.category || b.usageType || 'Other'}</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
-          <span className="text-[10px] text-slate-400 font-medium uppercase">State</span>
+          <span className="text-xs text-slate-400 font-medium uppercase">State</span>
           <span className="text-slate-100 font-bold capitalize mt-0.5">{b.state || 'Existing'}</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
-          <span className="text-[10px] text-slate-400 font-medium uppercase">Floors / Height</span>
+          <span className="text-xs text-slate-400 font-medium uppercase">Floors / Height</span>
           <span className="text-slate-100 font-bold mt-0.5">{b.floors} floors ({b.height}m)</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
-          <span className="text-[10px] text-slate-400 font-medium uppercase">Parking Capacity</span>
+          <span className="text-xs text-slate-400 font-medium uppercase">Parking Capacity</span>
           <span className="text-slate-100 font-bold mt-0.5">{b.parkingCapacity ?? b.parkingSpaces ?? 0} cars</span>
         </div>
       </div>
 
       {/* Capacities */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Planning Capacities</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Planning Capacities</span>
         <div className="text-xs space-y-1.5">
           {(b.category === 'residential' || !b.category) && (
             <div className="flex justify-between border-b border-white/5 pb-1">
@@ -818,8 +741,8 @@ const BuildingInspector: React.FC<{
 
       {/* Entrances */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Building Access Points</span>
-        <div className="text-[11px] space-y-1.5 font-mono text-right">
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Building Access Points</span>
+        <div className="text-sm space-y-1.5 font-mono text-right">
           <div className="flex justify-between items-center">
             <span className="text-slate-400 font-sans text-xs">Main:</span>
             <span className="text-slate-200">
@@ -843,55 +766,55 @@ const BuildingInspector: React.FC<{
 
       {/* Activity Profile */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Traffic Activity Profile</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Traffic Activity Profile</span>
         {b.activityProfile ? (
           <div className="text-xs space-y-2.5">
             <div className="grid grid-cols-2 gap-2 border-b border-white/5 pb-1.5">
               <div>
-                <span className="text-slate-400 block text-[9px] uppercase font-semibold">Peak Arrival</span>
+                <span className="text-slate-400 block text-xs uppercase font-semibold">Peak Arrival</span>
                 <span className="text-slate-200 font-semibold">{b.activityProfile.peakArrivalStart || 'N/A'} - {b.activityProfile.peakArrivalEnd || 'N/A'}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[9px] uppercase font-semibold">Peak Departure</span>
+                <span className="text-slate-400 block text-xs uppercase font-semibold">Peak Departure</span>
                 <span className="text-slate-200 font-semibold">{b.activityProfile.peakDepartureStart || 'N/A'} - {b.activityProfile.peakDepartureEnd || 'N/A'}</span>
               </div>
             </div>
             {b.activityProfile.modeSplit && (
               <div>
-                <span className="text-slate-400 block text-[9px] uppercase font-semibold mb-1">Mode Split (%)</span>
-                <div className="grid grid-cols-3 gap-1 text-[10px]">
+                <span className="text-slate-400 block text-xs uppercase font-semibold mb-1">Mode Split (%)</span>
+                <div className="grid grid-cols-3 gap-1 text-xs">
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">Car</span>
+                    <span className="text-slate-400 block text-xs">Car</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.car || 0}%</span>
                   </div>
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">2-W</span>
+                    <span className="text-slate-400 block text-xs">2-W</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.twoWheeler || 0}%</span>
                   </div>
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">Bus</span>
+                    <span className="text-slate-400 block text-xs">Bus</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.bus || 0}%</span>
                   </div>
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">Metro</span>
+                    <span className="text-slate-400 block text-xs">Metro</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.metro || 0}%</span>
                   </div>
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">Walk</span>
+                    <span className="text-slate-400 block text-xs">Walk</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.walk || 0}%</span>
                   </div>
                   <div className="bg-slate-950/40 p-1 rounded text-center">
-                    <span className="text-slate-400 block text-[8px]">Other</span>
+                    <span className="text-slate-400 block text-xs">Other</span>
                     <span className="text-indigo-400 font-bold">{b.activityProfile.modeSplit.other || 0}%</span>
                   </div>
                 </div>
               </div>
             )}
-            
+
             {/* Generated Peak Trips */}
             <div className="border-t border-white/5 pt-2 space-y-1">
-              <span className="text-slate-400 block text-[9px] uppercase font-semibold mb-1">Estimated Peak Trip Generation</span>
-              <div className="grid grid-cols-2 gap-1 text-[10px] font-mono">
+              <span className="text-slate-400 block text-xs uppercase font-semibold mb-1">Estimated Peak Trip Generation</span>
+              <div className="grid grid-cols-2 gap-1 text-xs font-mono">
                 <div className="bg-slate-950/20 px-2 py-1 rounded flex justify-between">
                   <span className="text-slate-400">AM Peak:</span>
                   <span className="text-indigo-300 font-bold">
@@ -951,7 +874,7 @@ const BuildingInspector: React.FC<{
       {/* Notes */}
       {b.notes && (
         <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5">
-          <span className="text-[10px] text-indigo-400 uppercase font-mono block mb-0.5">Notes</span>
+          <span className="text-xs text-indigo-400 uppercase font-mono block mb-0.5">Notes</span>
           <p className="text-xs text-slate-300 whitespace-pre-wrap">{b.notes}</p>
         </div>
       )}
@@ -959,8 +882,8 @@ const BuildingInspector: React.FC<{
       {/* Provenance Metadata */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
         <div className="flex justify-between items-center">
-          <span className="text-[10px] text-indigo-400 uppercase font-mono">Provenance Data</span>
-          <span className="text-[9px] bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-semibold border border-white/5 uppercase">
+          <span className="text-xs text-indigo-400 uppercase font-mono">Provenance Data</span>
+          <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-300 font-semibold border border-white/5 uppercase">
             {b.isManuallyEdited ? 'Manually Edited' : 'Original Data'}
           </span>
         </div>
@@ -972,7 +895,7 @@ const BuildingInspector: React.FC<{
           {b.osmId && (
             <div className="flex justify-between">
               <span className="text-slate-400">OSM ID:</span>
-              <a 
+              <a
                 href={`https://www.openstreetmap.org/way/${b.osmId}`}
                 target="_blank"
                 rel="noreferrer"
@@ -983,18 +906,18 @@ const BuildingInspector: React.FC<{
             </div>
           )}
         </div>
-        
+
         {/* Expandable Tags */}
         {tagsCount > 0 && (
           <div className="mt-2 pt-2 border-t border-white/5">
-            <button 
+            <button
               onClick={() => setShowTags(!showTags)}
-              className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold uppercase flex items-center gap-1 cursor-pointer"
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold uppercase flex items-center gap-1 cursor-pointer"
             >
               {showTags ? 'Hide Original Tags' : `Show Original Tags (${tagsCount})`}
             </button>
             {showTags && (
-              <div className="mt-2 bg-slate-950/60 p-2 rounded border border-white/5 font-mono text-[9px] text-slate-300 overflow-x-auto max-h-40 overflow-y-auto space-y-1">
+              <div className="mt-2 bg-slate-950/60 p-2 rounded border border-white/5 font-mono text-xs text-slate-300 overflow-x-auto max-h-40 overflow-y-auto space-y-1">
                 {Object.entries(originalTags).map(([k, v]) => (
                   <div key={k} className="flex gap-2">
                     <span className="text-indigo-400">{k}:</span>
@@ -1010,7 +933,7 @@ const BuildingInspector: React.FC<{
   );
 };
 
-const BuildingEditorDraft: React.FC<{ 
+const BuildingEditorDraft: React.FC<{
   draft: BuildingObject;
   onUpdateDraft: (updated: Partial<BuildingObject>) => void;
   onSave: () => void;
@@ -1018,8 +941,8 @@ const BuildingEditorDraft: React.FC<{
 }> = ({ draft, onUpdateDraft, onSave, onCancel }) => {
 
   const handleCoordinateChange = (
-    type: 'mainEntrance' | 'vehicleEntrance' | 'serviceEntrance', 
-    coordIndex: number, 
+    type: 'mainEntrance' | 'vehicleEntrance' | 'serviceEntrance',
+    coordIndex: number,
     val: string
   ) => {
     const num = parseFloat(val);
@@ -1027,7 +950,7 @@ const BuildingEditorDraft: React.FC<{
     const currentCoord = currentPoints[type] || [0, 0, 0];
     const newCoord = [...currentCoord] as [number, number, number];
     newCoord[coordIndex] = isNaN(num) ? 0 : num;
-    
+
     onUpdateDraft({
       accessPoints: {
         ...currentPoints,
@@ -1052,19 +975,16 @@ const BuildingEditorDraft: React.FC<{
     onUpdateDraft({ accessPoints: currentPoints });
   };
 
-  const handleModeSplitChange = (mode: 'car' | 'twoWheeler' | 'bus' | 'metro' | 'walk' | 'other', val: string) => {
-    const num = parseInt(val) || 0;
+  const handleModeSplitChange = (mode: BuildingSplitKey, val: string) => {
     const currentProfile = draft.activityProfile || {};
-    const currentSplit = currentProfile.modeSplit || {};
-    onUpdateDraft({
-      activityProfile: {
-        ...currentProfile,
-        modeSplit: {
-          ...currentSplit,
-          [mode]: num
-        }
-      }
-    });
+    // Shares are a distribution: changing one rescales the rest so the total stays 100%
+    const modeSplit = rebalanceSplit(currentProfile.modeSplit || {}, BUILDING_SPLIT_KEYS, mode, parseInt(val) || 0);
+    onUpdateDraft({ activityProfile: { ...currentProfile, modeSplit } });
+  };
+
+  const handleClearModeSplit = () => {
+    const { modeSplit: _removed, ...rest } = draft.activityProfile || {};
+    onUpdateDraft({ activityProfile: rest });
   };
 
   const handleTripGenChange = (field: string, val: string) => {
@@ -1085,17 +1005,17 @@ const BuildingEditorDraft: React.FC<{
   return (
     <div className="space-y-4 text-xs">
       <div className="flex items-center justify-between border-b border-white/5 pb-2 bg-slate-950/20 p-2 rounded-lg">
-        <span className="text-[10px] text-indigo-400 font-bold uppercase">Editing Mode</span>
+        <span className="text-xs text-indigo-400 font-bold uppercase">Editing Mode</span>
         <div className="flex gap-1.5">
-          <button 
+          <button
             onClick={onCancel}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded cursor-pointer transition text-[10px]"
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded cursor-pointer transition text-xs"
           >
             Cancel
           </button>
-          <button 
+          <button
             onClick={onSave}
-            className="px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white font-semibold rounded cursor-pointer transition text-[10px]"
+            className="px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white font-semibold rounded cursor-pointer transition text-xs"
           >
             Save
           </button>
@@ -1105,9 +1025,9 @@ const BuildingEditorDraft: React.FC<{
       {/* Category & State */}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Category</label>
-          <select 
-            value={draft.category || 'other'} 
+          <label className="text-xs text-slate-400 uppercase font-semibold">Category</label>
+          <select
+            value={draft.category || 'other'}
             onChange={(e) => onUpdateDraft({ category: e.target.value as BuildingCategory })}
             className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-slate-200 focus:outline-none"
           >
@@ -1127,9 +1047,9 @@ const BuildingEditorDraft: React.FC<{
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">State</label>
-          <select 
-            value={draft.state || 'existing'} 
+          <label className="text-xs text-slate-400 uppercase font-semibold">State</label>
+          <select
+            value={draft.state || 'existing'}
             onChange={(e) => onUpdateDraft({ state: e.target.value as BuildingState })}
             className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-slate-200 focus:outline-none"
           >
@@ -1143,8 +1063,8 @@ const BuildingEditorDraft: React.FC<{
       {/* Height / Floors */}
       <div className="grid grid-cols-2 gap-2 bg-slate-950/40 p-2.5 rounded-lg border border-white/5">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Floors</label>
-          <input 
+          <label className="text-xs text-slate-400 uppercase font-semibold">Floors</label>
+          <input
             type="number"
             value={draft.floors}
             onChange={(e) => {
@@ -1155,8 +1075,8 @@ const BuildingEditorDraft: React.FC<{
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Height (m)</label>
-          <input 
+          <label className="text-xs text-slate-400 uppercase font-semibold">Height (m)</label>
+          <input
             type="number"
             value={draft.height}
             onChange={(e) => {
@@ -1170,12 +1090,12 @@ const BuildingEditorDraft: React.FC<{
 
       {/* Specific Capacities */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-3.5">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Capacity Settings</span>
-        
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Capacity Settings</span>
+
         {draft.category === 'residential' && (
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Residents</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Residents</label>
+            <input
               type="number"
               value={draft.residents ?? draft.population}
               onChange={(e) => onUpdateDraft({ residents: parseInt(e.target.value) || 0 })}
@@ -1186,8 +1106,8 @@ const BuildingEditorDraft: React.FC<{
 
         {draft.category !== 'residential' && (
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Employees</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Employees</label>
+            <input
               type="number"
               value={draft.employees ?? 0}
               onChange={(e) => onUpdateDraft({ employees: parseInt(e.target.value) || 0 })}
@@ -1198,8 +1118,8 @@ const BuildingEditorDraft: React.FC<{
 
         {(draft.category === 'school' || draft.category === 'college') && (
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Students</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Students</label>
+            <input
               type="number"
               value={draft.students ?? 0}
               onChange={(e) => onUpdateDraft({ students: parseInt(e.target.value) || 0 })}
@@ -1210,8 +1130,8 @@ const BuildingEditorDraft: React.FC<{
 
         {draft.category === 'hospital' && (
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Patients</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Patients</label>
+            <input
               type="number"
               value={draft.patients ?? 0}
               onChange={(e) => onUpdateDraft({ patients: parseInt(e.target.value) || 0 })}
@@ -1222,8 +1142,8 @@ const BuildingEditorDraft: React.FC<{
 
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Visitors / Day</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Visitors / Day</label>
+            <input
               type="number"
               value={draft.visitorsPerDay ?? 10}
               onChange={(e) => onUpdateDraft({ visitorsPerDay: parseInt(e.target.value) || 0 })}
@@ -1231,8 +1151,8 @@ const BuildingEditorDraft: React.FC<{
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Parking Cap (cars)</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase font-semibold">Parking Cap (cars)</label>
+            <input
               type="number"
               value={draft.parkingCapacity ?? draft.parkingSpaces}
               onChange={(e) => onUpdateDraft({ parkingCapacity: parseInt(e.target.value) || 0 })}
@@ -1244,24 +1164,24 @@ const BuildingEditorDraft: React.FC<{
 
       {/* Connection / Entrances */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-3">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block font-semibold">Access Coordinates (Lng/Lat)</span>
-        
+        <span className="text-xs text-indigo-400 uppercase font-mono block font-semibold">Access Coordinates (Lng/Lat)</span>
+
         {(['mainEntrance', 'vehicleEntrance', 'serviceEntrance'] as const).map(type => {
           const coord = draft.accessPoints?.[type] || [0, 0, 0];
           const hasCoord = !!draft.accessPoints?.[type];
           return (
             <div key={type} className="space-y-1 border-b border-white/5 pb-2 last:border-b-0 last:pb-0">
-              <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold uppercase">
+              <div className="flex justify-between items-center text-xs text-slate-400 font-semibold uppercase">
                 <span>{type.replace('Entrance', ' Entrance')}</span>
-                <div className="flex gap-1.5 text-[9px]">
-                  <button 
+                <div className="flex gap-1.5 text-xs">
+                  <button
                     onClick={() => handleSetToCenter(type)}
                     className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
                   >
                     Use Center
                   </button>
                   {hasCoord && (
-                    <button 
+                    <button
                       onClick={() => handleClearEntrance(type)}
                       className="text-red-400 hover:text-red-300 font-medium cursor-pointer"
                     >
@@ -1271,21 +1191,21 @@ const BuildingEditorDraft: React.FC<{
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5 font-mono">
-                <input 
+                <input
                   type="number"
                   step="0.00001"
                   placeholder="Longitude"
                   value={hasCoord ? coord[0] : ''}
                   onChange={(e) => handleCoordinateChange(type, 0, e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded p-1 text-[11px] text-slate-200 focus:outline-none"
+                  className="bg-slate-950 border border-slate-800 rounded p-1 text-sm text-slate-200 focus:outline-none"
                 />
-                <input 
+                <input
                   type="number"
                   step="0.00001"
                   placeholder="Latitude"
                   value={hasCoord ? coord[1] : ''}
                   onChange={(e) => handleCoordinateChange(type, 1, e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded p-1 text-[11px] text-slate-200 focus:outline-none"
+                  className="bg-slate-950 border border-slate-800 rounded p-1 text-sm text-slate-200 focus:outline-none"
                 />
               </div>
             </div>
@@ -1295,11 +1215,11 @@ const BuildingEditorDraft: React.FC<{
 
       {/* Activity Profile */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-3">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Peak Traffic Hours (HH:MM)</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Peak Traffic Hours (HH:MM)</span>
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-0.5">
-            <label className="text-[9px] text-slate-400 uppercase">Arrival Start</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase">Arrival Start</label>
+            <input
               type="text"
               placeholder="e.g. 08:30"
               value={draft.activityProfile?.peakArrivalStart || ''}
@@ -1313,8 +1233,8 @@ const BuildingEditorDraft: React.FC<{
             />
           </div>
           <div className="flex flex-col gap-0.5">
-            <label className="text-[9px] text-slate-400 uppercase">Arrival End</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase">Arrival End</label>
+            <input
               type="text"
               placeholder="e.g. 09:30"
               value={draft.activityProfile?.peakArrivalEnd || ''}
@@ -1328,8 +1248,8 @@ const BuildingEditorDraft: React.FC<{
             />
           </div>
           <div className="flex flex-col gap-0.5">
-            <label className="text-[9px] text-slate-400 uppercase">Departure Start</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase">Departure Start</label>
+            <input
               type="text"
               placeholder="e.g. 17:30"
               value={draft.activityProfile?.peakDepartureStart || ''}
@@ -1343,8 +1263,8 @@ const BuildingEditorDraft: React.FC<{
             />
           </div>
           <div className="flex flex-col gap-0.5">
-            <label className="text-[9px] text-slate-400 uppercase">Departure End</label>
-            <input 
+            <label className="text-xs text-slate-400 uppercase">Departure End</label>
+            <input
               type="text"
               placeholder="e.g. 18:30"
               value={draft.activityProfile?.peakDepartureEnd || ''}
@@ -1361,18 +1281,27 @@ const BuildingEditorDraft: React.FC<{
 
         {/* Mode Split */}
         <div className="space-y-1.5">
-          <label className="text-[9px] text-slate-400 uppercase font-semibold">Mode Split (%)</label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-slate-400 uppercase font-semibold">Mode Split (%)</label>
+            {draft.activityProfile?.modeSplit ? (
+              <button onClick={handleClearModeSplit} className="text-xs text-slate-400 hover:text-slate-200 underline cursor-pointer">
+                Use model default
+              </button>
+            ) : (
+              <span className="text-xs text-slate-500">Model default (25/35/20/10/8/2)</span>
+            )}
+          </div>
           <div className="grid grid-cols-3 gap-1.5">
-            {(['car', 'twoWheeler', 'bus', 'metro', 'walk', 'other'] as const).map(mode => (
+            {BUILDING_SPLIT_KEYS.map(mode => (
               <div key={mode} className="flex items-center gap-1.5 bg-slate-950/40 p-1 rounded">
-                <span className="text-[9px] text-slate-400 capitalize w-7">{mode === 'twoWheeler' ? '2W' : mode}</span>
-                <input 
+                <span className="text-xs text-slate-400 capitalize w-7">{mode === 'twoWheeler' ? '2W' : mode}</span>
+                <input
                   type="number"
                   min="0"
                   max="100"
                   value={draft.activityProfile?.modeSplit?.[mode] ?? 0}
                   onChange={(e) => handleModeSplitChange(mode, e.target.value)}
-                  className="bg-transparent text-right font-mono text-[10px] text-indigo-400 w-8 focus:outline-none"
+                  className="bg-transparent text-right font-mono text-xs text-indigo-400 w-8 focus:outline-none"
                 />
               </div>
             ))}
@@ -1381,33 +1310,33 @@ const BuildingEditorDraft: React.FC<{
 
         {/* Trip Generation */}
         <div className="space-y-1.5 border-t border-white/5 pt-2.5">
-          <label className="text-[9px] text-slate-400 uppercase font-semibold">Trip Generation Rates</label>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Trip Generation Rates</label>
           <div className="grid grid-cols-3 gap-1.5">
             <div className="flex flex-col bg-slate-950/40 p-1.5 rounded">
-              <span className="text-[9px] text-slate-400 block text-center">Daily</span>
-              <input 
+              <span className="text-xs text-slate-400 block text-center">Daily</span>
+              <input
                 type="number"
                 value={draft.activityProfile?.tripGeneration?.dailyTrips ?? 0}
                 onChange={(e) => handleTripGenChange('dailyTrips', e.target.value)}
-                className="bg-transparent text-center font-mono text-[10px] text-slate-200 focus:outline-none w-full mt-0.5"
+                className="bg-transparent text-center font-mono text-xs text-slate-200 focus:outline-none w-full mt-0.5"
               />
             </div>
             <div className="flex flex-col bg-slate-950/40 p-1.5 rounded">
-              <span className="text-[9px] text-slate-400 block text-center">AM Peak</span>
-              <input 
+              <span className="text-xs text-slate-400 block text-center">AM Peak</span>
+              <input
                 type="number"
                 value={draft.activityProfile?.tripGeneration?.amPeakTrips ?? 0}
                 onChange={(e) => handleTripGenChange('amPeakTrips', e.target.value)}
-                className="bg-transparent text-center font-mono text-[10px] text-slate-200 focus:outline-none w-full mt-0.5"
+                className="bg-transparent text-center font-mono text-xs text-slate-200 focus:outline-none w-full mt-0.5"
               />
             </div>
             <div className="flex flex-col bg-slate-950/40 p-1.5 rounded">
-              <span className="text-[9px] text-slate-400 block text-center">PM Peak</span>
-              <input 
+              <span className="text-xs text-slate-400 block text-center">PM Peak</span>
+              <input
                 type="number"
                 value={draft.activityProfile?.tripGeneration?.pmPeakTrips ?? 0}
                 onChange={(e) => handleTripGenChange('pmPeakTrips', e.target.value)}
-                className="bg-transparent text-center font-mono text-[10px] text-slate-200 focus:outline-none w-full mt-0.5"
+                className="bg-transparent text-center font-mono text-xs text-slate-200 focus:outline-none w-full mt-0.5"
               />
             </div>
           </div>
@@ -1416,8 +1345,8 @@ const BuildingEditorDraft: React.FC<{
 
       {/* Notes */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Planner Notes</label>
-        <textarea 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Planner Notes</label>
+        <textarea
           value={draft.notes || ''}
           onChange={(e) => onUpdateDraft({ notes: e.target.value })}
           rows={3}
@@ -1432,6 +1361,10 @@ const BuildingEditorDraft: React.FC<{
 
 
 const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: string, val: any) => void; isFlyover?: boolean }> = ({ r, onUpdate, isFlyover }) => {
+  // The ramp connection check reads the city-wide graph
+  useEffect(() => {
+    if (isFlyover) engineInstance.requestTrafficNetwork();
+  }, [isFlyover]);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -1464,9 +1397,9 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
     <div className="space-y-3.5">
       {/* Category Dropdown */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Road Classification</label>
-        <select 
-          value={r.roadClass} 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Road Classification</label>
+        <select
+          value={r.roadClass}
           onChange={(e) => onUpdate('roadClass', e.target.value)}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
         >
@@ -1479,17 +1412,17 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
 
       {/* Total Lanes Indicator */}
       <div className="flex justify-between items-center bg-slate-950/20 p-2 rounded border border-white/5">
-        <span className="text-[11px] text-slate-400 uppercase font-semibold">Total Lanes</span>
+        <span className="text-sm text-slate-400 uppercase font-semibold">Total Lanes</span>
         <span className="text-xs font-mono font-bold text-slate-200 bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">{r.laneCount}</span>
       </div>
 
       {/* Forward Lanes */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">
+        <label className="text-xs text-slate-400 uppercase font-semibold">
           {r.isOneWay ? "Lanes" : "Lanes (Forward)"}
         </label>
-        <select 
-          value={fwdLanes} 
+        <select
+          value={fwdLanes}
           onChange={(e) => onUpdate('lanesForward', Number(e.target.value))}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
         >
@@ -1506,9 +1439,9 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {/* Backward Lanes */}
       {!r.isOneWay && (
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Lanes (Backward)</label>
-          <select 
-            value={bwdLanes} 
+          <label className="text-xs text-slate-400 uppercase font-semibold">Lanes (Backward)</label>
+          <select
+            value={bwdLanes}
             onChange={(e) => onUpdate('lanesBackward', Number(e.target.value))}
             className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
           >
@@ -1526,13 +1459,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {/* Lane Width */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Lane Width (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{r.laneWidth || 3.5}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Lane Width (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{r.laneWidth || 3.5}m</span>
         </div>
-        <input 
-          type="range" 
-          min={2.5} 
-          max={4.5} 
+        <input
+          type="range"
+          min={2.5}
+          max={4.5}
           step={0.1}
           value={r.laneWidth || 3.5}
           onChange={(e) => onUpdate('laneWidth', Number(e.target.value))}
@@ -1544,13 +1477,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {r.hasDivider && (
         <div className="flex flex-col gap-1">
           <div className="flex justify-between items-center">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Divider Width (m)</label>
-            <span className="text-[10px] text-indigo-400 font-mono">{r.dividerWidth || 2.0}m</span>
+            <label className="text-xs text-slate-400 uppercase font-semibold">Divider Width (m)</label>
+            <span className="text-xs text-indigo-400 font-mono">{r.dividerWidth || 2.0}m</span>
           </div>
-          <input 
-            type="range" 
-            min={0.5} 
-            max={5.0} 
+          <input
+            type="range"
+            min={0.5}
+            max={5.0}
             step={0.1}
             value={r.dividerWidth || 2.0}
             onChange={(e) => onUpdate('dividerWidth', Number(e.target.value))}
@@ -1563,13 +1496,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {r.hasFootpath && (
         <div className="flex flex-col gap-1">
           <div className="flex justify-between items-center">
-            <label className="text-[10px] text-slate-400 uppercase font-semibold">Footpath Width (m)</label>
-            <span className="text-[10px] text-indigo-400 font-mono">{r.footpathWidth || 1.5}m</span>
+            <label className="text-xs text-slate-400 uppercase font-semibold">Footpath Width (m)</label>
+            <span className="text-xs text-indigo-400 font-mono">{r.footpathWidth || 1.5}m</span>
           </div>
-          <input 
-            type="range" 
-            min={0.5} 
-            max={3.0} 
+          <input
+            type="range"
+            min={0.5}
+            max={3.0}
             step={0.1}
             value={r.footpathWidth || 1.5}
             onChange={(e) => onUpdate('footpathWidth', Number(e.target.value))}
@@ -1584,13 +1517,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           {/* Deck Elevation */}
           <div className="flex flex-col gap-1">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] text-slate-400 uppercase font-semibold">Deck Elevation (m)</label>
-              <span className="text-[10px] text-indigo-400 font-mono">{(r as any).elevation || 6}m</span>
+              <label className="text-xs text-slate-400 uppercase font-semibold">Deck Elevation (m)</label>
+              <span className="text-xs text-indigo-400 font-mono">{(r as any).elevation || 6}m</span>
             </div>
-            <input 
-              type="range" 
-              min={3.0} 
-              max={18.0} 
+            <input
+              type="range"
+              min={3.0}
+              max={18.0}
               step={0.5}
               value={(r as any).elevation || 6}
               onChange={(e) => onUpdate('elevation', Number(e.target.value))}
@@ -1601,13 +1534,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           {/* Pier Spacing */}
           <div className="flex flex-col gap-1">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] text-slate-400 uppercase font-semibold">Column Spacing (m)</label>
-              <span className="text-[10px] text-indigo-400 font-mono">{(r as any).pierSpacing || 30}m</span>
+              <label className="text-xs text-slate-400 uppercase font-semibold">Column Spacing (m)</label>
+              <span className="text-xs text-indigo-400 font-mono">{(r as any).pierSpacing || 30}m</span>
             </div>
-            <input 
-              type="range" 
-              min={15.0} 
-              max={60.0} 
+            <input
+              type="range"
+              min={15.0}
+              max={60.0}
               step={5.0}
               value={(r as any).pierSpacing || 30}
               onChange={(e) => onUpdate('pierSpacing', Number(e.target.value))}
@@ -1619,13 +1552,13 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           {(r as any).type === 'metro_flyover' && (
             <div className="flex flex-col gap-1 mt-2">
               <div className="flex justify-between items-center">
-                <label className="text-[10px] text-slate-400 uppercase font-semibold">Metro Elevation (m)</label>
-                <span className="text-[10px] text-indigo-400 font-mono">{(r as any).metroElevation || 12}m</span>
+                <label className="text-xs text-slate-400 uppercase font-semibold">Metro Elevation (m)</label>
+                <span className="text-xs text-indigo-400 font-mono">{(r as any).metroElevation || 12}m</span>
               </div>
-              <input 
-                type="range" 
-                min={8.0} 
-                max={25.0} 
+              <input
+                type="range"
+                min={8.0}
+                max={25.0}
                 step={0.5}
                 value={(r as any).metroElevation || 12}
                 onChange={(e) => onUpdate('metroElevation', Number(e.target.value))}
@@ -1638,9 +1571,9 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
 
       {/* Speed limit */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Speed Limit (km/h)</label>
-        <input 
-          type="number" 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Speed Limit (km/h)</label>
+        <input
+          type="number"
           value={r.speedLimit}
           onChange={(e) => onUpdate('speedLimit', Number(e.target.value))}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
@@ -1650,28 +1583,28 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {/* Toggle options */}
       <div className="bg-slate-950/40 p-3 rounded-lg border border-white/5 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">One Way Road</span>
-          <input 
-            type="checkbox" 
-            checked={r.isOneWay} 
+          <span className="text-sm text-slate-400">One Way Road</span>
+          <input
+            type="checkbox"
+            checked={r.isOneWay}
             onChange={(e) => onUpdate('isOneWay', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
           />
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Central Divider</span>
-          <input 
-            type="checkbox" 
-            checked={r.hasDivider} 
+          <span className="text-sm text-slate-400">Central Divider</span>
+          <input
+            type="checkbox"
+            checked={r.hasDivider}
             onChange={(e) => onUpdate('hasDivider', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
           />
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Pedestrian Footpath</span>
-          <input 
-            type="checkbox" 
-            checked={r.hasFootpath} 
+          <span className="text-sm text-slate-400">Pedestrian Footpath</span>
+          <input
+            type="checkbox"
+            checked={r.hasFootpath}
             onChange={(e) => onUpdate('hasFootpath', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
           />
@@ -1681,14 +1614,14 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
       {/* Diagnostics Dashboard for Flyovers */}
       {isFlyover && (
         <div className="bg-slate-950/50 p-3 rounded-lg border border-white/5 space-y-2.5 mt-3">
-          <div className="text-[11px] text-slate-400 uppercase font-semibold border-b border-white/5 pb-1.5 flex justify-between items-center">
+          <div className="text-sm text-slate-400 uppercase font-semibold border-b border-white/5 pb-1.5 flex justify-between items-center">
             <span>Diagnostics & Simulation</span>
-            <span className="text-[9px] text-indigo-400 font-mono">Real-time</span>
+            <span className="text-xs text-indigo-400 font-mono">Real-time</span>
           </div>
 
           {/* Connection Status */}
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold">Connectivity</span>
+            <span className="text-xs text-slate-400 uppercase font-semibold">Connectivity</span>
             {conn.connected ? (
               <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
                 ● Traffic connection: Connected
@@ -1696,7 +1629,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
             ) : (
               <span className="text-xs text-rose-400 font-medium flex flex-col gap-0.5">
                 <span>▲ Flyover is disconnected from the traffic network.</span>
-                <span className="text-[9px] text-slate-500">
+                <span className="text-xs text-slate-500">
                   {!conn.startConnected && !conn.endConnected
                     ? "Both ends are disconnected. Draw ramps snapping to existing roads."
                     : !conn.startConnected
@@ -1707,7 +1640,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
               <span className="text-slate-500">Deck Elevation:</span>
               <span className="text-slate-200 font-semibold block mt-0.5">{(r as any).elevation || 6}m</span>
@@ -1745,7 +1678,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           </div>
 
           <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold">Congestion State</span>
+            <span className="text-xs text-slate-400 uppercase font-semibold">Congestion State</span>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border w-fit ${
               congestionState === 'Severe'
                 ? 'bg-red-500/10 text-red-400 border-red-500/20'
@@ -1759,7 +1692,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
             </span>
           </div>
 
-          <div className="text-[9px] text-slate-500 space-y-1 font-mono border-t border-white/5 pt-2">
+          <div className="text-xs text-slate-500 space-y-1 font-mono border-t border-white/5 pt-2">
             <div className="truncate">Start Node: {conn.startNodeId || "None"}</div>
             <div className="truncate">End Node: {conn.endNodeId || "None"}</div>
           </div>
@@ -1774,9 +1707,9 @@ const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, 
     <div className="space-y-4">
       {/* Tracks count */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Track Count</label>
-        <select 
-          value={m.trackCount} 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Track Count</label>
+        <select
+          value={m.trackCount}
           onChange={(e) => onUpdate('trackCount', Number(e.target.value))}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
         >
@@ -1788,13 +1721,13 @@ const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, 
       {/* Deck Width */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Deck Width (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{m.deckWidth}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Deck Width (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{m.deckWidth}m</span>
         </div>
-        <input 
-          type="range" 
-          min={4.0} 
-          max={12.0} 
+        <input
+          type="range"
+          min={4.0}
+          max={12.0}
           step={0.5}
           value={m.deckWidth}
           onChange={(e) => onUpdate('deckWidth', Number(e.target.value))}
@@ -1805,13 +1738,13 @@ const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, 
       {/* Elevation */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Track Elevation (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{m.elevation}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Track Elevation (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{m.elevation}m</span>
         </div>
-        <input 
-          type="range" 
-          min={6.0} 
-          max={24.0} 
+        <input
+          type="range"
+          min={6.0}
+          max={24.0}
           step={1.0}
           value={m.elevation}
           onChange={(e) => onUpdate('elevation', Number(e.target.value))}
@@ -1822,13 +1755,13 @@ const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, 
       {/* Pier Spacing */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Column Spacing (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{m.pierSpacing}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Column Spacing (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{m.pierSpacing}m</span>
         </div>
-        <input 
-          type="range" 
-          min={15.0} 
-          max={60.0} 
+        <input
+          type="range"
+          min={15.0}
+          max={60.0}
           step={5.0}
           value={m.pierSpacing}
           onChange={(e) => onUpdate('pierSpacing', Number(e.target.value))}
@@ -1840,18 +1773,77 @@ const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, 
 };
 
 const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: string, val: any) => void }> = ({ s, onUpdate }) => {
+  const orientation = resolveStationHeading(s, engineInstance.objects.getAll());
+  const nearbyTrack = findNearestTrack(s.coordinates, engineInstance.objects.getAll());
+  const heading = Math.round(orientation.heading);
+  const autoAlign = s.alignToTrack !== false;
+
   return (
     <div className="space-y-4">
+      {/* Orientation */}
+      <div className="bg-slate-950/40 p-3 rounded-lg border border-white/5 space-y-2.5">
+        <div className="flex justify-between items-center">
+          <label className="text-xs text-slate-400 uppercase font-semibold">Orientation</label>
+          <span className="text-xs text-indigo-400 font-mono">{heading}° from north</span>
+        </div>
+
+        <label className="flex items-center justify-between gap-2 text-sm text-slate-300 cursor-pointer">
+          <span>Align to nearest metro track</span>
+          <input
+            type="checkbox"
+            checked={autoAlign}
+            onChange={(e) => onUpdate('alignToTrack', e.target.checked)}
+            className="accent-indigo-500 cursor-pointer"
+          />
+        </label>
+        <p className="text-xs leading-relaxed text-slate-400">
+          {orientation.source === 'track' && orientation.track
+            ? `Following "${orientation.track.trackName}" (${Math.round(orientation.track.distanceMeters)} m away).`
+            : autoAlign
+              ? 'No metro track within 100 m — using the manual heading below.'
+              : nearbyTrack
+                ? `Manual. "${nearbyTrack.trackName}" is ${Math.round(nearbyTrack.distanceMeters)} m away — tick above to align.`
+                : 'Manual heading.'}
+        </p>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onUpdate('heading', heading - 15)}
+            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 cursor-pointer"
+            title="Rotate 15° anticlockwise (Shift+R)"
+          >
+            ⟲ 15°
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={359}
+            step={1}
+            value={heading}
+            onChange={(e) => onUpdate('heading', Number(e.target.value))}
+            aria-label="Station heading in degrees"
+            className="flex-1 accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+          />
+          <button
+            onClick={() => onUpdate('heading', heading + 15)}
+            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 cursor-pointer"
+            title="Rotate 15° clockwise (R)"
+          >
+            15° ⟳
+          </button>
+        </div>
+      </div>
+
       {/* Length */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Station Length (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{s.length}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Station Length (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{s.length}m</span>
         </div>
-        <input 
-          type="range" 
-          min={80} 
-          max={200} 
+        <input
+          type="range"
+          min={80}
+          max={200}
           step={10}
           value={s.length}
           onChange={(e) => onUpdate('length', Number(e.target.value))}
@@ -1862,13 +1854,13 @@ const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: st
       {/* Width */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Station Width (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{s.width}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Station Width (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{s.width}m</span>
         </div>
-        <input 
-          type="range" 
-          min={12} 
-          max={30} 
+        <input
+          type="range"
+          min={12}
+          max={30}
           step={2}
           value={s.width}
           onChange={(e) => onUpdate('width', Number(e.target.value))}
@@ -1879,13 +1871,13 @@ const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: st
       {/* Elevation */}
       <div className="flex flex-col gap-1">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Platform Elevation (m)</label>
-          <span className="text-[10px] text-indigo-400 font-mono">{s.elevation}m</span>
+          <label className="text-xs text-slate-400 uppercase font-semibold">Platform Elevation (m)</label>
+          <span className="text-xs text-indigo-400 font-mono">{s.elevation}m</span>
         </div>
-        <input 
-          type="range" 
-          min={6.0} 
-          max={24.0} 
+        <input
+          type="range"
+          min={6.0}
+          max={24.0}
           step={1.0}
           value={s.elevation}
           onChange={(e) => onUpdate('elevation', Number(e.target.value))}
@@ -1895,9 +1887,9 @@ const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: st
 
       {/* Capacity */}
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Passenger Capacity (Peak)</label>
-        <input 
-          type="number" 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Passenger Capacity (Peak)</label>
+        <input
+          type="number"
           value={s.capacity}
           onChange={(e) => onUpdate('capacity', Number(e.target.value))}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -1910,26 +1902,28 @@ const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: st
 const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, val: any) => void }> = ({ j, onUpdate }) => {
   return (
     <div className="space-y-3.5">
-      <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-950/40 p-3 rounded-lg border border-white/5">
+      <div className="flex items-center justify-between text-sm text-slate-400 bg-slate-950/40 p-3 rounded-lg border border-white/5">
         <span>Coordinate center:</span>
         <span className="font-mono text-indigo-300">[{j.coordinates[0].toFixed(4)}, {j.coordinates[1].toFixed(4)}]</span>
       </div>
 
       <div className="bg-slate-950/40 p-3 rounded-lg border border-white/5 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Traffic Signal Lights</span>
-          <input 
-            type="checkbox" 
-            checked={j.hasSignals} 
+          <span className="text-sm text-slate-400">Traffic Signal Lights</span>
+          <input
+            type="checkbox"
+            aria-label="Traffic signal lights"
+            checked={j.hasSignals}
             onChange={(e) => onUpdate('hasSignals', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
           />
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">Crosswalks</span>
-          <input 
-            type="checkbox" 
-            checked={j.hasPedestrianCrossing} 
+          <span className="text-sm text-slate-400">Crosswalks</span>
+          <input
+            type="checkbox"
+            aria-label="Pedestrian crosswalks"
+            checked={j.hasPedestrianCrossing}
             onChange={(e) => onUpdate('hasPedestrianCrossing', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
           />
@@ -1938,13 +1932,17 @@ const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, va
 
       {j.hasSignals && (
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-slate-400 uppercase font-semibold">Signal Phase Timing (secs)</label>
-          <input 
-            type="number" 
+          <label htmlFor="junction-cycle" className="text-xs text-slate-400 uppercase font-semibold">Full signal cycle (seconds)</label>
+          <input
+            id="junction-cycle"
+            type="number"
+            min={20}
+            max={300}
             value={j.signalTiming}
             onChange={(e) => onUpdate('signalTiming', Number(e.target.value))}
             className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
           />
+          <p className="text-xs text-slate-500">Applied to this junction in Simulate. Green time is split between the crossing approaches.</p>
         </div>
       )}
     </div>
@@ -1955,9 +1953,9 @@ const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: (field: string, val:
   return (
     <div className="space-y-3.5">
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Lay Depth (meters)</label>
-        <input 
-          type="number" 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Lay Depth (meters)</label>
+        <input
+          type="number"
           step="0.1"
           value={u.depth}
           onChange={(e) => onUpdate('depth', Number(e.target.value))}
@@ -1966,9 +1964,9 @@ const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: (field: string, val:
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] text-slate-400 uppercase font-semibold">Service Capacity</label>
-        <input 
-          type="number" 
+        <label className="text-xs text-slate-400 uppercase font-semibold">Service Capacity</label>
+        <input
+          type="number"
           value={u.capacity}
           onChange={(e) => onUpdate('capacity', Number(e.target.value))}
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
@@ -1979,6 +1977,7 @@ const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: (field: string, val:
 };
 
 const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) => void }> = ({ z, onUpdate }) => {
+  useEffect(() => engineInstance.requestTrafficNetwork(), []);
   const allObjects = engineInstance.objects.getAll();
   const buildings = allObjects.filter(o => o.type === 'building') as BuildingObject[];
 
@@ -2003,7 +2002,7 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
   const network = engineInstance.getTrafficNetwork();
   let zoneNodesCount = 0;
   let zoneRoadsCount = 0;
-  
+
   if (network && z.coordinates && z.coordinates.length > 0) {
     if (network.nodes) {
       network.nodes.forEach((node: any) => {
@@ -2012,7 +2011,7 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
         }
       });
     }
-    
+
     const roads = allObjects.filter(o => o.type === 'road') as RoadObject[];
     roads.forEach(r => {
       const hasCoordInside = r.coordinates.some(pt => isPtInPoly([pt[0], pt[1]], z.coordinates));
@@ -2038,14 +2037,14 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
 
   return (
     <div className="space-y-4">
-      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+      <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
         Demand Zone Planning
       </div>
-      
+
       {/* Snapped Object Statistics */}
       <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Boundary Snapped Objects</span>
-        <div className="space-y-1.5 pt-1 font-mono text-[11px]">
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Boundary Snapped Objects</span>
+        <div className="space-y-1.5 pt-1 font-mono text-sm">
           <div className="flex justify-between border-b border-white/5 pb-1">
             <span className="text-slate-400">Road Access:</span>
             <span className="text-slate-200 font-bold">{zoneRoadsCount} roads</span>
@@ -2066,31 +2065,31 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
       </div>
       <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
         <div className="space-y-1">
-          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Zone Name</label>
-          <input 
-            type="text" 
-            value={z.name} 
-            onChange={(e) => onUpdate('name', e.target.value)} 
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zone Name</label>
+          <input
+            type="text"
+            value={z.name}
+            onChange={(e) => onUpdate('name', e.target.value)}
             className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
           />
         </div>
-        
+
         <div className="grid grid-cols-2 gap-2.5">
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Residents</label>
-            <input 
-              type="number" 
-              value={z.totalPopulation || 0} 
-              onChange={(e) => onUpdate('totalPopulation', Number(e.target.value))} 
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Residents</label>
+            <input
+              type="number"
+              value={z.totalPopulation || 0}
+              onChange={(e) => onUpdate('totalPopulation', Number(e.target.value))}
               className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Employees</label>
-            <input 
-              type="number" 
-              value={z.totalEmployment || 0} 
-              onChange={(e) => onUpdate('totalEmployment', Number(e.target.value))} 
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Employees</label>
+            <input
+              type="number"
+              value={z.totalEmployment || 0}
+              onChange={(e) => onUpdate('totalEmployment', Number(e.target.value))}
               className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
             />
           </div>
@@ -2098,7 +2097,7 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
       </div>
 
       <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Residual Planning Math</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Residual Planning Math</span>
         <div className="space-y-1.5 pt-1">
           <div className="flex justify-between border-b border-white/5 pb-1">
             <span className="text-slate-400">Explicit Population:</span>
@@ -2118,24 +2117,24 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
           </div>
         </div>
       </div>
-      
+
       <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Land-Use Mix (%)</label>
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Land-Use Mix (%)</label>
         <div className="space-y-2.5 pt-1.5">
           {['residential', 'commercial', 'industrial', 'educational'].map((use) => {
             const mix = z.landUseMix || { residential: 50, commercial: 30, industrial: 10, educational: 10 };
             const val = (mix as any)[use] || 0;
             return (
               <div key={use} className="space-y-1">
-                <div className="flex justify-between text-[10px] capitalize text-slate-400 font-medium">
+                <div className="flex justify-between text-xs capitalize text-slate-400 font-medium">
                   <span>{use}</span>
                   <span>{val}%</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={val} 
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={val}
                   onChange={(e) => {
                     const newMix = { ...mix, [use]: Number(e.target.value) };
                     onUpdate('landUseMix', newMix);
@@ -2149,16 +2148,16 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
       </div>
 
       <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-[10px] text-indigo-400 uppercase font-mono block">Associated Gateways</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono block">Associated Gateways</span>
         <div className="flex flex-wrap gap-1 pt-1">
           {z.gateways && z.gateways.length > 0 ? (
             z.gateways.map((gId) => (
-              <span key={gId} className="bg-slate-950 border border-white/10 px-2 py-0.5 rounded text-[10px] text-indigo-300 font-mono">
+              <span key={gId} className="bg-slate-950 border border-white/10 px-2 py-0.5 rounded text-xs text-indigo-300 font-mono">
                 {gId}
               </span>
             ))
           ) : (
-            <span className="text-slate-500 italic text-[11px]">No gateways associated.</span>
+            <span className="text-slate-500 italic text-sm">No gateways associated.</span>
           )}
         </div>
       </div>
@@ -2167,11 +2166,12 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
 };
 
 const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val: any) => void }> = ({ g, onUpdate }) => {
+  useEffect(() => engineInstance.requestTrafficNetwork(), []);
   const periods = ['AM_Peak', 'PM_Peak', 'Midday', 'Night'];
-  
+
   const allObjects = engineInstance.objects.getAll();
   const network = engineInstance.getTrafficNetwork();
-  
+
   let connectedRoadName = 'None';
   if (g.connectedNodeId && network) {
     if (network.edges) {
@@ -2193,16 +2193,16 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
 
   return (
     <div className="space-y-4">
-      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+      <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
         External Gateway Settings
       </div>
       <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
         <div className="space-y-1">
-          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Gateway Name</label>
-          <input 
-            type="text" 
-            value={g.name} 
-            onChange={(e) => onUpdate('name', e.target.value)} 
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Gateway Name</label>
+          <input
+            type="text"
+            value={g.name}
+            onChange={(e) => onUpdate('name', e.target.value)}
             className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
           />
         </div>
@@ -2214,10 +2214,10 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
         </div>
 
         <div className="space-y-1">
-          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Connected Traffic Node</label>
-          <input 
-            type="text" 
-            value={g.connectedNodeId || ''} 
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Traffic Node</label>
+          <input
+            type="text"
+            value={g.connectedNodeId || ''}
             className="w-full bg-slate-950/60 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 font-mono focus:outline-none cursor-not-allowed"
             placeholder="node_lng_lat"
             disabled
@@ -2226,9 +2226,9 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
 
         {/* Direction Selector */}
         <div className="space-y-1">
-          <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Directional Flow</label>
-          <select 
-            value={direction} 
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Directional Flow</label>
+          <select
+            value={direction}
             onChange={(e) => onUpdate('direction', e.target.value)}
             className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
           >
@@ -2240,32 +2240,32 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
       </div>
 
       <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Flow Rate (Vehicles/hr)</label>
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Flow Rate (Vehicles/hr)</label>
         <div className="space-y-2 pt-1.5">
           {periods.map(p => {
             const inf = g.inboundFlows?.[p] || 0;
             const outf = g.outboundFlows?.[p] || 0;
             return (
               <div key={p} className="grid grid-cols-3 gap-2 items-center text-xs">
-                <span className="text-[10px] capitalize text-slate-400 font-mono">{p.replace('_', ' ')}</span>
-                <input 
-                  type="number" 
-                  value={inf} 
+                <span className="text-xs capitalize text-slate-400 font-mono">{p.replace('_', ' ')}</span>
+                <input
+                  type="number"
+                  value={inf}
                   onChange={(e) => {
                     const newFlows = { ...(g.inboundFlows || {}), [p]: Number(e.target.value) };
                     onUpdate('inboundFlows', newFlows);
                   }}
-                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-[10px] text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
+                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-xs text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
                   placeholder="In"
                 />
-                <input 
-                  type="number" 
-                  value={outf} 
+                <input
+                  type="number"
+                  value={outf}
                   onChange={(e) => {
                     const newFlows = { ...(g.outboundFlows || {}), [p]: Number(e.target.value) };
                     onUpdate('outboundFlows', newFlows);
                   }}
-                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-[10px] text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
+                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-xs text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
                   placeholder="Out"
                 />
               </div>
@@ -2275,24 +2275,25 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
       </div>
 
       <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">Gateway Mode Split (%)</label>
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Gateway Mode Split (%)</label>
         <div className="space-y-2.5 pt-1.5">
-          {['car', 'twoWheeler', 'bus', 'metro', 'walking', 'other'].map((mode) => {
+          {MODE_SPLIT_KEYS.map((mode) => {
             const split = g.modeSplit || { car: 0.25, twoWheeler: 0.35, bus: 0.2, metro: 0.1, walking: 0.08, other: 0.02 };
-            const val = Math.round(((split as any)[mode] || 0) * 100);
+            const val = Math.round((split[mode] || 0) * 100);
             return (
               <div key={mode} className="space-y-1">
-                <div className="flex justify-between text-[10px] capitalize text-slate-400 font-medium">
+                <div className="flex justify-between text-xs capitalize text-slate-400 font-medium">
                   <span>{mode.replace('W', ' W')}</span>
                   <span>{val}%</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={val} 
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={val}
                   onChange={(e) => {
-                    const newSplit = { ...split, [mode]: Number(e.target.value) / 100 };
+                    // Fractions that must sum to 1 — rescale the other modes proportionally
+                    const newSplit = rebalanceSplit(split, MODE_SPLIT_KEYS, mode, Number(e.target.value) / 100, 1);
                     onUpdate('modeSplit', newSplit);
                   }}
                   className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"

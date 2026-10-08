@@ -2,18 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database.connection import get_db
 from models.models import CityObjectEntity, ScenarioEntity, AreaEntity
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import json
 import datetime
 
 router = APIRouter()
 
+BASE_SCENARIO_ID = "base"
+
 class ScenarioSchema(BaseModel):
-    id: str
-    name: str
-    description: str
-    year: int
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    year: int = Field(ge=1900, le=2200)
 
 class CityObjectSchema(BaseModel):
     id: str
@@ -23,10 +25,6 @@ class CityObjectSchema(BaseModel):
     scenarioId: str
     coordinates: List[Any]
     properties: Dict[str, Any]
-
-class SimRequestSchema(BaseModel):
-    simulationType: str
-    scenarioId: str
 
 class BatchDeleteSchema(BaseModel):
     ids: List[str]
@@ -42,19 +40,35 @@ class AreaSchema(BaseModel):
 
 @router.get("/scenarios", response_model=List[ScenarioSchema])
 def get_scenarios(db: Session = Depends(get_db)):
+    # Read-only: the base scenario is ensured at startup (see seed.ensure_base_scenario)
     scenarios = db.query(ScenarioEntity).all()
-    if not scenarios:
-        # Prepopulate default scenarios
-        defaults = [
-            ScenarioEntity(id="base", name="Current City (Base)", description="Existing layout of the city infrastructure.", year=2026),
-            ScenarioEntity(id="proposal_2028", name="2028 Green Metro & Flyover Expansion", description="Proposed metro lines and arterial flyover connections.", year=2028),
-            ScenarioEntity(id="proposal_2030", name="2030 Smart Grid & Flood Drainage", description="Upgraded storm-water management and smart power utility installations.", year=2030)
-        ]
-        for s in defaults:
-            db.add(s)
-        db.commit()
-        scenarios = db.query(ScenarioEntity).all()
-    return [ScenarioSchema(id=s.id, name=s.name, description=s.description, year=s.year) for s in scenarios]
+    return [ScenarioSchema(id=s.id, name=s.name, description=s.description or "", year=s.year or 2026) for s in scenarios]
+
+@router.post("/scenarios", status_code=status.HTTP_201_CREATED, response_model=ScenarioSchema)
+def save_scenario(scenario: ScenarioSchema, db: Session = Depends(get_db)):
+    """Create a scenario, or rename/update an existing one."""
+    existing = db.get(ScenarioEntity, scenario.id)
+    if existing:
+        existing.name = scenario.name
+        existing.description = scenario.description
+        existing.year = scenario.year
+    else:
+        db.add(ScenarioEntity(id=scenario.id, name=scenario.name, description=scenario.description, year=scenario.year))
+    db.commit()
+    return scenario
+
+@router.delete("/scenarios/{id}")
+def delete_scenario(id: str, db: Session = Depends(get_db)):
+    """Delete a proposal scenario together with every object that belongs to it."""
+    if id == BASE_SCENARIO_ID:
+        raise HTTPException(status_code=400, detail="The base scenario cannot be deleted")
+    existing = db.get(ScenarioEntity, id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    removed = db.query(CityObjectEntity).filter(CityObjectEntity.scenario_id == id).delete(synchronize_session=False)
+    db.delete(existing)
+    db.commit()
+    return {"status": "success", "message": f"Scenario deleted with {removed} objects", "deletedObjects": removed}
 
 @router.get("/objects", response_model=List[CityObjectSchema])
 def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)):
@@ -62,7 +76,7 @@ def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)
     if scenario_id:
         query = query.filter(CityObjectEntity.scenario_id == scenario_id)
     entities = query.all()
-    
+
     results = []
     for ent in entities:
         try:
@@ -71,7 +85,7 @@ def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)
         except Exception:
             coords = []
             props = {}
-            
+
         results.append(CityObjectSchema(
             id=ent.id,
             type=ent.type,
@@ -86,10 +100,10 @@ def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)
 @router.post("/objects", status_code=status.HTTP_201_CREATED)
 def save_object(obj: CityObjectSchema, db: Session = Depends(get_db)):
     existing = db.query(CityObjectEntity).filter(CityObjectEntity.id == obj.id).first()
-    
+
     geom_str = json.dumps(obj.coordinates)
     props_str = json.dumps(obj.properties)
-    
+
     if existing:
         existing.name = obj.name
         existing.type = obj.type
@@ -109,17 +123,23 @@ def save_object(obj: CityObjectSchema, db: Session = Depends(get_db)):
             properties_json=props_str
         )
         db.add(new_entity)
-        
+
     db.commit()
     return {"status": "success", "message": "Object saved successfully"}
 
 @router.post("/objects/batch", status_code=status.HTTP_201_CREATED)
 def save_objects_batch(objs: List[CityObjectSchema], db: Session = Depends(get_db)):
+    # Rows already saved, looked up a few hundred at a time rather than one query per object
+    ids = [obj.id for obj in objs]
+    saved = {}
+    for i in range(0, len(ids), 500):
+        for row in db.query(CityObjectEntity).filter(CityObjectEntity.id.in_(ids[i:i + 500])):
+            saved[row.id] = row
     for obj in objs:
-        existing = db.query(CityObjectEntity).filter(CityObjectEntity.id == obj.id).first()
+        existing = saved.get(obj.id)
         geom_str = json.dumps(obj.coordinates)
         props_str = json.dumps(obj.properties)
-        
+
         if existing:
             existing.name = obj.name
             existing.type = obj.type
@@ -139,7 +159,7 @@ def save_objects_batch(objs: List[CityObjectSchema], db: Session = Depends(get_d
                 properties_json=props_str
             )
             db.add(new_entity)
-            
+
     db.commit()
     return {"status": "success", "message": f"{len(objs)} objects saved successfully"}
 
@@ -158,44 +178,6 @@ def delete_objects_batch(req: BatchDeleteSchema, db: Session = Depends(get_db)):
     db.query(CityObjectEntity).filter(CityObjectEntity.id.in_(req.ids)).delete(synchronize_session=False)
     db.commit()
     return {"status": "success", "message": f"{len(req.ids)} objects deleted successfully"}
-
-@router.post("/simulations/run")
-def run_simulation(req: SimRequestSchema, db: Session = Depends(get_db)):
-    entities = db.query(CityObjectEntity).filter(CityObjectEntity.scenario_id == req.scenarioId).all()
-    
-    if req.simulationType == "traffic":
-        total_roads = sum(1 for e in entities if e.type == "road")
-        total_junctions = sum(1 for e in entities if e.type == "junction")
-        return {
-            "status": "completed",
-            "metrics": {
-                "averageSpeed": 48.2 if total_roads > 2 else 55.0,
-                "congestionIndex": 1.25 if total_junctions > 1 else 1.05,
-                "processedRoads": total_roads
-            }
-        }
-    elif req.simulationType == "flood":
-        total_buildings = sum(1 for e in entities if e.type == "building")
-        return {
-            "status": "completed",
-            "metrics": {
-                "floodedBuildings": max(0, total_buildings - 1),
-                "maxWaterDepth": 1.8,
-                "riskLevel": "Moderate"
-            }
-        }
-    elif req.simulationType == "population":
-        total_buildings = sum(1 for e in entities if e.type == "building")
-        return {
-            "status": "completed",
-            "metrics": {
-                "servedPopulation": total_buildings * 60,
-                "densityIndex": 1250,
-                "powerDemandMWh": total_buildings * 0.36
-            }
-        }
-    else:
-        raise HTTPException(status_code=400, detail="Invalid simulation type")
 
 @router.get("/areas", response_model=List[AreaSchema])
 def get_areas(db: Session = Depends(get_db)):
@@ -221,7 +203,7 @@ def get_areas(db: Session = Depends(get_db)):
 def save_area(area: AreaSchema, db: Session = Depends(get_db)):
     existing = db.query(AreaEntity).filter(AreaEntity.id == area.id).first()
     geom_str = json.dumps(area.polygonCoordinates)
-    
+
     if existing:
         existing.name = area.name
         existing.polygon_geojson = geom_str
@@ -240,7 +222,7 @@ def save_area(area: AreaSchema, db: Session = Depends(get_db)):
             max_lon=area.maxLon
         )
         db.add(new_area)
-        
+
     db.commit()
     return {"status": "success", "message": "Area saved successfully"}
 

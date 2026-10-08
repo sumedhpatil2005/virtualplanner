@@ -1,12 +1,13 @@
-import { 
-  Viewer, 
-  Entity, 
-  Cartesian3, 
+import {
+  Viewer,
+  Entity,
+  Cartesian3,
   Cartesian2,
-  Color, 
-  ScreenSpaceEventHandler, 
-  ScreenSpaceEventType, 
-  Cartographic, 
+  Color,
+  ScreenSpaceEventHandler,
+  ScreenSpaceEventType,
+  KeyboardEventModifier,
+  Cartographic,
   Math as CesiumMath,
   defined,
   ClassificationType,
@@ -14,20 +15,38 @@ import {
   HorizontalOrigin,
   VerticalOrigin,
   HeightReference,
-  PolylineDashMaterialProperty
+  PolylineDashMaterialProperty,
+  EllipsoidTerrainProvider,
+  createWorldTerrainAsync
 } from 'cesium';
 import { ObjectManager } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
 import { renderManagerInstance } from './rendering/RenderManager';
 import { TrafficNetworkVisualizer } from './rendering/renderers/TrafficNetworkVisualizer';
+import { JunctionEditorOverlay } from './rendering/renderers/JunctionEditorOverlay';
 import { LODController } from './rendering/lod/LODController';
 import { SelectionEngine } from './selection/SelectionEngine';
-import { LayerManager } from './layers/LayerManager';
-import { ScenarioManager } from './scenarios/ScenarioManager';
+import { LayerManager, resolveLayerId } from './layers/LayerManager';
+import { filterObjectsForScenario } from './scenarios/scenarioFilter';
+import { ScenarioManager, BASE_SCENARIO_ID, type Scenario } from './scenarios/ScenarioManager';
 import { SimulationManager } from './simulation/SimulationManager';
+import { SimulationMode, type SimulationContext } from './simulation/SimulationMode';
+import type { TimePeriod } from './objects/demandTypes';
+import { TrafficSignalSource } from './simulation/trafficSignals';
+import { LocalOsmIndex } from './editing/LocalOsmIndex';
+import { isDrivable, boundsOf, type StudyProblem } from './simulation/StudyAreaExplorer';
+import { roadConnections, type RoadConnections } from './simulation/roadConnections';
+import { isUserBuilt } from './objects/builtBy';
+
+/** What the app is doing: looking at the city, changing it, or simulating traffic. */
+export type AppMode = 'view' | 'build' | 'simulate';
+import { findRoadEndGaps, type RoadEndGap } from './editing/roadGaps';
+import type { NonDrivableRoad } from './editing/osmDrivability';
 import { HistoryManager } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
+import { apiGet } from '../lib/api';
+import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
 
 export class TwinCityEngine {
   public objects: ObjectManager;
@@ -35,15 +54,23 @@ export class TwinCityEngine {
   public layers: LayerManager;
   public scenarios: ScenarioManager;
   public simulations: SimulationManager;
+  /** Simulation mode: study-area selection on a read-only road network. */
+  public simMode: SimulationMode;
   public history: HistoryManager;
   public editing: EditingEngine;
   public trafficNetwork: any = null;
   public trafficDemandMatrix: any = null;
   private trafficVisualizer = new TrafficNetworkVisualizer();
+  private junctionOverlay = new JunctionEditorOverlay();
 
   private viewer: Viewer | null = null;
   private drawPreviewEntity: Entity | null = null;
   private drawMarkers: Entity[] = [];
+  private snapReticleEntity: Entity | null = null;
+  private gapPreviewEntity: Entity | null = null;
+  private rubberbandEntity: Entity | null = null;
+  private snapFrameHandle: number | null = null;
+  private pendingSnapPoint: [number, number, number] | null = null;
   private areaEntities: Entity[] = [];
   private draggingPointIdx: number | null = null;
   private zoneEntities: Entity[] = [];
@@ -51,11 +78,31 @@ export class TwinCityEngine {
   private editZoneMarkers: Entity[] = [];
   private draggingZonePointIdx: number | null = null;
   private isPlanningMode = false;
+  private modeListeners = new Set<() => void>();
+  /**
+   * The city-wide traffic graph is built only once something needs it (the
+   * network debug layer, the gateway tool, a few Build-mode details), not on
+   * every start-up and edit. Simulate builds its own graph for the study area.
+   */
+  private cityNetworkWanted = false;
+  private viewModeHintShown = false;
 
   private rebuildTimeout: any = null;
   private demandRebuildTimeout: any = null;
   private trafficWorker: Worker | null = null;
   private activeRequestId = 0;
+
+  // Viewer-bound resources released by dispose()
+  private interactionHandler: ScreenSpaceEventHandler | null = null;
+  private lodController: LODController | null = null;
+  private removeImageryListener: (() => void) | null = null;
+  private fpsFrameHandle: number | null = null;
+  private hasLoadedData = false;
+
+  // Zone vertex drag: preview locally per frame, save once on release (item 31)
+  private zoneDragBefore: CityObject | null = null;
+  private zoneDragCoords: [number, number, number][] | null = null;
+  private zoneDragFrameHandle: number | null = null;
 
   constructor() {
     console.log('[STARTUP] BEGIN');
@@ -64,35 +111,52 @@ export class TwinCityEngine {
     this.layers = new LayerManager();
     this.scenarios = new ScenarioManager();
     this.simulations = new SimulationManager();
-    this.history = new HistoryManager();
-    this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork());
+    // Roads and signals from the backend's OpenStreetMap extract, shared by editing and simulation
+    const localOsm = new LocalOsmIndex();
+    this.simMode = new SimulationMode(
+      () => filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId()).filter(isDrivable),
+      // Study areas reaching past the imported map load the OSM roads there through the importer
+      {
+        load: (boxes, signal) => this.editing.loadOsmRoadsForStudyArea(boxes, signal),
+      },
+      // Real traffic signals from OpenStreetMap, kept on this device
+      new TrafficSignalSource(localOsm),
+      () => this.getSimulationContext()
+    );
+    this.history = new HistoryManager(this.objects);
+    this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
+    // Placing a gateway snaps it to the city-wide graph
+    this.editing.onChange(() => {
+      if (this.editing.getMode() === 'draw_gateway') this.requestTrafficNetwork();
+    });
 
     (window as any).engineInstance = this;
+    this.scenarios.load();
 
-    // Initialize Web Worker for traffic calculations
-    try {
-      this.trafficWorker = new Worker(new URL('./simulation/traffic.worker.ts', import.meta.url), { type: 'module' });
-      this.setupWorkerListener();
-    } catch (err) {
-      console.error('Failed to initialize traffic Web Worker:', err);
-    }
+    this.startTrafficWorker();
 
     this.objects.onChange((changedTypes: Set<string>) => {
       if (changedTypes.has('road') || changedTypes.has('junction') || changedTypes.has('flyover') || changedTypes.has('metro_flyover') || changedTypes.size === 0) {
         this.queueTrafficRebuild();
+        this.simMode.networkChanged();
       } else {
         this.queueTrafficDemandRebuildOnly();
+        if (['building', 'zone', 'gateway'].some(type => changedTypes.has(type))) this.simMode.networkChanged();
       }
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
     });
     this.layers.onChange(() => {
+      if (this.layers.isVisible('traffic_network_debug')) this.requestTrafficNetwork();
+      this.applyLayerOpacities();
+      this.applyBaseLayers();
       this.syncTrafficNetworkVisualization();
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
     });
     this.scenarios.onChange(() => {
       this.selection.clearSelection();
+      this.simMode.networkChanged();
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
     });
@@ -110,22 +174,11 @@ export class TwinCityEngine {
       this.updateDrawPreview();
       this.syncSavedAreasWithCesium();
       this.syncZonesAndGatewaysWithCesium();
+      if (this.editing.getMode() === 'select') {
+        this.clearSnapPreview();
+      }
     });
 
-    // Real-time FPS Monitor Loop
-    let lastTime = performance.now();
-    let frameCount = 0;
-    const tick = () => {
-      const now = performance.now();
-      frameCount++;
-      if (now - lastTime >= 1000) {
-        (window as any).twincity_fps = Math.round((frameCount * 1000) / (now - lastTime));
-        frameCount = 0;
-        lastTime = now;
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
 
     // Bind global tester
     (window as any).runProgressivePerformanceTest = () => {
@@ -139,58 +192,203 @@ export class TwinCityEngine {
   private getFilteredObjects(): CityObject[] {
     const all = this.objects.getAll();
     const activeScenarioId = this.scenarios.getActiveScenarioId();
-    
-    // 1. Filter by scenario (Base + Active Scenario, handling overrides)
-    const scenarioFiltered = all.filter(obj => {
-      const isBaseObj = obj.scenarioId === 'base';
-      const isScenarioObj = obj.scenarioId === activeScenarioId;
-      if (!isBaseObj && !isScenarioObj) return false;
-      
-      if (isBaseObj && activeScenarioId !== 'base') {
-        const overrideExists = all.some(o => o.id === obj.id && o.scenarioId === activeScenarioId);
-        if (overrideExists) return false;
-      }
-      return true;
-    });
 
-    // 2. Filter by layer visibility
-    return scenarioFiltered.filter(obj => {
-      let mappedLayerId = obj.layerId;
-      if (mappedLayerId === 'transit') {
-        mappedLayerId = 'metro';
-      } else if (mappedLayerId === 'fiber_util') {
-        mappedLayerId = 'electric_util';
+    // 1. Filter by scenario (Base + Active Scenario, handling overrides)
+    const scenarioFiltered = filterObjectsForScenario(all, activeScenarioId);
+
+    // 2. Filter by layer visibility (legacy ids resolve to their registry layer)
+    const visibility = new Map(this.layers.getAll().map(l => [l.id, l.visible]));
+    return scenarioFiltered.filter(obj => visibility.get(resolveLayerId(obj.layerId)) ?? true);
+  }
+
+  private getSimulationContext(): SimulationContext {
+    const scenarioId = this.scenarios.getActiveScenarioId();
+    const objects = filterObjectsForScenario(this.objects.getAll(), scenarioId);
+    const flows = (values: Record<string, number>) => Object.fromEntries(
+      (['AM_Peak', 'PM_Peak', 'Midday', 'Night'] as TimePeriod[]).map(p => [p, Math.max(0, values?.[p] || 0)])
+    ) as Record<TimePeriod, number>;
+    return {
+      scenarioId,
+      junctions: objects.filter(o => o.type === 'junction'),
+      buildings: objects.filter(o => o.type === 'building'),
+      zones: objects.filter(o => o.type === 'zone').map(z => ({
+        id: z.id, name: z.name, boundaryPolygon: z.coordinates,
+        totalPopulation: z.totalPopulation || 0, totalEmployment: z.totalEmployment || 0,
+        landUseMix: z.landUseMix, gateways: z.gateways || [],
+        provenance: z.provenance || { source: 'estimated', confidence: 0, updatedAt: z.updatedAt },
+      })),
+      gateways: objects.filter(o => o.type === 'gateway').map(g => ({
+        id: g.id, name: g.name, coordinates: g.coordinates[0], connectedNodeId: g.connectedNodeId,
+        inboundFlows: flows(g.inboundFlows), outboundFlows: flows(g.outboundFlows), modeSplit: g.modeSplit,
+        provenance: g.provenance || { source: 'estimated', confidence: 0, updatedAt: g.updatedAt },
+      })),
+    };
+  }
+
+  private startTrafficWorker() {
+    if (this.trafficWorker) return;
+    try {
+      this.trafficWorker = new Worker(new URL('./simulation/traffic.worker.ts', import.meta.url), { type: 'module' });
+      this.setupWorkerListener();
+    } catch (err) {
+      console.error('Failed to initialize traffic Web Worker:', err);
+    }
+  }
+
+  /** Real-time FPS monitor exposed as window.twincity_fps. */
+  private startFpsMonitor() {
+    if (this.fpsFrameHandle !== null) return;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    const tick = () => {
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime >= 1000) {
+        (window as any).twincity_fps = Math.round((frameCount * 1000) / (now - lastTime));
+        frameCount = 0;
+        lastTime = now;
       }
-      
-      const layer = this.layers.getAll().find(l => l.id === mappedLayerId);
-      if (layer) {
-        return layer.visible;
-      }
-      return true;
-    });
+      this.fpsFrameHandle = requestAnimationFrame(tick);
+    };
+    this.fpsFrameHandle = requestAnimationFrame(tick);
+  }
+
+  /**
+   * Releases everything bound to the current Cesium viewer (item 30). Call it
+   * before destroying the viewer. The engine's data stays in memory, so a later
+   * setViewer() (e.g. React StrictMode's second mount) re-renders without
+   * refetching or leaking a second set of primitives and camera listeners.
+   */
+  public dispose() {
+    this.junctionOverlay.dispose();
+    if (this.simulations.isRunning('traffic')) this.simulations.stopSimulation('traffic');
+    this.interactionHandler?.destroy();
+    this.interactionHandler = null;
+    this.lodController?.dispose();
+    this.lodController = null;
+    this.removeImageryListener?.();
+    this.removeImageryListener = null;
+
+    for (const handle of [this.fpsFrameHandle, this.snapFrameHandle, this.zoneDragFrameHandle]) {
+      if (handle !== null) cancelAnimationFrame(handle);
+    }
+    this.fpsFrameHandle = this.snapFrameHandle = this.zoneDragFrameHandle = null;
+    if (this.rebuildTimeout) clearTimeout(this.rebuildTimeout);
+    if (this.demandRebuildTimeout) clearTimeout(this.demandRebuildTimeout);
+    this.rebuildTimeout = this.demandRebuildTimeout = null;
+
+    this.trafficWorker?.terminate();
+    this.trafficWorker = null;
+
+    this.trafficVisualizer.clear();
+    this.simMode.dispose();
+    renderManagerInstance.clear();
+
+    if (this.viewer && !this.viewer.isDestroyed()) {
+      [...this.drawMarkers, ...this.areaEntities, ...this.zoneEntities, ...this.gatewayEntities, ...this.editZoneMarkers]
+        .forEach(e => this.viewer!.entities.remove(e));
+      [this.drawPreviewEntity, this.snapReticleEntity, this.rubberbandEntity, this.gapPreviewEntity].forEach(e => e && this.viewer!.entities.remove(e));
+    }
+    this.gapPreviewEntity = null;
+    this.drawMarkers = [];
+    this.areaEntities = [];
+    this.zoneEntities = [];
+    this.gatewayEntities = [];
+    this.editZoneMarkers = [];
+    this.drawPreviewEntity = this.snapReticleEntity = this.rubberbandEntity = null;
+    this.draggingPointIdx = this.draggingZonePointIdx = null;
+    this.zoneDragBefore = this.zoneDragCoords = null;
+    this.viewer = null;
   }
 
   public setViewer(viewer: Viewer) {
+    if (this.viewer && this.viewer !== viewer) this.dispose();
     this.viewer = viewer;
+    this.startTrafficWorker();
+    this.startFpsMonitor();
     this.trafficVisualizer.setViewer(viewer);
+    this.junctionOverlay.setViewer(viewer);
     renderManagerInstance.initialize(viewer);
+    this.simMode.setViewer(viewer);
 
     // Listen for the first frame render
     viewer.scene.postRender.addEventListener(function onPostRender() {
       console.log('[STARTUP] First Cesium render');
       viewer.scene.postRender.removeEventListener(onPostRender);
     });
-    
-    const lod = new LODController(viewer);
-    lod.initCameraListeners();
+
+    this.lodController = new LODController(viewer);
+    this.lodController.initCameraListeners();
+
+    this.applyLayerOpacities();
+    this.applyBaseLayers();
+    // The base-layer picker swaps imagery layers; keep them in sync with the Satellite layer
+    this.removeImageryListener = viewer.imageryLayers.layerAdded.addEventListener(() => this.applyBaseLayers());
 
     this.setupInteraction();
-    this.loadSampleData();
-    
+    if (!this.hasLoadedData) {
+      this.hasLoadedData = true;
+      this.loadSampleData();
+    } else {
+      this.queueTrafficRebuild();
+    }
+
     // Initial sync
     renderManagerInstance.reconcile(this.getFilteredObjects());
     this.syncSavedAreasWithCesium();
     this.syncZonesAndGatewaysWithCesium();
+  }
+
+  private applyLayerOpacities() {
+    const opacities = new Map(this.layers.getAll().map(l => [l.id, l.opacity]));
+    renderManagerInstance.setLayerOpacities(opacities, resolveLayerId);
+  }
+
+  private terrainEnabled = false;
+
+  /** Wires the Satellite and Terrain base layers to the Cesium viewer. */
+  private applyBaseLayers() {
+    if (!this.viewer) return;
+    const viewer = this.viewer;
+
+    const satellite = this.layers.get('satellite');
+    if (satellite) {
+      for (let i = 0; i < viewer.imageryLayers.length; i++) {
+        const layer = viewer.imageryLayers.get(i);
+        layer.show = satellite.visible;
+        layer.alpha = satellite.opacity;
+      }
+    }
+
+    const wantTerrain = this.layers.isVisible('terrain');
+    if (wantTerrain === this.terrainEnabled) return;
+
+    if (!wantTerrain) {
+      this.terrainEnabled = false;
+      viewer.terrainProvider = new EllipsoidTerrainProvider();
+      return;
+    }
+
+    if (!import.meta.env.VITE_CESIUM_ION_TOKEN) {
+      this.layers.setVisibility('terrain', false);
+      (window as any).showToast?.('Terrain needs a Cesium ion token: set VITE_CESIUM_ION_TOKEN in frontend/.env and restart.', 'error');
+      return;
+    }
+
+    this.terrainEnabled = true;
+    createWorldTerrainAsync()
+      .then(provider => {
+        if (this.terrainEnabled && this.viewer) {
+          this.viewer.terrainProvider = provider;
+          (window as any).showToast?.('Terrain on. City models are placed at sea-level height, so some may appear below the terrain surface.', 'info');
+        }
+      })
+      .catch(err => {
+        console.warn('[TwinCityEngine] Terrain load failed:', err);
+        this.terrainEnabled = false;
+        this.layers.setVisibility('terrain', false);
+        (window as any).showToast?.('Could not load terrain from Cesium ion. Check the token and your connection.', 'error');
+      });
   }
 
   public getPrimitivesCount(): number {
@@ -201,6 +399,7 @@ export class TwinCityEngine {
     if (!this.viewer) return;
 
     const handler = new ScreenSpaceEventHandler(this.viewer.scene.canvas);
+    this.interactionHandler = handler;
 
     // 1. LEFT_DOWN: Click vertex marker to start drag shift
     handler.setInputAction((click: { position: Cartesian2 }) => {
@@ -222,21 +421,21 @@ export class TwinCityEngine {
       }
     }, ScreenSpaceEventType.LEFT_DOWN);
 
-    // 2. MOUSE_MOVE: Shifting the coordinates of the dragged marker
+    // 2. MOUSE_MOVE: Shifting the coordinates of the dragged marker OR updating magnetic snap & rubberband
     handler.setInputAction((movement: { endPosition: Cartesian2 }) => {
       if (!this.viewer) return;
-      if (this.draggingPointIdx === null && this.draggingZonePointIdx === null) return;
 
       const ray = this.viewer.camera.getPickRay(movement.endPosition);
       if (!ray) return;
       const position = this.viewer.scene.globe.pick(ray, this.viewer.scene);
+      if (!position) return;
 
-      if (position) {
-        const cartographic = Cartographic.fromCartesian(position);
-        const lng = CesiumMath.toDegrees(cartographic.longitude);
-        const lat = CesiumMath.toDegrees(cartographic.latitude);
-        const alt = cartographic.height;
+      const cartographic = Cartographic.fromCartesian(position);
+      const lng = CesiumMath.toDegrees(cartographic.longitude);
+      const lat = CesiumMath.toDegrees(cartographic.latitude);
+      const alt = cartographic.height;
 
+      if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         if (this.draggingPointIdx !== null) {
           const drawingPts = this.editing.getDrawingPoints();
           if (drawingPts[this.draggingPointIdx]) {
@@ -247,9 +446,10 @@ export class TwinCityEngine {
           const selectedId = this.selection.getSelection()[0];
           const selectedObj = selectedId ? this.objects.getById(selectedId) : null;
           if (selectedObj && selectedObj.type === 'zone') {
-            const newCoords = [...selectedObj.coordinates];
+            this.zoneDragBefore ??= selectedObj;
+            const newCoords = [...(this.zoneDragCoords ?? selectedObj.coordinates)] as [number, number, number][];
             newCoords[this.draggingZonePointIdx] = [lng, lat, alt];
-            
+
             // If it's the start point, also update the end point to close the ring
             if (this.draggingZonePointIdx === 0) {
               newCoords[newCoords.length - 1] = [lng, lat, alt];
@@ -257,9 +457,34 @@ export class TwinCityEngine {
               newCoords[0] = [lng, lat, alt];
             }
 
-            this.objects.update(selectedObj.id, { coordinates: newCoords });
+            // Preview at most once per frame, without a backend write
+            this.zoneDragCoords = newCoords;
+            if (this.zoneDragFrameHandle === null) {
+              this.zoneDragFrameHandle = requestAnimationFrame(() => {
+                this.zoneDragFrameHandle = null;
+                if (this.zoneDragCoords && this.zoneDragBefore) {
+                  this.objects.update(this.zoneDragBefore.id, { coordinates: this.zoneDragCoords }, true);
+                }
+              });
+            }
           }
         }
+        return;
+      }
+
+      // Drawing mode: Magnetic Snapping & Rubberband Preview (at most once per frame)
+      const editMode = this.editing.getMode();
+      if (editMode !== 'select') {
+        this.pendingSnapPoint = [lng, lat, alt];
+        if (this.snapFrameHandle === null) {
+          this.snapFrameHandle = requestAnimationFrame(() => {
+            this.snapFrameHandle = null;
+            const pt = this.pendingSnapPoint;
+            if (pt && this.editing.getMode() !== 'select') this.updateSnapPreview(pt[0], pt[1], pt[2]);
+          });
+        }
+      } else {
+        this.clearSnapPreview();
       }
     }, ScreenSpaceEventType.MOUSE_MOVE);
 
@@ -268,6 +493,7 @@ export class TwinCityEngine {
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         this.draggingPointIdx = null;
         this.draggingZonePointIdx = null;
+        this.commitZoneDrag();
         if (this.viewer) {
           this.viewer.scene.screenSpaceCameraController.enableRotate = true;
         }
@@ -278,19 +504,12 @@ export class TwinCityEngine {
     handler.setInputAction((click: { position: Cartesian2 }) => {
       if (!this.viewer) return;
 
-      const pickedObject = this.viewer.scene.pick(click.position);
-
-      // Vertex delete path
-      if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
-        const idStr = pickedObject.id.id;
-        if (idStr.startsWith('draw_point_')) {
-          const idx = parseInt(idStr.split('_')[2]);
-          const drawingPts = this.editing.getDrawingPoints();
-          drawingPts.splice(idx, 1);
-          this.editing.notify();
-          return;
-        }
+      if (this.simMode.isActive()) {
+        this.handleSimulationClick(click.position, false);
+        return;
       }
+
+      const pickedObject = this.viewer.scene.pick(click.position);
 
       // Draw mode path
       const ray = this.viewer.camera.getPickRay(click.position);
@@ -305,32 +524,46 @@ export class TwinCityEngine {
 
         const editMode = this.editing.getMode();
         if (editMode !== 'select') {
-          if (editMode === 'import_osm') {
-            this.editing.addDrawingPoint([lng, lat, alt]);
-          } else if (editMode === 'draw_junction') {
-            this.editing.addDrawingPoint([lng, lat, alt]);
-            this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
-          } else {
-            this.editing.addDrawingPoint([lng, lat, alt]);
+          this.editing.addDrawingPoint([lng, lat, alt]);
+          if (this.editing.isSingleClickMode(editMode)) {
+            try {
+              this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
+            } catch (err: any) {
+              // Single-click tools have nothing to continue — reset for the next attempt
+              this.editing.clearDrawing();
+              (window as any).showToast?.(err.message || "Failed to place object.", "error");
+            }
           }
+          this.clearSnapPreview();
           return;
         }
       }
 
       // Selection mode path
       if (defined(pickedObject) && pickedObject.id) {
-        const entityId = pickedObject.id.id || pickedObject.id;
-        
+        const rawId = pickedObject.id.id || pickedObject.id;
+        const entityId = typeof rawId === 'string' && rawId.startsWith('junction_edit_') ? rawId.slice('junction_edit_'.length) : rawId;
+
         if (typeof entityId === 'string' && (entityId.startsWith('debug_node_') || entityId.startsWith('debug_edge_'))) {
           this.selection.selectSingle(entityId);
           return;
         }
 
-        if (this.objects.getById(entityId)) {
+        const obj = this.objects.getById(entityId);
+        if (obj) {
+          // View mode is about what the user built; the imported map is background
+          if (!this.isPlanningMode && !isUserBuilt(obj)) {
+            this.selection.selectSingle(null);
+            if (!this.viewModeHintShown) {
+              this.viewModeHintShown = true;
+              (window as any).showToast?.('That is part of the imported map. View shows details of what you built; use Simulate to study traffic on any road.', 'info');
+            }
+            return;
+          }
           this.selection.selectSingle(entityId);
           return;
         }
-        const savedArea = this.editing.getSavedAreas().find(a => a.id === entityId);
+        const savedArea = this.isPlanningMode && this.editing.getSavedAreas().find(a => a.id === entityId);
         if (savedArea) {
           this.selection.selectSingle(entityId);
           return;
@@ -341,17 +574,398 @@ export class TwinCityEngine {
       this.selection.selectSingle(null);
     }, ScreenSpaceEventType.LEFT_CLICK);
 
+    // Shift+click: add or remove a road from the study area in Simulation mode
+    handler.setInputAction((click: { position: Cartesian2 }) => {
+      if (this.simMode.isActive()) this.handleSimulationClick(click.position, true);
+    }, ScreenSpaceEventType.LEFT_CLICK, KeyboardEventModifier.SHIFT);
+
     // Double click to finalize drawing
     handler.setInputAction(() => {
       const editMode = this.editing.getMode();
-      if (editMode !== 'select' && editMode !== 'draw_junction' && editMode !== 'import_osm') {
+      if (editMode !== 'select' && editMode !== 'import_osm' && !this.editing.isSingleClickMode(editMode)) {
         try {
           this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
+          this.clearSnapPreview();
         } catch (err: any) {
           (window as any).showToast?.(err.message || "Failed to finalize drawing.", "error");
         }
       }
     }, ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+    // Right-click a placed vertex marker to remove it
+    handler.setInputAction((click: { position: Cartesian2 }) => {
+      if (!this.viewer) return;
+      const pickedObject = this.viewer.scene.pick(click.position);
+      if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
+        const idStr: string = pickedObject.id.id;
+        if (idStr.startsWith('draw_point_')) {
+          this.editing.removeDrawingPoint(parseInt(idStr.split('_')[2]));
+        }
+      }
+    }, ScreenSpaceEventType.RIGHT_CLICK);
+  }
+
+  /**
+   * Simulation-mode click: pick the road under the cursor, or the nearest one
+   * around the clicked point (roads are thin when seen from high up).
+   */
+  private handleSimulationClick(position: Cartesian2, additive: boolean) {
+    if (!this.viewer) return;
+    if (!additive && this.simMode.getState().traffic.status !== 'idle') {
+      const ray = this.viewer.camera.getPickRay(position);
+      const at = this.viewer.scene.pickPositionSupported ? this.viewer.scene.pickPosition(position) : undefined;
+      const ground = at ?? (ray ? this.viewer.scene.globe.pick(ray, this.viewer.scene) : undefined);
+      if (ground) {
+        const c = Cartographic.fromCartesian(ground);
+        const tolerance = Math.min(10, Math.max(2, this.viewer.camera.positionCartographic.height * 0.004));
+        const vehicle = this.simMode.pickVehicleAt(CesiumMath.toDegrees(c.longitude), CesiumMath.toDegrees(c.latitude), tolerance);
+        if (vehicle) { this.simMode.selectVehicle(vehicle.id); return; }
+      }
+    }
+    const picked = this.viewer.scene.pick(position);
+    const pickedId = defined(picked) && picked.id ? (picked.id.id || picked.id) : null;
+    const pickedObj = typeof pickedId === 'string' ? this.objects.getById(pickedId) : undefined;
+    let roadId = pickedObj && isDrivable(pickedObj) ? pickedObj.id : null;
+
+    if (!roadId) {
+      const ray = this.viewer.camera.getPickRay(position);
+      const ground = ray ? this.viewer.scene.globe.pick(ray, this.viewer.scene) : undefined;
+      if (ground) {
+        const c = Cartographic.fromCartesian(ground);
+        const height = this.viewer.camera.positionCartographic.height;
+        // A clicked building or gateway snaps to the road serving it, further away than a near-miss click
+        const tolerance = pickedObj ? 250 : Math.min(150, Math.max(15, height * 0.03));
+        roadId = this.simMode.pickRoadAt(CesiumMath.toDegrees(c.longitude), CesiumMath.toDegrees(c.latitude), tolerance);
+      }
+    }
+
+    if (roadId) {
+      this.simMode.selectRoad(roadId, additive);
+    } else if (!additive) {
+      (window as any).showToast?.('No road there. Click a road, flyover or bridge to start a study area.', 'info');
+    }
+  }
+
+  public isSimulationModeActive(): boolean {
+    return this.simMode.isActive();
+  }
+
+  /** Enters Simulation mode. The road network is read-only until it is left. */
+  public enterSimulationMode(): void {
+    if (this.simMode.isActive()) return;
+    this.clearSnapPreview();
+    this.isPlanningMode = false;
+    this.selection.clearSelection();
+    this.editing.setLocked(true);
+    this.history.setLocked(true);
+    this.simMode.enter();
+    this.syncZonesAndGatewaysWithCesium();
+    this.emitMode();
+  }
+
+  public exitSimulationMode(): void {
+    if (!this.simMode.isActive()) return;
+    this.editing.setLocked(false);
+    this.history.setLocked(false);
+    this.simMode.exit();
+    this.emitMode();
+  }
+
+  public getAppMode(): AppMode {
+    return this.simMode.isActive() ? 'simulate' : this.isPlanningMode ? 'build' : 'view';
+  }
+
+  public setAppMode(mode: AppMode): void {
+    if (mode === this.getAppMode()) return;
+    if (mode === 'simulate') {
+      this.enterSimulationMode();
+      return;
+    }
+    this.exitSimulationMode();
+    this.setPlanningModeActive(mode === 'build');
+  }
+
+  /** For React's useSyncExternalStore. */
+  public subscribeAppMode = (callback: () => void) => {
+    this.modeListeners.add(callback);
+    return () => {
+      this.modeListeners.delete(callback);
+    };
+  };
+
+  private emitMode() {
+    this.modeListeners.forEach(cb => cb());
+  }
+
+  /** Switches to Simulate and studies this road. */
+  public simulateRoad(roadId: string): void {
+    this.enterSimulationMode();
+    this.simMode.selectRoad(roadId, false);
+  }
+
+  /** What a road or flyover joins at its ends and along it, and what it passes over. */
+  public getRoadConnections(roadId: string): RoadConnections | null {
+    const road = this.objects.getById(roadId);
+    if (!road || !isDrivable(road)) return null;
+    return roadConnections(road, this.getScenarioObjects().filter(isDrivable));
+  }
+
+  /** Moves the camera to show an object. */
+  public flyToObject(id: string): void {
+    const obj = this.objects.getById(id);
+    if (!obj || !this.viewer) return;
+    const coords = (Array.isArray(obj.coordinates[0]) ? obj.coordinates : [obj.coordinates]) as number[][];
+    this.simMode.flyToBounds(boundsOf(coords));
+  }
+
+  /** Objects in the active scenario, whatever their layer visibility. */
+  private getScenarioObjects(): CityObject[] {
+    return filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId());
+  }
+
+  /** Ends of this road that stop just short of another road in the active scenario. */
+  public findRoadGaps(roadId: string): RoadEndGap[] {
+    const road = this.objects.getById(roadId);
+    return road ? findRoadEndGaps(road, this.getScenarioObjects()) : [];
+  }
+
+  /** Joins a road end across its gap (Build mode only; one undo step). */
+  public connectRoadGap(gap: RoadEndGap): void {
+    if (!this.isPlanningMode) throw new Error('Switch to Build mode to edit roads.');
+    this.editing.connectRoadEnd(gap, this.getScenarioObjects());
+    this.previewRoadGap(null);
+  }
+
+  /**
+   * Removes imported OSM roads vehicles cannot use, matching the importer's
+   * rules (Build mode only; one undo step).
+   */
+  public removeNonDrivableOsmRoads(): NonDrivableRoad[] {
+    if (!this.isPlanningMode) throw new Error('Switch to Build mode to edit roads.');
+    return this.editing.removeNonDrivableOsmRoads();
+  }
+
+  /** Shows, or with null hides, the link a Connect would add. */
+  public previewRoadGap(gap: RoadEndGap | null): void {
+    if (!this.viewer) return;
+    if (this.gapPreviewEntity) {
+      this.viewer.entities.remove(this.gapPreviewEntity);
+      this.gapPreviewEntity = null;
+    }
+    if (!gap) return;
+    const lift = (p: [number, number, number]) => Cartesian3.fromDegrees(p[0], p[1], (p[2] || 0) + 1.5);
+    this.gapPreviewEntity = this.viewer.entities.add({
+      position: lift(gap.joinPoint),
+      point: { pixelSize: 10, color: Color.fromCssColorString('#34d399'), outlineColor: Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      polyline: {
+        positions: [lift(gap.endPoint), lift(gap.joinPoint)],
+        width: 4,
+        material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#34d399'), dashLength: 10 }),
+        depthFailMaterial: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#34d399').withAlpha(0.6), dashLength: 10 }),
+      },
+    });
+  }
+
+  /** Leaves Simulate for Build with the problem's road selected and in view. */
+  public editProblemInPlanMode(problem: StudyProblem): void {
+    this.exitSimulationMode();
+    this.setPlanningModeActive(true);
+    const roadId = problem.roadIds.find(id => this.objects.getById(id));
+    if (roadId) this.selection.selectSingle(roadId);
+    this.simMode.flyTo(problem.location);
+  }
+
+  /** Saves a finished zone-vertex drag: one backend write and one Undo step. */
+  private commitZoneDrag() {
+    if (this.zoneDragFrameHandle !== null) {
+      cancelAnimationFrame(this.zoneDragFrameHandle);
+      this.zoneDragFrameHandle = null;
+    }
+    const before = this.zoneDragBefore;
+    const coords = this.zoneDragCoords;
+    this.zoneDragBefore = this.zoneDragCoords = null;
+    if (!before || !coords || !this.objects.getById(before.id)) return;
+
+    this.objects.update(before.id, { coordinates: coords });
+    const after = this.objects.getById(before.id);
+    if (after) this.history.recordUpdate(before, after, `Reshape ${before.name}`);
+  }
+
+  /** Finishes the in-progress multi-point drawing (used by the Enter shortcut). */
+  public finishDrawing() {
+    const mode = this.editing.getMode();
+    if (mode === 'select' || mode === 'import_osm' || this.editing.isSingleClickMode(mode)) return;
+    try {
+      this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
+      this.clearSnapPreview();
+    } catch (err: any) {
+      (window as any).showToast?.(err.message || "Failed to finalize drawing.", "error");
+    }
+  }
+
+  /**
+   * Creates a new proposal scenario. When `sourceId` is a proposal, its objects
+   * are copied into the new scenario (base objects are shared by every scenario
+   * already). The new scenario becomes active.
+   */
+  public async createScenarioFrom(sourceId: string | null, input: { name: string; description?: string; year: number }): Promise<Scenario> {
+    const scenario = await this.scenarios.createScenario(input);
+    if (sourceId && sourceId !== BASE_SCENARIO_ID) {
+      const copies = this.objects.getAll()
+        .filter(o => o.scenarioId === sourceId)
+        .map(o => ({
+          ...(JSON.parse(JSON.stringify(o)) as CityObject),
+          // Keep the original id stem (some ids carry a type prefix) and make it unique
+          id: `${o.id.split('__')[0]}__${scenario.id}`,
+          scenarioId: scenario.id,
+        }));
+      if (copies.length > 0) this.objects.addMultiple(copies);
+    }
+    this.scenarios.setActiveScenario(scenario.id);
+    return scenario;
+  }
+
+  /** Deletes a proposal and its objects. Undo history is cleared since it may reference them. */
+  public async deleteScenario(id: string): Promise<number> {
+    await this.scenarios.deleteScenario(id);
+    const own = this.objects.getAll().filter(o => o.scenarioId === id);
+    // The backend already removed these rows, so don't sync the deletion again
+    if (own.length > 0) this.objects.deleteMultiple(own, true);
+    this.history.clear();
+    return own.length;
+  }
+
+  /** Rotates a metro station by `deltaDeg` (switching it to manual heading), recorded for Undo. */
+  public rotateStation(id: string, deltaDeg: number): boolean {
+    const obj = this.objects.getById(id);
+    if (!obj || obj.type !== 'metro_station') return false;
+    const current = resolveStationHeading(obj, this.objects.getAll()).heading;
+    const updates = { heading: normalizeHeading(current + deltaDeg), alignToTrack: false };
+    this.history.recordUpdate(obj, { ...obj, ...updates }, `Rotate ${obj.name}`, `${id}:heading`);
+    this.objects.update(id, updates);
+    return true;
+  }
+
+  /** Deletes an object and records it for Undo. Shared by the panel button and the Delete key. */
+  public deleteObjectWithHistory(id: string): boolean {
+    const obj = this.objects.getById(id);
+    if (!obj) return false;
+    this.history.recordDelete(obj, `Delete ${obj.name || obj.type}`);
+    this.objects.delete(id);
+    this.selection.clearSelection();
+    return true;
+  }
+
+  public clearSnapPreview() {
+    if (!this.viewer) return;
+    this.junctionOverlay.clearPreview();
+    if (this.snapReticleEntity) {
+      this.viewer.entities.remove(this.snapReticleEntity);
+      this.snapReticleEntity = null;
+    }
+    if (this.rubberbandEntity) {
+      this.viewer.entities.remove(this.rubberbandEntity);
+      this.rubberbandEntity = null;
+    }
+  }
+
+  private updateSnapPreview(mouseLng: number, mouseLat: number, mouseAlt: number) {
+    if (!this.viewer) return;
+    const mode = this.editing.getMode();
+    if (mode === 'select') {
+      this.clearSnapPreview();
+      return;
+    }
+
+    const snap = this.editing.getSnapManager().findSnap([mouseLng, mouseLat, mouseAlt]);
+    this.editing.setActiveSnap(snap.type !== 'none' ? snap : null);
+
+    const activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];
+
+    if (mode === 'draw_junction') {
+      this.junctionOverlay.preview(activePoint);
+      return;
+    }
+    this.junctionOverlay.clearPreview();
+
+    // 1. Update Snap Reticle Entity
+    if (snap.type !== 'none') {
+      const reticleColor = snap.type === 'endpoint'
+        ? Color.LIME
+        : snap.type === 'edge'
+          ? Color.GOLD
+          : Color.CYAN;
+
+      const position = Cartesian3.fromDegrees(activePoint[0], activePoint[1], (activePoint[2] || 0) + 1.5);
+
+      if (!this.snapReticleEntity) {
+        this.snapReticleEntity = this.viewer.entities.add({
+          position,
+          point: {
+            pixelSize: 14,
+            color: reticleColor,
+            outlineColor: Color.WHITE,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+          },
+          label: {
+            text: snap.description || 'Snap',
+            font: '12px Inter, system-ui, sans-serif',
+            style: LabelStyle.FILL_AND_OUTLINE,
+            fillColor: Color.WHITE,
+            outlineColor: Color.BLACK,
+            outlineWidth: 2,
+            verticalOrigin: VerticalOrigin.BOTTOM,
+            pixelOffset: new Cartesian2(0, -16),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+          }
+        });
+      } else {
+        this.snapReticleEntity.position = position as any;
+        if (this.snapReticleEntity.point) {
+          this.snapReticleEntity.point.color = reticleColor as any;
+        }
+        if (this.snapReticleEntity.label) {
+          this.snapReticleEntity.label.text = (snap.description || 'Snap') as any;
+        }
+      }
+    } else {
+      if (this.snapReticleEntity) {
+        this.viewer.entities.remove(this.snapReticleEntity);
+        this.snapReticleEntity = null;
+      }
+    }
+
+    // 2. Update Rubberband Entity if drawing points exist
+    const drawingPts = this.editing.getDrawingPoints();
+    if (drawingPts.length > 0 && (mode.startsWith('draw_') || mode === 'import_osm')) {
+      const lastPt = drawingPts[drawingPts.length - 1];
+      const p1 = Cartesian3.fromDegrees(lastPt[0], lastPt[1], lastPt[2] || 0);
+      const p2 = Cartesian3.fromDegrees(activePoint[0], activePoint[1], activePoint[2] || 0);
+
+      if (!this.rubberbandEntity) {
+        this.rubberbandEntity = this.viewer.entities.add({
+          polyline: {
+            positions: [p1, p2],
+            width: 3,
+            material: new PolylineDashMaterialProperty({
+              color: Color.YELLOW.withAlpha(0.9),
+              dashLength: 12
+            }),
+            clampToGround: mode === 'draw_road' || mode === 'draw_utility'
+          }
+        });
+      } else {
+        if (this.rubberbandEntity.polyline) {
+          this.rubberbandEntity.polyline.positions = [p1, p2] as any;
+        }
+      }
+    } else {
+      if (this.rubberbandEntity) {
+        this.viewer.entities.remove(this.rubberbandEntity);
+        this.rubberbandEntity = null;
+      }
+    }
   }
 
   private updateDrawPreview() {
@@ -505,8 +1119,8 @@ export class TwinCityEngine {
         name: area.name,
         polygon: {
           hierarchy: pts,
-          material: isSelected 
-            ? Color.fromCssColorString('#0284c7').withAlpha(0.3) 
+          material: isSelected
+            ? Color.fromCssColorString('#0284c7').withAlpha(0.3)
             : Color.fromCssColorString('#0284c7').withAlpha(0.12),
           outline: true,
           outlineColor: isSelected ? Color.CYAN : Color.fromCssColorString('#0284c7'),
@@ -527,6 +1141,7 @@ export class TwinCityEngine {
     this.selection.clearSelection();
     this.syncZonesAndGatewaysWithCesium();
     this.objects.notify();
+    this.emitMode();
   }
 
   private syncZonesAndGatewaysWithCesium() {
@@ -546,9 +1161,11 @@ export class TwinCityEngine {
     const selections = this.selection.getSelection();
     const selectedId = selections[0];
     const selectedObj = selectedId ? this.objects.getById(selectedId) : null;
+    this.junctionOverlay.sync(filtered, this.isPlanningMode && this.layers.isVisible('junctions'), selectedId);
 
     // 2. Render Zones if layer is visible
     if (this.layers.isVisible('demand_zones')) {
+      const zoneOpacity = this.layers.getOpacity('demand_zones');
       const zones = filtered.filter(o => o.type === 'zone') as ZoneObject[];
       zones.forEach(zone => {
         const isSelected = selections.includes(zone.id);
@@ -559,11 +1176,9 @@ export class TwinCityEngine {
           name: zone.name,
           polygon: {
             hierarchy: pts,
-            material: isSelected 
-              ? Color.fromCssColorString('#f43f5e').withAlpha(0.25) 
-              : Color.fromCssColorString('#f43f5e').withAlpha(0.08), 
+            material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.25 : 0.08) * zoneOpacity),
             outline: true,
-            outlineColor: isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e'),
+            outlineColor: (isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e')).withAlpha(zoneOpacity),
             outlineWidth: isSelected ? 4.0 : 2.0,
             classificationType: ClassificationType.BOTH
           },
@@ -582,7 +1197,7 @@ export class TwinCityEngine {
           position: Cartesian3.fromDegrees(
             zone.coordinates.reduce((sum, c) => sum + c[0], 0) / zone.coordinates.length,
             zone.coordinates.reduce((sum, c) => sum + c[1], 0) / zone.coordinates.length,
-            2.0 
+            2.0
           )
         });
         this.zoneEntities.push(entity);
@@ -591,6 +1206,7 @@ export class TwinCityEngine {
 
     // 3. Render Gateways if layer is visible
     if (this.layers.isVisible('gateways')) {
+      const gatewayOpacity = this.layers.getOpacity('gateways');
       const gateways = filtered.filter(o => o.type === 'gateway') as GatewayObject[];
       gateways.forEach(gw => {
         const isSelected = selections.includes(gw.id);
@@ -603,7 +1219,7 @@ export class TwinCityEngine {
           position: pos,
           point: {
             pixelSize: isSelected ? 18 : 12,
-            color: isSelected ? Color.CYAN : Color.fromCssColorString('#eab308'), 
+            color: (isSelected ? Color.CYAN : Color.fromCssColorString('#eab308')).withAlpha(gatewayOpacity),
             outlineWidth: 3,
             outlineColor: Color.BLACK,
             disableDepthTestDistance: Number.POSITIVE_INFINITY
@@ -651,7 +1267,7 @@ export class TwinCityEngine {
       selectedObj.coordinates.forEach((pt, idx) => {
         // Skip duplicate last point in closed loop to avoid double markers
         if (idx === selectedObj.coordinates.length - 1 && idx > 0) return;
-        
+
         const marker = this.viewer!.entities.add({
           id: `edit_zone_point_${selectedObj.id}_${idx}`,
           position: Cartesian3.fromDegrees(pt[0], pt[1], pt[2] || 0.5),
@@ -671,51 +1287,53 @@ export class TwinCityEngine {
   private async loadSampleData() {
     try {
       console.log('[STARTUP] Object fetch START');
-      const res = await fetch('http://localhost:8000/api/objects');
-      if (res.ok) {
-        const data = await res.json();
-        console.log('[STARTUP] Object fetch END');
-        if (data && data.length > 0) {
-          console.log(`Loaded ${data.length} objects from FastAPI database.`);
-          console.log('[STARTUP] ObjectManager load START');
-          this.objects.clear();
-          let hasBuildings = false;
-          let hasZones = false;
-          data.forEach((obj: any) => {
-            if (obj.type === 'building') hasBuildings = true;
-            if (obj.type === 'zone') hasZones = true;
-            const unpacked = {
-              id: obj.id,
-              type: obj.type as any,
-              name: obj.name,
-              layerId: obj.layerId,
-              scenarioId: obj.scenarioId,
-              coordinates: obj.coordinates,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              ...obj.properties
-            };
-            if (unpacked.type === 'road') {
-              this.objects.syncRoadProperties(unpacked as any);
-            }
-            (this.objects as any).objects.set(unpacked.id, unpacked);
-          });
-          console.log('[STARTUP] ObjectManager load END');
-          
-          if (!hasBuildings || !hasZones) {
-            console.log('Database missing buildings or zones. Seeding realistic Pune/Hinjewadi demand...');
-            this.seedPuneHinjewadiDemand();
-          }
+      const data = await apiGet<any[]>('/api/objects');
+      console.log('[STARTUP] Object fetch END');
 
-          this.objects.notify();
-          return;
-        } else {
-          console.log('FastAPI database is connected but empty. Seeding defaults...');
+      if (data && data.length > 0) {
+        console.log(`Loaded ${data.length} objects from FastAPI database.`);
+        console.log('[STARTUP] ObjectManager load START');
+        this.objects.clear();
+        let hasBuildings = false;
+        let hasZones = false;
+
+        data.forEach((obj: any) => {
+          if (obj.type === 'building') hasBuildings = true;
+          if (obj.type === 'zone') hasZones = true;
+          const unpacked = {
+            id: obj.id,
+            type: obj.type as any,
+            name: obj.name,
+            layerId: obj.layerId,
+            scenarioId: obj.scenarioId,
+            coordinates: obj.coordinates,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            ...obj.properties
+          };
+          if (unpacked.type === 'road') {
+            this.objects.syncRoadProperties(unpacked as any);
+          }
+          (this.objects as any).objects.set(unpacked.id, unpacked);
+        });
+
+        this.objects.liftBridges();
+        console.log('[STARTUP] ObjectManager load END');
+
+        if (!hasBuildings || !hasZones) {
+          console.log('Database missing buildings or zones. Seeding realistic Pune/Hinjewadi demand...');
+          this.seedPuneHinjewadiDemand();
         }
+
+        this.objects.notify();
+        return;
+      } else {
+        console.log('FastAPI database is connected but empty. Seeding defaults...');
       }
     } catch (e) {
       console.warn('Backend database offline or unreachable. Running in local memory-only mode:', e);
     }
+
 
     const baseLng = 73.8567;
     const baseLat = 18.5204;
@@ -837,96 +1455,18 @@ export class TwinCityEngine {
       updatedAt: new Date().toISOString()
     });
 
-    this.objects.add({
-      id: 'b1',
-      type: 'building',
-      name: 'TwinTowers Block A (Vertical Extension)',
-      layerId: 'buildings',
-      scenarioId: 'proposal_2028',
-      coordinates: [
-        [baseLng - 0.002, baseLat - 0.002, 0],
-        [baseLng - 0.001, baseLat - 0.002, 0],
-        [baseLng - 0.001, baseLat - 0.001, 0],
-        [baseLng - 0.002, baseLat - 0.001, 0],
-        [baseLng - 0.002, baseLat - 0.002, 0]
-      ],
-      usageType: 'residential',
-      height: 75,
-      floors: 25,
-      population: 400,
-      parkingSpaces: 120,
-      waterDemand: 60000,
-      electricityDemand: 2400,
-      constructionYear: 2028,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-
-    this.objects.add({
-      id: 'f1',
-      type: 'flyover' as any,
-      name: 'Phase 1 Metro Bypass Flyover',
-      layerId: 'roads',
-      scenarioId: 'proposal_2028',
-      coordinates: [
-        [baseLng - 0.004, baseLat + 0.001, 5],
-        [baseLng + 0.004, baseLat + 0.001, 5]
-      ],
-      roadClass: 'highway',
-      width: 15.5,
-      laneCount: 4,
-      laneWidth: 3.5,
-      hasDivider: true,
-      dividerWidth: 1.5,
-      hasFootpath: false,
-      footpathWidth: 0.0,
-      speedLimit: 80,
-      isOneWay: false,
-      trafficCapacity: 3200,
-      connectedJunctions: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    } as any);
-
-    this.objects.add({
-      id: 'u1',
-      type: 'utility',
-      name: 'Sector 4 Water Trunk Feed',
-      layerId: 'water_util',
-      scenarioId: 'proposal_2030',
-      coordinates: [
-        [baseLng - 0.004, baseLat - 0.001, 0],
-        [baseLng + 0.004, baseLat - 0.001, 0]
-      ],
-      utilityType: 'water',
-      depth: 2.0,
-      capacity: 350,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-
-    this.objects.add({
-      id: 'u2',
-      type: 'utility',
-      name: 'High-Speed Telecom Ring',
-      layerId: 'fiber_util',
-      scenarioId: 'proposal_2030',
-      coordinates: [
-        [baseLng - 0.002, baseLat + 0.002, 0],
-        [baseLng + 0.002, baseLat + 0.002, 0]
-      ],
-      utilityType: 'fiber',
-      depth: 1.2,
-      capacity: 1000,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-
     this.seedPuneHinjewadiDemand();
   }
 
   public getTrafficNetwork() {
     return this.trafficNetwork;
+  }
+
+  /** Asks for the city-wide traffic graph; it is built in the background and kept up to date from then on. */
+  public requestTrafficNetwork() {
+    if (this.cityNetworkWanted) return;
+    this.cityNetworkWanted = true;
+    this.queueTrafficRebuild();
   }
 
   public getViewer(): any {
@@ -992,7 +1532,7 @@ export class TwinCityEngine {
       console.warn('Traffic Web Worker not available.');
       return;
     }
-    
+
     this.activeRequestId++;
     const requestId = this.activeRequestId;
 
@@ -1064,6 +1604,7 @@ export class TwinCityEngine {
   }
 
   private queueTrafficRebuild() {
+    if (!this.cityNetworkWanted) return;
     if (this.demandRebuildTimeout) {
       clearTimeout(this.demandRebuildTimeout);
       this.demandRebuildTimeout = null;
@@ -1078,7 +1619,7 @@ export class TwinCityEngine {
   }
 
   private queueTrafficDemandRebuildOnly() {
-    if (this.rebuildTimeout) return;
+    if (!this.cityNetworkWanted || this.rebuildTimeout) return;
     if (this.demandRebuildTimeout) {
       clearTimeout(this.demandRebuildTimeout);
     }

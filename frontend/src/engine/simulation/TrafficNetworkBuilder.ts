@@ -65,10 +65,36 @@ function pointToSegmentDistance(
   return { distance: dist, closestPt: [cx, cy] };
 }
 
-export class TrafficNetworkBuilder {
-  private readonly spatialTolerance = 0.00006; // ~6 meters in degrees
+/** OSM coordinates carry 7 decimals, so a node shared by two ways has the same key in both. */
+const vertexKey = (pt: readonly number[]) => `${pt[0].toFixed(7)},${pt[1].toFixed(7)}`;
 
-  public build(roads: RoadObject[]): { network: TrafficNetwork; diagnostics: string } {
+function sharedVertices(a: readonly (readonly number[])[], b: readonly (readonly number[])[]): Set<string> {
+  const keysA = new Set(a.map(vertexKey));
+  const shared = new Set<string>();
+  for (const pt of b) {
+    const key = vertexKey(pt);
+    if (keysA.has(key)) shared.add(key);
+  }
+  return shared;
+}
+
+/** A place where two roads cross at different heights (bridge, flyover, tunnel) and do not connect. */
+export interface GradeSeparation {
+  coordinates: [number, number]; // [longitude, latitude]
+  upperZ: number;
+  lowerZ: number;
+  roadIds: [string, string];
+}
+
+/** Road ends and crossings closer than this (in degrees, ~6 m) join at a junction. */
+export const JOIN_TOLERANCE_DEG = 0.00006;
+/** Roads further apart vertically than this (m) pass over each other instead of joining. */
+export const GRADE_SEPARATION_M = 3.0;
+
+export class TrafficNetworkBuilder {
+  private readonly spatialTolerance = JOIN_TOLERANCE_DEG;
+
+  public build(roads: RoadObject[]): { network: TrafficNetwork; diagnostics: string; gradeSeparations: GradeSeparation[] } {
     const startTime = performance.now();
     const roadMap = new Map<string, RoadObject>(roads.map(r => [r.id, r]));
 
@@ -107,7 +133,9 @@ export class TrafficNetworkBuilder {
     };
 
     let bridgeTunnelCrossingsCount = 0;
-    const checkedPairs = new Set<string>();
+    const gradeSeparations: GradeSeparation[] = [];
+    // Each pair is checked once: from the road that comes first in the list
+    const order = new Map<string, number>(roads.map((r, i) => [r.id, i]));
 
     // 2. Spatial grid matching (O(N) search)
     for (let i = 0; i < roads.length; i++) {
@@ -119,12 +147,7 @@ export class TrafficNetworkBuilder {
       const candidates = grid.getObjectsInTiles(cells);
 
       for (const candId of candidates) {
-        if (candId === roadA.id) continue;
-
-        // Ensure unique pairs are checked only once
-        const pairKey = roadA.id < candId ? `${roadA.id}_vs_${candId}` : `${candId}_vs_${roadA.id}`;
-        if (checkedPairs.has(pairKey)) continue;
-        checkedPairs.add(pairKey);
+        if ((order.get(candId) ?? -1) <= i) continue;
 
         const roadB = roadMap.get(candId);
         if (!roadB) continue;
@@ -148,6 +171,10 @@ export class TrafficNetworkBuilder {
         if (provA && provB && provA.layer !== provB.layer) {
           gradeSeparated = true;
         }
+        // OSM ways on different layers still join where they share a node: a
+        // bridge (layer 1) meets its approach roads (layer 0) at its end nodes.
+        const shared = gradeSeparated ? sharedVertices(roadA.coordinates, roadB.coordinates) : null;
+        const layerSeparatedAt = (pt: readonly number[]) => gradeSeparated && !shared!.has(vertexKey(pt));
 
         // X-crossing check (Segment-Segment intersection)
         for (let sA = 0; sA < roadA.coordinates.length - 1; sA++) {
@@ -175,8 +202,19 @@ export class TrafficNetworkBuilder {
               const z_A = pA1[2] + ua * (pA2[2] - pA1[2]);
               const z_B = pB1[2] + ub * (pB2[2] - pB1[2]);
 
-              if (gradeSeparated || Math.abs(z_A - z_B) > 3.0) {
+              // A crossing at a shared node is a junction; the vertex checks below join it
+              if (gradeSeparated && shared!.has(vertexKey(crossing))) continue;
+
+              if (gradeSeparated || Math.abs(z_A - z_B) > GRADE_SEPARATION_M) {
                 bridgeTunnelCrossingsCount++;
+                // Same height but different OSM layers: the higher layer is on top
+                const aOnTop = z_A !== z_B ? z_A > z_B : (provA?.layer ?? 0) >= (provB?.layer ?? 0);
+                gradeSeparations.push({
+                  coordinates: crossing,
+                  upperZ: Math.max(z_A, z_B),
+                  lowerZ: Math.min(z_A, z_B),
+                  roadIds: aOnTop ? [roadA.id, roadB.id] : [roadB.id, roadA.id]
+                });
                 continue;
               }
 
@@ -201,7 +239,7 @@ export class TrafficNetworkBuilder {
               const ub = dxB !== 0 ? (res.closestPt[0] - pB1[0]) / dxB : (res.closestPt[1] - pB1[1]) / (dyB || 1);
               const z_B = pB1[2] + ub * (pB2[2] - pB1[2]);
 
-              if (gradeSeparated || Math.abs(ptA[2] - z_B) > 3.0) {
+              if (layerSeparatedAt(ptA) || Math.abs(ptA[2] - z_B) > GRADE_SEPARATION_M) {
                 bridgeTunnelCrossingsCount++;
                 continue;
               }
@@ -235,7 +273,7 @@ export class TrafficNetworkBuilder {
               const ua = dxA !== 0 ? (res.closestPt[0] - pA1[0]) / dxA : (res.closestPt[1] - pA1[1]) / (dyA || 1);
               const z_A = pA1[2] + ua * (pA2[2] - pA1[2]);
 
-              if (gradeSeparated || Math.abs(ptB[2] - z_A) > 3.0) {
+              if (layerSeparatedAt(ptB) || Math.abs(ptB[2] - z_A) > GRADE_SEPARATION_M) {
                 bridgeTunnelCrossingsCount++;
                 continue;
               }
@@ -265,19 +303,42 @@ export class TrafficNetworkBuilder {
     const nodeOutgoingMap = new Map<string, string[]>();
 
     const activeNodes: { id: string; coords: [number, number, number] }[] = [];
+    const nodeCoordsById = new Map<string, [number, number, number]>();
+    // Nodes bucketed into tolerance-sized cells, so a match is always in the 3x3 neighbourhood
+    const nodeCells = new Map<number, number[]>();
+    // Numeric cell keys, unique while |lat / tol| < 2^21 (it is under 1.6 million)
+    const cellKeyOf = (cx: number, cy: number) => cx * 4194304 + cy;
+    const tol = this.spatialTolerance;
 
     const getNodeId = (coord: [number, number, number]): string => {
-      const existing = activeNodes.find(n => {
-        const dist = Math.sqrt((n.coords[0] - coord[0])**2 + (n.coords[1] - coord[1])**2);
-        const zDist = Math.abs((n.coords[2] || 0) - (coord[2] || 0));
-        return dist < this.spatialTolerance && zDist < 3.0;
-      });
-      if (existing) {
-        return existing.id;
+      const cx = Math.floor(coord[0] / tol);
+      const cy = Math.floor(coord[1] / tol);
+      // Earliest-created matching node wins, as with a linear scan in creation order
+      let match = -1;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const cell = nodeCells.get(cellKeyOf(cx + dx, cy + dy));
+          if (!cell) continue;
+          for (const idx of cell) {
+            if (match !== -1 && idx >= match) continue;
+            const n = activeNodes[idx];
+            const dist = Math.sqrt((n.coords[0] - coord[0])**2 + (n.coords[1] - coord[1])**2);
+            const zDist = Math.abs((n.coords[2] || 0) - (coord[2] || 0));
+            if (dist < tol && zDist < GRADE_SEPARATION_M) match = idx;
+          }
+        }
+      }
+      if (match !== -1) {
+        return activeNodes[match].id;
       }
       const zVal = coord[2] || 0;
       const id = `node_${coord[0].toFixed(5)}_${coord[1].toFixed(5)}_${zVal.toFixed(1)}`;
+      const cellKey = cellKeyOf(cx, cy);
+      const cell = nodeCells.get(cellKey);
+      if (cell) cell.push(activeNodes.length);
+      else nodeCells.set(cellKey, [activeNodes.length]);
       activeNodes.push({ id, coords: coord });
+      if (!nodeCoordsById.has(id)) nodeCoordsById.set(id, coord);
       return id;
     };
 
@@ -335,8 +396,8 @@ export class TrafficNetworkBuilder {
         const startNodeId = getNodeId(startPt);
         const endNodeId = getNodeId(endPt);
 
-        const startClusterCoords = activeNodes.find(n => n.id === startNodeId)!.coords;
-        const endClusterCoords = activeNodes.find(n => n.id === endNodeId)!.coords;
+        const startClusterCoords = nodeCoordsById.get(startNodeId)!;
+        const endClusterCoords = nodeCoordsById.get(endNodeId)!;
 
         nodeCoordsMap.set(startNodeId, startClusterCoords);
         nodeCoordsMap.set(endNodeId, endClusterCoords);
@@ -451,7 +512,8 @@ export class TrafficNetworkBuilder {
           const outEdge = edgesMap.get(outId);
           if (!outEdge || outEdge.coordinates.length < 2) return;
 
-          if (incEdge.roadId === outEdge.roadId && incEdge.direction !== outEdge.direction) {
+          const isDeadEnd = outgoing.length === 1 && incoming.length === 1;
+          if (incEdge.roadId === outEdge.roadId && incEdge.direction !== outEdge.direction && !isDeadEnd) {
             return;
           }
 
@@ -494,14 +556,10 @@ export class TrafficNetworkBuilder {
       });
     });
 
-    let disconnectedRoadsCount = 0;
-    roads.forEach(r => {
-      const hasNode = Array.from(nodesMap.values()).some(n => {
-        return n.incomingSegments.some(e => e.startsWith(r.id)) ||
-               n.outgoingSegments.some(e => e.startsWith(r.id));
-      });
-      if (!hasNode) disconnectedRoadsCount++;
-    });
+    // Every edge is attached to two nodes, so a road has a node exactly when it has an edge
+    const roadsWithEdges = new Set<string>();
+    edgesMap.forEach(e => roadsWithEdges.add(e.roadId));
+    const disconnectedRoadsCount = roads.filter(r => !roadsWithEdges.has(r.id)).length;
 
     const endTime = performance.now();
     const processTime = (endTime - startTime).toFixed(1);
@@ -522,7 +580,8 @@ Suspicious Intersections (>4 connections): ${suspiciousJunctionsCount}
         nodes: nodesMap,
         edges: edgesMap
       },
-      diagnostics
+      diagnostics,
+      gradeSeparations
     };
   }
 }

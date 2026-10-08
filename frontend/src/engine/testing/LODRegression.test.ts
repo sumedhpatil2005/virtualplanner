@@ -63,7 +63,7 @@ vi.mock('cesium', () => {
       fromColor: () => ({})
     },
     Color: {
-      fromCssColorString: () => ({})
+      fromCssColorString: () => ({ alpha: 1, withAlpha: (alpha: number) => ({ alpha }) })
     },
     PerInstanceColorAppearance: class {},
     Math: {
@@ -117,7 +117,7 @@ describe('LOD / RenderManager Regression Test', () => {
 
     // 3. Verify it is registered and rendered in the TransitRenderer
     const transitRenderer = renderManager.getTransitRenderer();
-    expect((transitRenderer as any).transitToTileMap.has('short_metro_line')).toBe(true);
+    expect(transitRenderer.hasObject('short_metro_line')).toBe(true);
   });
 
   it('renders a long metro line immediately when any of its intersected tiles are loaded, even if the first coordinate tile is outside the viewport', () => {
@@ -155,7 +155,7 @@ describe('LOD / RenderManager Regression Test', () => {
     // Under the old first-coordinate check, this would be false because outerTileKey is not loaded.
     // Under the new intersection check, it should be true because visibleTileKey is loaded!
     const transitRenderer = renderManager.getTransitRenderer();
-    expect((transitRenderer as any).transitToTileMap.has('long_metro_line')).toBe(true);
+    expect(transitRenderer.hasObject('long_metro_line')).toBe(true);
   });
 
   it('aligns a metro station with the nearest metro track segment and generates multi-part meshes', () => {

@@ -1,6 +1,27 @@
-import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory } from '../objects/types';
+import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory, RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
-import { HistoryManager } from '../history/HistoryManager';
+import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
+import { apiGet, apiPost, apiDelete } from '../../lib/api';
+import { SnapManager, type SnapResult } from './SnapManager';
+import { OverpassCancelledError, OverpassClient } from './OverpassClient';
+import { LocalOsmIndex } from './LocalOsmIndex';
+import { findNearestTrack } from '../objects/stationAlignment';
+import { utilityLayerId } from '../layers/LayerManager';
+import { findRoadEndGaps, insertRoadVertex, markGeometryEdited, type RoadEndGap } from './roadGaps';
+import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from './osmDrivability';
+import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
+import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
+import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
+import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
+import { junctionLayout } from '../objects/junctionLayout';
+import { TrafficSignalSource } from '../simulation/trafficSignals';
+import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
+
+/** highway=* values fetched for study areas; the importer's allowlist, plus tracks it may keep. */
+const STUDY_AREA_HIGHWAYS = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|track';
+
+/** Roads fetched from OpenStreetMap per request when filling in missing ones. */
+const OSM_FETCH_BATCH = 400;
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover';
 
@@ -9,8 +30,10 @@ export class EditingEngine {
   private drawingPoints: [number, number, number][] = [];
   private isImporting: boolean = false;
   private savedAreas: Area[] = [];
-  private areasAPI_URL = 'http://localhost:8000/api/areas';
-  
+  private savedAreasFetched = false;
+  private snapManager: SnapManager;
+  private activeSnap: SnapResult | null = null;
+
   // Selected creation types
   public roadClass: RoadClassification = 'local';
   public buildingUsage: BuildingUsage = 'residential';
@@ -21,11 +44,19 @@ export class EditingEngine {
   }
 
   public setIsImporting(val: boolean) {
+    // Each import gets a fresh cancellation token
+    if (val && !this.isImporting) this.importAbort = new AbortController();
+    if (!val) this.importAbort = null;
     if (this.isImporting !== val) {
       this.isImporting = val;
       this.notify();
     }
   }
+
+  private overpass = new OverpassClient();
+  /** Roads and signals from the backend's OSM extract; Overpass is used only where it has none. */
+  public readonly localOsm: LocalOsmIndex;
+  private importAbort: AbortController | null = null;
 
   private onChangeListeners: (() => void)[] = [];
   private objectManager: ObjectManager;
@@ -35,12 +66,27 @@ export class EditingEngine {
   constructor(
     objectManager: ObjectManager,
     historyManager: HistoryManager,
-    getNetwork?: () => any
+    getNetwork?: () => any,
+    localOsm: LocalOsmIndex = new LocalOsmIndex()
   ) {
+    this.localOsm = localOsm;
     this.objectManager = objectManager;
     this.historyManager = historyManager;
     this.getNetwork = getNetwork;
+    this.snapManager = new SnapManager(objectManager);
     this.fetchSavedAreas();
+  }
+
+  public getSnapManager(): SnapManager {
+    return this.snapManager;
+  }
+
+  public getActiveSnap(): SnapResult | null {
+    return this.activeSnap;
+  }
+
+  public setActiveSnap(snap: SnapResult | null) {
+    this.activeSnap = snap;
   }
 
   public onChange(callback: () => void) {
@@ -58,7 +104,20 @@ export class EditingEngine {
     return this.activeMode;
   }
 
+  private locked = false;
+
+  /** While locked (Simulation mode) only the select tool is available, so nothing can be drawn. */
+  public setLocked(locked: boolean) {
+    this.locked = locked;
+    if (locked) this.cancelDrawing();
+  }
+
+  public isLocked(): boolean {
+    return this.locked;
+  }
+
   public setMode(mode: EditingMode) {
+    if (this.locked && mode !== 'select') return;
     if (this.activeMode !== mode) {
       this.activeMode = mode;
       this.clearDrawing();
@@ -71,14 +130,35 @@ export class EditingEngine {
   }
 
   public addDrawingPoint(point: [number, number, number]) {
-    // Snap logic would go here: compare to other nearby coordinates
-    const snapped = this.snapToGrid(point);
-    this.drawingPoints.push(snapped);
+    // A throttled hover preview may still describe an older pointer location.
+    const snap = this.snapManager.findSnap(point);
+    const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
+
+    // A double-click also fires two single clicks at the same spot; ignore
+    // repeats so finishing a line doesn't create zero-length segments.
+    const last = this.drawingPoints[this.drawingPoints.length - 1];
+    if (last && Math.abs(last[0] - resolvedPoint[0]) < 1e-7 && Math.abs(last[1] - resolvedPoint[1]) < 1e-7) {
+      return;
+    }
+
+    this.drawingPoints.push(resolvedPoint);
     this.notify();
+  }
+
+  public removeDrawingPoint(index: number) {
+    if (index < 0 || index >= this.drawingPoints.length) return;
+    this.drawingPoints.splice(index, 1);
+    this.notify();
+  }
+
+  /** Tools that complete on a single click rather than a double-click. */
+  public isSingleClickMode(mode: EditingMode = this.activeMode): boolean {
+    return mode === 'draw_junction' || mode === 'place_station' || mode === 'draw_gateway';
   }
 
   public clearDrawing() {
     this.drawingPoints = [];
+    this.activeSnap = null;
     this.notify();
   }
 
@@ -87,56 +167,208 @@ export class EditingEngine {
     this.setMode('select');
   }
 
-  private snapToGrid(point: [number, number, number]): [number, number, number] {
-    // Basic helper: Snap to nearest other object point within a threshold
-    const objects = this.objectManager.getAll();
-    const snapDistanceThreshold = 0.0001; // roughly 10 meters in lat/lng coordinates
+  private pointToSegmentDist(
+    px: number, py: number,
+    x1: number, y1: number,
+    x2: number, y2: number
+  ): { distance: number; t: number } {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      const dist = Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+      return { distance: dist, t: 0 };
+    }
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = x1 + t * dx;
+    const cy = y1 + t * dy;
+    const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+    return { distance: dist, t };
+  }
 
-    for (const obj of objects) {
-      if (obj.type === 'junction') {
-        const dist = this.getDistance(point, obj.coordinates);
-        if (dist < snapDistanceThreshold) {
-          return [...obj.coordinates] as [number, number, number];
-        }
-      } else if (obj.type === 'road' || obj.type === 'building' || obj.type === 'utility') {
-        for (const coord of obj.coordinates) {
-          const dist = this.getDistance(point, coord);
-          if (dist < snapDistanceThreshold) {
-            return [...coord] as [number, number, number];
+  /**
+   * Splits existing roads where the new line's endpoints land mid-segment, so
+   * the traffic network sees a real T-junction. Returns history diffs for the
+   * modified roads so the caller can record them with the new object.
+   */
+  public insertJunctionIntoIntersectedRoads(newCoords: [number, number, number][]): HistoryDiff[] {
+    const diffs: HistoryDiff[] = [];
+    if (newCoords.length < 2) return diffs;
+    const checkPoints = [newCoords[0], newCoords[newCoords.length - 1]];
+    const roadIds = this.objectManager.getAll()
+      .filter(o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover')
+      .map(o => o.id);
+
+    for (const pt of checkPoints) {
+      for (const roadId of roadIds) {
+        // Re-read every time: an earlier split may already have replaced this road
+        const road = this.objectManager.getById(roadId) as RoadObject | undefined;
+        if (!road) continue;
+        // If already a vertex of this road, skip
+        const isVertex = road.coordinates.some(c =>
+          Math.abs(c[0] - pt[0]) < 0.00001 && Math.abs(c[1] - pt[1]) < 0.00001
+        );
+        if (isVertex) continue;
+
+        // Check each segment
+        for (let s = 0; s < road.coordinates.length - 1; s++) {
+          const p1 = road.coordinates[s];
+          const p2 = road.coordinates[s + 1];
+          const { distance, t } = this.pointToSegmentDist(pt[0], pt[1], p1[0], p1[1], p2[0], p2[1]);
+          if (distance < 0.00012 && t > 0.02 && t < 0.98) {
+            // Keeps section vertex ranges in step, or the road's last stretch stops rendering
+            const { coordinates, sections } = insertRoadVertex(road, s + 1, [pt[0], pt[1], pt[2] || p1[2] || 0]);
+            this.objectManager.update(road.id, sections ? { coordinates, sections } : { coordinates });
+            const after = this.objectManager.getById(road.id);
+            if (after) {
+              diffs.push({ type: 'update', id: road.id, before: road, after, description: `Split ${road.name || road.id}` });
+            }
+            break;
           }
         }
       }
     }
-    return point;
+    return diffs;
   }
 
-  private getDistance(p1: [number, number, number], p2: [number, number, number]): number {
-    const dx = p1[0] - p2[0];
-    const dy = p1[1] - p2[1];
-    return Math.sqrt(dx * dx + dy * dy);
+  /**
+   * Joins a road end to the road it stops just short of (see findRoadEndGaps).
+   * The other road gets a vertex at the join point unless one is already there,
+   * so both share an exact point and the traffic network links them. `visible`
+   * is the active scenario's objects; the gap is re-checked against them first.
+   * One undo step.
+   */
+  public connectRoadEnd(gap: RoadEndGap, visible: readonly CityObject[]): void {
+    if (this.locked) throw new Error('The road network is read-only in Simulation mode.');
+    const road = this.objectManager.getById(gap.roadId);
+    const target = this.objectManager.getById(gap.targetRoadId);
+    if (road?.type !== 'road' || target?.type !== 'road') {
+      throw new Error('One of these roads no longer exists.');
+    }
+    const fresh = findRoadEndGaps(road, visible).find(g => g.end === gap.end && g.targetRoadId === gap.targetRoadId);
+    if (!fresh) {
+      throw new Error(`"${road.name}" no longer stops short of "${target.name}". It may already be connected.`);
+    }
+
+    const diffs: HistoryDiff[] = [];
+    if (fresh.targetVertex === null) {
+      const { coordinates, sections } = insertRoadVertex(target, fresh.targetSegment + 1, fresh.joinPoint);
+      this.objectManager.update(target.id, { coordinates, sections: markGeometryEdited(sections) });
+      diffs.push({ type: 'update', id: target.id, before: target, after: this.objectManager.getById(target.id)!, description: `Add junction point to ${target.name}` });
+    }
+    const index = fresh.end === 'start' ? 0 : road.coordinates.length;
+    const { coordinates, sections } = insertRoadVertex(road, index, fresh.joinPoint);
+    this.objectManager.update(road.id, { coordinates, sections: markGeometryEdited(sections) });
+    diffs.push({ type: 'update', id: road.id, before: road, after: this.objectManager.getById(road.id)!, description: `Extend ${road.name}` });
+
+    this.historyManager.pushDiff({ type: 'batch', description: `Connect ${road.name} to ${target.name}`, diffs });
+  }
+
+  /**
+   * Removes imported OSM roads that vehicles cannot use (footways, paths,
+   * closed roads, ...), matching what the importer now skips. One undo step;
+   * returns what was removed and why.
+   */
+  public removeNonDrivableOsmRoads(): NonDrivableRoad[] {
+    if (this.locked) throw new Error('The road network is read-only in Simulation mode.');
+    const found = findNonDrivableOsmRoads(this.objectManager.getAll());
+    if (found.length === 0) return found;
+    const roads = found.map(f => f.road);
+    this.historyManager.recordDelete(roads, `Remove ${roads.length} OSM ways vehicles cannot use`);
+    this.objectManager.deleteMultiple(roads);
+    return found;
+  }
+
+  /**
+   * The drawn path with each end carried onto the road it stops just short of
+   * (within AUTO_CONNECT_M, at the same level), so a new road or flyover is
+   * part of the network as soon as it is built.
+   */
+  private joinedToNetwork(points: readonly [number, number, number][], scenarioId: string): [number, number, number][] {
+    const pad = (AUTO_CONNECT_M + 5) / 111320;
+    const ends = [points[0], points[points.length - 1]];
+    // Road boxes, padded, that hold either end
+    const nearEnd = (c: readonly (readonly number[])[]) => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of c) {
+        if (p[0] < minX) minX = p[0];
+        if (p[0] > maxX) maxX = p[0];
+        if (p[1] < minY) minY = p[1];
+        if (p[1] > maxY) maxY = p[1];
+      }
+      const padLng = pad / Math.cos((ends[0][1] * Math.PI) / 180);
+      return ends.some(e => e[0] >= minX - padLng && e[0] <= maxX + padLng && e[1] >= minY - pad && e[1] <= maxY + pad);
+    };
+    const roads = filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(
+      o => (o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') && nearEnd(o.coordinates)
+    ) as { id: string; coordinates: [number, number, number][] }[];
+    return connectEnds(points, roads) ?? [...points];
+  }
+
+  public getJunctionLayout(point: [number, number, number], scenarioId: string) {
+    const roads = filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(
+      o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover'
+    ) as Parameters<typeof junctionLayout>[1];
+    return junctionLayout(point, roads);
+  }
+
+  private connectJunctionApproaches(point: [number, number, number], roadIds: string[], junctionId: string): HistoryDiff[] {
+    const kx = 111320 * Math.cos(point[1] * Math.PI / 180);
+    const diffs: HistoryDiff[] = [];
+    for (const id of roadIds) {
+      const road = this.objectManager.getById(id);
+      if (!road || (road.type !== 'road' && road.type !== 'flyover' && road.type !== 'metro_flyover')) continue;
+      let best = { distance: Infinity, segment: 0, t: 0 };
+      for (let i = 1; i < road.coordinates.length; i++) {
+        const a = road.coordinates[i - 1], b = road.coordinates[i];
+        const hit = this.pointToSegmentDist(0, 0, (a[0]-point[0])*kx, (a[1]-point[1])*111320, (b[0]-point[0])*kx, (b[1]-point[1])*111320);
+        if (hit.distance < best.distance) best = { distance: hit.distance, segment: i - 1, t: hit.t };
+      }
+      let coordinates = [...road.coordinates];
+      let sections = 'sections' in road ? road.sections : undefined;
+      const vertex = best.t < 0.01 ? best.segment : best.t > 0.99 ? best.segment + 1 : -1;
+      // Move only in plan: the road keeps its own height (a ramp or deck is not
+      // flattened to wherever the cursor picked the scene).
+      if (vertex >= 0) coordinates[vertex] = [point[0], point[1], road.coordinates[vertex][2] || 0];
+      else {
+        const a = road.coordinates[best.segment], b = road.coordinates[best.segment + 1];
+        const z = (a[2] || 0) + best.t * ((b[2] || 0) - (a[2] || 0));
+        const inserted = insertRoadVertex(road, best.segment + 1, [point[0], point[1], z]);
+        coordinates = inserted.coordinates; sections = inserted.sections;
+      }
+      const changes = { coordinates, ...(road.type === 'road' ? { sections: markGeometryEdited(sections), connectedJunctions: [...new Set([...road.connectedJunctions, junctionId])] } : {}) };
+      this.objectManager.update(id, changes);
+      diffs.push({ type: 'update', id, before: road, after: this.objectManager.getById(id)!, description: `Connect ${road.name} to junction` });
+    }
+    return diffs;
   }
 
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
-
-    // Push history snapshot before modifying objects
-    this.historyManager.pushState(this.objectManager.getAll());
 
     const id = Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
     const name = `${this.activeMode.split('_')[1].toUpperCase()} #${id.slice(0, 4)}`;
 
     let newObj: CityObject | null = null;
+    let splitDiffs: HistoryDiff[] = [];
+    const minPoints = (n: number, what: string) => {
+      if (this.drawingPoints.length < n) {
+        throw new Error(`${what} needs at least ${n} points — keep clicking on the map, then double-click to finish.`);
+      }
+    };
 
     if (this.activeMode === 'draw_road') {
-      if (this.drawingPoints.length < 2) return;
+      minPoints(2, 'A road');
+      const coords = this.joinedToNetwork(this.drawingPoints, scenarioId);
       newObj = {
         id,
         type: 'road',
         name,
         layerId: 'roads',
         scenarioId,
-        coordinates: [...this.drawingPoints],
+        coordinates: coords,
         roadClass: this.roadClass,
         width: this.roadClass === 'highway' ? 24 : this.roadClass === 'arterial' ? 19 : 10,
         laneCount: this.roadClass === 'highway' ? 6 : this.roadClass === 'arterial' ? 4 : 2,
@@ -152,17 +384,18 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       };
+      splitDiffs = this.insertJunctionIntoIntersectedRoads(coords);
     } else if (this.activeMode === 'draw_building') {
-      if (this.drawingPoints.length < 3) return;
+      minPoints(3, 'A building footprint');
       // Close the polygon ring if not closed
       const coords = [...this.drawingPoints];
       if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
         coords.push([coords[0][0], coords[0][1], coords[0][2]]);
       }
-      
+
       const floors = Math.round(Math.random() * 15 + 2);
       const population = floors * 15;
-      
+
       newObj = {
         id,
         type: 'building',
@@ -182,14 +415,18 @@ export class EditingEngine {
         updatedAt: createdAt
       };
     } else if (this.activeMode === 'draw_junction') {
+      const point = this.drawingPoints[0];
+      const layout = this.getJunctionLayout(point, scenarioId);
+      if (!layout.valid) throw new Error('Place the junction on at least two road approaches at the same level.');
+      splitDiffs = this.connectJunctionApproaches(point, layout.roadIds, id);
       newObj = {
         id,
         type: 'junction',
         name,
         layerId: 'junctions',
         scenarioId,
-        coordinates: this.drawingPoints[0],
-        connectedRoads: [],
+        coordinates: [point[0], point[1], layout.elevation],
+        connectedRoads: layout.roadIds,
         hasSignals: true,
         signalTiming: 90,
         hasPedestrianCrossing: true,
@@ -197,12 +434,12 @@ export class EditingEngine {
         updatedAt: createdAt
       };
     } else if (this.activeMode === 'draw_utility') {
-      if (this.drawingPoints.length < 2) return;
+      minPoints(2, 'A utility conduit');
       newObj = {
         id,
         type: 'utility',
         name,
-        layerId: `${this.utilityType}_util`,
+        layerId: utilityLayerId(this.utilityType),
         scenarioId,
         coordinates: [...this.drawingPoints],
         utilityType: this.utilityType,
@@ -212,14 +449,17 @@ export class EditingEngine {
         updatedAt: createdAt
       };
     } else if (this.activeMode === 'draw_flyover') {
-      if (this.drawingPoints.length < 2) return;
+      minPoints(2, 'A flyover');
+      // Ground-level points only: ObjectManager.add → applyFlyoverElevationProfile
+      // resamples the path and builds the ramp/deck profile from these.
+      const groundCoordinates = this.joinedToNetwork(this.drawingPoints.map(pt => [pt[0], pt[1], pt[2] || 0] as [number, number, number]), scenarioId);
       newObj = {
         id,
         type: 'flyover',
         name: `Flyover #${id.slice(0, 4)}`,
         layerId: 'roads',
         scenarioId,
-        coordinates: [...this.drawingPoints],
+        coordinates: groundCoordinates,
         roadClass: 'arterial',
         width: 19,
         laneCount: 4,
@@ -235,15 +475,19 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       };
+      splitDiffs = this.insertJunctionIntoIntersectedRoads(groundCoordinates);
     } else if (this.activeMode === 'draw_metro_flyover') {
-      if (this.drawingPoints.length < 2) return;
+      minPoints(2, 'A metro + flyover');
+      // Ground-level points only: ObjectManager.add → applyFlyoverElevationProfile
+      // resamples the path and builds the ramp/deck profile from these.
+      const groundCoordinates = this.joinedToNetwork(this.drawingPoints.map(pt => [pt[0], pt[1], pt[2] || 0] as [number, number, number]), scenarioId);
       newObj = {
         id,
         type: 'metro_flyover',
         name: `Metro-Flyover #${id.slice(0, 4)}`,
         layerId: 'roads',
         scenarioId,
-        coordinates: [...this.drawingPoints],
+        coordinates: groundCoordinates,
         roadClass: 'arterial',
         width: 19,
         laneCount: 4,
@@ -260,8 +504,9 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       };
+      splitDiffs = this.insertJunctionIntoIntersectedRoads(groundCoordinates);
     } else if (this.activeMode === 'draw_metro') {
-      if (this.drawingPoints.length < 2) return;
+      minPoints(2, 'A metro line');
       newObj = {
         id,
         type: 'metro_line',
@@ -292,6 +537,9 @@ export class EditingEngine {
         height: 8,
         elevation: 12.0,
         capacity: 5000,
+        // Face along the nearest track when there is one; otherwise north
+        heading: findNearestTrack(this.drawingPoints[0], this.objectManager.getAll())?.bearing ?? 0,
+        alignToTrack: true,
         createdAt,
         updatedAt: createdAt
       };
@@ -327,7 +575,7 @@ export class EditingEngine {
       } as any;
     } else if (this.activeMode === 'draw_gateway') {
       if (this.drawingPoints.length === 0) return;
-      
+
       let nearestNodeId = '';
       let nearestCoords: [number, number, number] = this.drawingPoints[0];
       let minDistance = Infinity;
@@ -375,26 +623,42 @@ export class EditingEngine {
     }
 
     if (newObj) {
+      const description = `Add ${newObj.type} ${newObj.name || newObj.id}`;
+      if (splitDiffs.length > 0) {
+        this.historyManager?.pushDiff({
+          type: 'batch',
+          description,
+          diffs: [...splitDiffs, { type: 'add', objects: [newObj] }]
+        });
+      } else {
+        this.historyManager?.recordAdd?.(newObj, description);
+      }
       this.objectManager.add(newObj);
     }
-    
+
+    // Tools stay active after finishing so several objects can be drawn in a
+    // row; Esc or the Select tool exits.
     this.clearDrawing();
-    this.setMode('select');
   }
 
   public getSavedAreas(): Area[] {
     return this.savedAreas;
   }
 
+  /** Whether the saved Areas have been asked for (loaded, or the backend could not be reached). */
+  public hasFetchedSavedAreas(): boolean {
+    return this.savedAreasFetched;
+  }
+
   public async fetchSavedAreas(): Promise<void> {
     try {
-      const res = await fetch(this.areasAPI_URL);
-      if (res.ok) {
-        this.savedAreas = await res.json();
-        this.notify();
-      }
+      this.savedAreas = await apiGet<Area[]>('/api/areas');
+      this.notify();
     } catch (e) {
-      console.warn("Backend areas endpoint offline:", e);
+      console.warn('[EditingEngine] fetchSavedAreas failed:', e);
+      (window as any).showToast?.('Failed to load saved areas: Backend server may be offline.', 'error');
+    } finally {
+      this.savedAreasFetched = true;
     }
   }
 
@@ -402,7 +666,7 @@ export class EditingEngine {
     if (this.drawingPoints.length < 3) {
       throw new Error("Boundary must have at least 3 points.");
     }
-    if (this.hasSelfIntersection(this.drawingPoints)) {
+    if (this.hasSelfIntersection([...this.drawingPoints, this.drawingPoints[0]])) {
       throw new Error("Self-intersecting polygon boundaries are invalid.");
     }
 
@@ -434,15 +698,7 @@ export class EditingEngine {
       createdAt: new Date().toISOString()
     };
 
-    const res = await fetch(this.areasAPI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(areaObj)
-    });
-
-    if (!res.ok) {
-      throw new Error("Failed to save area in backend database.");
-    }
+    await apiPost('/api/areas', areaObj);
 
     this.savedAreas.push(areaObj);
     this.clearDrawing();
@@ -477,22 +733,22 @@ export class EditingEngine {
       const area = this.savedAreas.find(a => a.id === id);
       if (!area) return;
 
-      const res = await fetch(`${this.areasAPI_URL}/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        this.savedAreas = this.savedAreas.filter(a => a.id !== id);
+      await apiDelete(`/api/areas/${id}`);
+      this.savedAreas = this.savedAreas.filter(a => a.id !== id);
 
-        if (deleteAssociatedData) {
-          const allObjects = this.objectManager.getAll();
-          const objsToDelete = allObjects.filter(obj => this.isObjectInArea(obj, area));
+      if (deleteAssociatedData) {
+        const allObjects = this.objectManager.getAll();
+        const objsToDelete = allObjects.filter(obj => this.isObjectInArea(obj, area));
+        if (objsToDelete.length > 0) {
+          this.historyManager?.recordDelete?.(objsToDelete, `Delete infrastructure in "${area.name}"`);
           this.objectManager.deleteMultiple(objsToDelete);
         }
-
-        this.notify();
       }
+
+      this.notify();
     } catch (e) {
-      console.warn("Failed to delete area in backend:", e);
+      console.warn('[EditingEngine] deleteArea failed:', e);
+      throw new Error('Could not delete the area: the backend server did not accept the request.');
     }
   }
 
@@ -501,7 +757,7 @@ export class EditingEngine {
     if (n < 4) return false;
 
     const intersects = (p1: [number, number, number], p2: [number, number, number], p3: [number, number, number], p4: [number, number, number]) => {
-      const ccw = (A: [number, number, number], B: [number, number, number], C: [number, number, number]) => 
+      const ccw = (A: [number, number, number], B: [number, number, number], C: [number, number, number]) =>
         (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0]);
       return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
     };
@@ -519,255 +775,415 @@ export class EditingEngine {
     return false;
   }
 
-  public async importOSMRoadsInsideArea(area: Area, activeScenarioId: string): Promise<number> {
-    this.setIsImporting(true);
-    try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:50];way["highway"](poly:"${polyCoords}");out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return 0;
+  /** Ways the last road import left out because vehicles cannot use them, by reason. */
+  public lastRoadImportSkipped: Record<string, number> = {};
 
-      let count = 0;
-      const roadObjs: any[] = [];
-      for (const el of data.elements) {
-        if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) continue;
+  /**
+   * Turns Overpass ways into road objects: vehicle roads only, with one-way
+   * directions, lanes and speed limits from their OSM tags. Ways left out are
+   * counted by reason in `lastRoadImportSkipped`.
+   */
+  private osmWaysToRoads(elements: any[], scenarioId: string): RoadObject[] {
+    this.lastRoadImportSkipped = {};
+    const roadObjs: RoadObject[] = [];
+    for (const el of elements) {
+      if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) continue;
 
-        const id = `osm_${el.id}`;
-        const tags = el.tags || {};
-        const highwayType = tags.highway || 'local';
+      const id = `osm_${el.id}`;
+      const tags = el.tags || {};
+      // Footways, paths, cycleways etc. are not roads for the traffic network
+      const decision = classifyOsmWay(tags);
+      if (!decision.include) {
+        this.lastRoadImportSkipped[decision.reason] = (this.lastRoadImportSkipped[decision.reason] || 0) + 1;
+        continue;
+      }
+      const highwayType = tags.highway || 'local';
 
-        let roadClass: 'highway' | 'arterial' | 'collector' | 'local' = 'local';
-        if (highwayType === 'motorway' || highwayType === 'trunk' || highwayType === 'motorway_link') {
-          roadClass = 'highway';
-        } else if (highwayType === 'primary' || highwayType === 'secondary' || highwayType === 'primary_link') {
-          roadClass = 'arterial';
-        } else if (highwayType === 'tertiary' || highwayType === 'tertiary_link') {
-          roadClass = 'collector';
-        }
-
-        const isOneWay = tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || highwayType === 'motorway' || highwayType === 'motorway_link';
-
-        let lanesA = 1;
-        let lanesB = 0;
-
-        const tagLanes = tags.lanes ? parseInt(tags.lanes) : NaN;
-        const tagLanesFwd = tags["lanes:forward"] ? parseInt(tags["lanes:forward"]) : NaN;
-        const tagLanesBwd = tags["lanes:backward"] ? parseInt(tags["lanes:backward"]) : NaN;
-
-        if (isOneWay) {
-          if (!isNaN(tagLanesFwd)) {
-            lanesA = tagLanesFwd;
-          } else if (!isNaN(tagLanes)) {
-            lanesA = tagLanes;
-          } else {
-            if (highwayType === 'motorway' || highwayType === 'trunk') {
-              lanesA = 3;
-            } else if (highwayType.endsWith('_link')) {
-              lanesA = 1;
-            } else if (highwayType === 'service') {
-              lanesA = 1;
-            } else {
-              lanesA = 2;
-            }
-          }
-          lanesB = 0;
-        } else {
-          if (!isNaN(tagLanesFwd) && !isNaN(tagLanesBwd)) {
-            lanesA = tagLanesFwd;
-            lanesB = tagLanesBwd;
-          } else if (!isNaN(tagLanesFwd)) {
-            lanesA = tagLanesFwd;
-            if (!isNaN(tagLanes)) {
-              lanesB = Math.max(1, tagLanes - tagLanesFwd);
-            } else {
-              lanesB = tagLanesFwd;
-            }
-          } else if (!isNaN(tagLanesBwd)) {
-            lanesB = tagLanesBwd;
-            if (!isNaN(tagLanes)) {
-              lanesA = Math.max(1, tagLanes - tagLanesBwd);
-            } else {
-              lanesA = tagLanesBwd;
-            }
-          } else if (!isNaN(tagLanes)) {
-            if (tagLanes === 1) {
-              lanesA = 1;
-              lanesB = 1;
-            } else {
-              lanesA = Math.ceil(tagLanes / 2);
-              lanesB = Math.floor(tagLanes / 2);
-            }
-          } else {
-            if (highwayType === 'motorway' || highwayType === 'trunk') {
-              lanesA = 2;
-              lanesB = 2;
-            } else if (highwayType.endsWith('_link')) {
-              lanesA = 1;
-              lanesB = 1;
-            } else if (highwayType === 'service') {
-              lanesA = 1;
-              lanesB = 1;
-            } else {
-              if (roadClass === 'highway') {
-                lanesA = 2;
-                lanesB = 2;
-              } else {
-                lanesA = 1;
-                lanesB = 1;
-              }
-            }
-          }
-        }
-
-        const laneCount = lanesA + lanesB;
-        const hasDivider = (roadClass === 'highway' && !isOneWay) || tags.divider === 'yes';
-        const dividerWidth = hasDivider ? 2.0 : 0.0;
-        const hasFootpath = highwayType !== 'motorway' && highwayType !== 'trunk';
-        const footpathWidth = hasFootpath ? 1.5 : 0.0;
-        const speedLimit = parseInt(tags.maxspeed) || (roadClass === 'highway' ? 100 : roadClass === 'arterial' ? 60 : 50);
-
-        const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
-        const sourceCoordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
-
-        const leftRoadside = {
-          footpathWidth: hasFootpath ? footpathWidth : 0,
-          cycleTrackWidth: 0,
-          vergeWidth: 0,
-          parkingWidth: 0,
-          drainageWidth: 0
-        };
-
-        const rightRoadside = {
-          footpathWidth: (hasFootpath && !hasDivider && lanesB > 0) || (hasFootpath && hasDivider) ? footpathWidth : 0,
-          cycleTrackWidth: 0,
-          vergeWidth: 0,
-          parkingWidth: 0,
-          drainageWidth: 0
-        };
-
-        const carriagewayA = {
-          direction: isOneWay ? 'forward' as const : 'both' as const,
-          lanes: lanesA,
-          laneWidth: 3.5,
-          leftRoadside: leftRoadside,
-          rightRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
-        };
-
-        let carriagewayB = undefined;
-        if (lanesB > 0) {
-          carriagewayB = {
-            direction: 'backward' as const,
-            lanes: lanesB,
-            laneWidth: 3.5,
-            leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
-            rightRoadside: rightRoadside
-          };
-        } else if (!hasDivider && !isOneWay) {
-          carriagewayA.rightRoadside = rightRoadside;
-        } else if (isOneWay) {
-          carriagewayA.rightRoadside = rightRoadside;
-        }
-
-        const sections = [{
-          startNodeIndex: 0,
-          endNodeIndex: coordinates.length - 1,
-          totalRowWidth: (laneCount * 3.5) + dividerWidth + (hasFootpath ? footpathWidth * 2 : 0),
-          wideningPossible: true,
-          hasMedian: hasDivider,
-          medianWidth: dividerWidth,
-          carriagewayA,
-          carriagewayB,
-          reservedSpaces: [],
-          provenance: {
-            originalSource: 'OSM' as const,
-            originalConfidence: 'estimated' as const,
-            geometryModified: false,
-            profileModified: false,
-            lastModifiedBy: 'importer' as const,
-            verificationStatus: 'unverified' as const
-          }
-        }];
-
-        const roadObj = {
-          id,
-          type: 'road' as const,
-          name: tags.name || `${highwayType.charAt(0).toUpperCase() + highwayType.slice(1)} Road`,
-          layerId: 'roads',
-          scenarioId: activeScenarioId,
-          coordinates,
-          sourceCoordinates,
-          sections,
-          roadClass,
-          width: (laneCount * 3.5) + dividerWidth + (hasFootpath ? footpathWidth * 2 : 0),
-          laneCount,
-          laneWidth: 3.5,
-          hasDivider,
-          dividerWidth,
-          hasFootpath,
-          footpathWidth,
-          speedLimit,
-          isOneWay,
-          trafficCapacity: laneCount * 1000,
-          connectedJunctions: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          
-          osmProvenance: {
-            osmId: el.id,
-            originalTags: tags,
-            layer: parseInt(tags.layer) || 0,
-            bridge: tags.bridge === 'yes',
-            tunnel: tags.tunnel === 'yes',
-            roundabout: tags.junction === 'roundabout'
-          }
-        };
-
-        roadObjs.push(roadObj);
-        count++;
+      let roadClass: 'highway' | 'arterial' | 'collector' | 'local' = 'local';
+      if (highwayType === 'motorway' || highwayType === 'trunk' || highwayType === 'motorway_link') {
+        roadClass = 'highway';
+      } else if (highwayType === 'primary' || highwayType === 'secondary' || highwayType === 'primary_link') {
+        roadClass = 'arterial';
+      } else if (highwayType === 'tertiary' || highwayType === 'tertiary_link') {
+        roadClass = 'collector';
       }
 
-      this.objectManager.addMultiple(roadObjs);
-      return count;
-    } catch (err) {
-      console.error("OSM Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
-  }
+      const isOneWay = tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || highwayType === 'motorway' || highwayType === 'motorway_link';
 
-  public async importOSMBuildingsInsideArea(area: Area, activeScenarioId: string): Promise<number> {
-    this.setIsImporting(true);
-    try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:90];(way["building"](poly:"${polyCoords}");relation["building"](poly:"${polyCoords}"););out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return 0;
+      let lanesA = 1;
+      let lanesB = 0;
 
-      let count = 0;
-      const buildingObjs: any[] = [];
-      for (const el of data.elements) {
-        let coordinates: [number, number, number][] = [];
-        
-        if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
-          coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
-        } else if (el.type === 'relation' && el.members) {
-          const outerMember = el.members.find((m: any) => m.role === 'outer' && m.geometry && m.geometry.length >= 3);
-          if (outerMember) {
-            coordinates = outerMember.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
+      const tagLanes = tags.lanes ? parseInt(tags.lanes) : NaN;
+      const tagLanesFwd = tags["lanes:forward"] ? parseInt(tags["lanes:forward"]) : NaN;
+      const tagLanesBwd = tags["lanes:backward"] ? parseInt(tags["lanes:backward"]) : NaN;
+
+      if (isOneWay) {
+        if (!isNaN(tagLanesFwd)) {
+          lanesA = tagLanesFwd;
+        } else if (!isNaN(tagLanes)) {
+          lanesA = tagLanes;
+        } else {
+          if (highwayType === 'motorway' || highwayType === 'trunk') {
+            lanesA = 3;
+          } else if (highwayType.endsWith('_link')) {
+            lanesA = 1;
+          } else if (highwayType === 'service') {
+            lanesA = 1;
+          } else {
+            lanesA = 2;
           }
         }
-        
-        if (coordinates.length < 3) continue;
-
-        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
-          coordinates.push([coordinates[0][0], coordinates[0][1], coordinates[0][2]]);
+        lanesB = 0;
+      } else {
+        if (!isNaN(tagLanesFwd) && !isNaN(tagLanesBwd)) {
+          lanesA = tagLanesFwd;
+          lanesB = tagLanesBwd;
+        } else if (!isNaN(tagLanesFwd)) {
+          lanesA = tagLanesFwd;
+          if (!isNaN(tagLanes)) {
+            lanesB = Math.max(1, tagLanes - tagLanesFwd);
+          } else {
+            lanesB = tagLanesFwd;
+          }
+        } else if (!isNaN(tagLanesBwd)) {
+          lanesB = tagLanesBwd;
+          if (!isNaN(tagLanes)) {
+            lanesA = Math.max(1, tagLanes - tagLanesBwd);
+          } else {
+            lanesA = tagLanesBwd;
+          }
+        } else if (!isNaN(tagLanes)) {
+          if (tagLanes === 1) {
+            lanesA = 1;
+            lanesB = 1;
+          } else {
+            lanesA = Math.ceil(tagLanes / 2);
+            lanesB = Math.floor(tagLanes / 2);
+          }
+        } else {
+          if (highwayType === 'motorway' || highwayType === 'trunk') {
+            lanesA = 2;
+            lanesB = 2;
+          } else if (highwayType.endsWith('_link')) {
+            lanesA = 1;
+            lanesB = 1;
+          } else if (highwayType === 'service') {
+            lanesA = 1;
+            lanesB = 1;
+          } else {
+            if (roadClass === 'highway') {
+              lanesA = 2;
+              lanesB = 2;
+            } else {
+              lanesA = 1;
+              lanesB = 1;
+            }
+          }
         }
+      }
 
-        const id = `osm_b_${el.id}`;
+      const laneCount = lanesA + lanesB;
+      const hasDivider = (roadClass === 'highway' && !isOneWay) || tags.divider === 'yes';
+      const dividerWidth = hasDivider ? 2.0 : 0.0;
+      const hasFootpath = highwayType !== 'motorway' && highwayType !== 'trunk';
+      const footpathWidth = hasFootpath ? 1.5 : 0.0;
+      const speedLimit = parseInt(tags.maxspeed) || (roadClass === 'highway' ? 100 : roadClass === 'arterial' ? 60 : 50);
+
+      const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
+      const sourceCoordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
+
+      const leftRoadside = {
+        footpathWidth: hasFootpath ? footpathWidth : 0,
+        cycleTrackWidth: 0,
+        vergeWidth: 0,
+        parkingWidth: 0,
+        drainageWidth: 0
+      };
+
+      const rightRoadside = {
+        footpathWidth: (hasFootpath && !hasDivider && lanesB > 0) || (hasFootpath && hasDivider) ? footpathWidth : 0,
+        cycleTrackWidth: 0,
+        vergeWidth: 0,
+        parkingWidth: 0,
+        drainageWidth: 0
+      };
+
+      const carriagewayA = {
+        direction: isOneWay ? 'forward' as const : 'both' as const,
+        lanes: lanesA,
+        laneWidth: 3.5,
+        leftRoadside: leftRoadside,
+        rightRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
+      };
+
+      let carriagewayB = undefined;
+      if (lanesB > 0) {
+        carriagewayB = {
+          direction: 'backward' as const,
+          lanes: lanesB,
+          laneWidth: 3.5,
+          leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
+          rightRoadside: rightRoadside
+        };
+      } else if (!hasDivider && !isOneWay) {
+        carriagewayA.rightRoadside = rightRoadside;
+      } else if (isOneWay) {
+        carriagewayA.rightRoadside = rightRoadside;
+      }
+
+      const sections = [{
+        startNodeIndex: 0,
+        endNodeIndex: coordinates.length - 1,
+        totalRowWidth: (laneCount * 3.5) + dividerWidth + (hasFootpath ? footpathWidth * 2 : 0),
+        wideningPossible: true,
+        hasMedian: hasDivider,
+        medianWidth: dividerWidth,
+        carriagewayA,
+        carriagewayB,
+        reservedSpaces: [],
+        provenance: {
+          originalSource: 'OSM' as const,
+          originalConfidence: 'estimated' as const,
+          geometryModified: false,
+          profileModified: false,
+          lastModifiedBy: 'importer' as const,
+          verificationStatus: 'unverified' as const
+        }
+      }];
+
+      const roadObj = {
+        id,
+        type: 'road' as const,
+        name: tags.name || `${highwayType.charAt(0).toUpperCase() + highwayType.slice(1)} Road`,
+        layerId: 'roads',
+        scenarioId,
+        coordinates,
+        sourceCoordinates,
+        sections,
+        roadClass,
+        width: (laneCount * 3.5) + dividerWidth + (hasFootpath ? footpathWidth * 2 : 0),
+        laneCount,
+        laneWidth: 3.5,
+        hasDivider,
+        dividerWidth,
+        hasFootpath,
+        footpathWidth,
+        speedLimit,
+        isOneWay,
+        trafficCapacity: laneCount * 1000,
+        connectedJunctions: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+
+        osmProvenance: {
+          osmId: el.id,
+          osmElementType: 'way',
+          osmSourceId: `way/${el.id}`,
+          originalTags: tags,
+          layer: parseInt(tags.layer) || 0,
+          bridge: tags.bridge === 'yes',
+          tunnel: tags.tunnel === 'yes',
+          roundabout: tags.junction === 'roundabout'
+        }
+      };
+
+      roadObjs.push(roadObj);
+    }
+
+    return roadObjs;
+  }
+
+  public async importOSMRoadsInsideArea(area: Area, scenarioId: string): Promise<number> {
+    const report = await this.importStudyArea(area, scenarioId, ['roads']);
+    if (report.categories[0]?.error) throw new Error(report.categories[0].error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    return report.categories[0]?.added ?? 0;
+  }
+
+  /**
+   * Makes the project hold every OpenStreetMap road inside `boxes`.
+   *
+   * Reads the roads from the backend's local OSM extract when it covers the
+   * boxes (complete, and quick). Elsewhere asks Overpass which vehicle roads
+   * OSM has there (ids only, a small answer), then fetches just the ones the
+   * project is missing. An earlier load that came back incomplete, or roads
+   * added to OSM since, are filled in this way.
+   * Roads already present (possibly edited) are kept as they are, and roads
+   * the user deleted are not brought back. Resolves only once the new roads
+   * are saved, so a box is never recorded as checked when it is not.
+   *
+   * Not an edit: it is not recorded for undo, and works while Simulation mode
+   * locks editing. Returns the number of roads added.
+   */
+  public async loadOsmRoadsForStudyArea(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[], signal?: AbortSignal): Promise<number> {
+    const added = (await this.localOsm.covers(boxes))
+      ? await this.fillFromLocalOsm(boxes)
+      : await this.fillFromOverpass(boxes, signal);
+    this.recordStudyAreaBoxes(boxes);
+    return added;
+  }
+
+  /** Adds the local extract's roads in `boxes` that the project is missing; resolves once saved. */
+  private async fillFromLocalOsm(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[]): Promise<number> {
+    const elements = await this.localOsm.ways(boxes);
+    const deleted = await this.objectManager.deletedOsmIds();
+    const roads = this.osmWaysToRoads(elements, BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id) && !deleted.has(r.id));
+    await this.objectManager.addMultipleAndSave(roads);
+    return roads.length;
+  }
+
+  /** As fillFromLocalOsm, from the public Overpass servers: ids first, then only the missing roads. */
+  private async fillFromOverpass(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[], signal?: AbortSignal): Promise<number> {
+    // Vehicle highway types only: footways and paths make up much of the data and are dropped anyway
+    const parts = boxes.map(b => `way["highway"~"^(${STUDY_AREA_HIGHWAYS})$"](${b.minLat},${b.minLng},${b.maxLat},${b.maxLng});`).join('');
+    const listing = await this.overpass.query(`[out:json][timeout:60];(${parts});out ids;`, signal);
+    // A remark means the server stopped early, so the answer may be partial
+    if (typeof listing?.remark === 'string') throw new Error(`OpenStreetMap did not finish the query: ${listing.remark}`);
+    const ids: number[] = (listing?.elements ?? []).filter((e: any) => e.type === 'way').map((e: any) => e.id);
+    // Busy mirrors sometimes answer with nothing: an empty answer proves nothing
+    if (ids.length === 0) throw new Error('OpenStreetMap returned no roads for this area. Try again in a moment.');
+
+    const deleted = await this.objectManager.deletedOsmIds();
+    const missing = ids.filter(id => !this.objectManager.getById(`osm_${id}`) && !deleted.has(`osm_${id}`));
+    // Fetched in batches, then added together: one update for the map and the network
+    const roads: RoadObject[] = [];
+    for (let i = 0; i < missing.length; i += OSM_FETCH_BATCH) {
+      const batch = missing.slice(i, i + OSM_FETCH_BATCH);
+      const data = await this.overpass.query(`[out:json][timeout:60];way(id:${batch.join(',')});out geom;`, signal);
+      if (typeof data?.remark === 'string') throw new Error(`OpenStreetMap did not finish the query: ${data.remark}`);
+      roads.push(...this.osmWaysToRoads(data?.elements ?? [], BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id)));
+    }
+    await this.objectManager.addMultipleAndSave(roads);
+    return roads.length;
+  }
+
+  /** Saves the boxes as Areas, recording that the project holds their roads. */
+  private recordStudyAreaBoxes(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[]) {
+    for (const { minLng, minLat, maxLng, maxLat } of boxes) {
+      const area: Area = {
+        id: STUDY_AREA_ROADS_PREFIX + Math.random().toString(36).slice(2, 11),
+        name: 'Roads loaded for a study area',
+        polygonCoordinates: [[minLng, minLat, 0], [maxLng, minLat, 0], [maxLng, maxLat, 0], [minLng, maxLat, 0], [minLng, minLat, 0]],
+        minLat,
+        maxLat,
+        minLon: minLng,
+        maxLon: maxLng,
+        createdAt: new Date().toISOString(),
+      };
+      this.savedAreas.push(area);
+      apiPost('/api/areas', area).catch(e => console.warn('[EditingEngine] Saving the loaded road area failed:', e));
+    }
+    this.notify();
+  }
+
+  public studyAreaImportProgress: StudyAreaImportProgress | null = null;
+  public studyAreaImportReport: StudyAreaImportReport | null = null;
+  private pendingImportSaves = new Map<string, CityObject>();
+
+  /** Reuse a demand zone's boundary without changing its demand or zone properties. */
+  public studyAreaFromZone(id: string): Area | null {
+    const zone = this.objectManager.getById(id);
+    return zone?.type === 'zone' ? areaFromBoundary(`zone-boundary:${zone.id}`, zone.name, zone.coordinates) : null;
+  }
+
+  public async importStudyArea(area: Area, scenarioId: string, categories: InfrastructureCategory[]): Promise<StudyAreaImportReport> {
+    if (this.locked) throw new Error('Import is available in Build mode.');
+    if (this.isImporting) throw new Error('An import is already running.');
+    if (!categories.length) throw new Error('Choose at least one infrastructure category.');
+    categories = [...new Set(categories)];
+    const report: StudyAreaImportReport = { areaId: area.id, areaName: area.name, categories: [], cancelled: false, completed: false };
+    this.studyAreaImportReport = report;
+    this.setIsImporting(true);
+    const abort = this.importAbort!.signal;
+    const boxes = [{ minLng: area.minLon, minLat: area.minLat, maxLng: area.maxLon, maxLat: area.maxLat }];
+    try {
+      const deleted = await this.objectManager.deletedOsmIds();
+      for (const category of [...new Set(categories)]) {
+        if (abort.aborted) { report.cancelled = true; break; }
+        const result = { category, added: 0, preserved: 0, skipped: 0, source: undefined as 'local' | 'Overpass' | 'cache' | undefined, error: undefined as string | undefined };
+        report.categories.push(result);
+        this.studyAreaImportProgress = { category, phase: 'fetching', completed: report.categories.length - 1, total: categories.length }; this.notify();
+        try {
+          if (category === 'signals') {
+            const points = await new TrafficSignalSource(this.localOsm, this.overpass).signalsIn(boxes[0], abort);
+            if (abort.aborted) throw new OverpassCancelledError();
+            result.source = 'cache'; result.added = points.filter(([lng, lat]) => geometryTouchesArea([[lng, lat, 0]], area)).length;
+            continue;
+          }
+          let elements: any[];
+          const localCategory = category === 'roads' ? 'roads' : category;
+          if (await this.localOsm.supports(localCategory, boxes)) {
+            try {
+              elements = category === 'roads' ? await this.localOsm.ways(boxes) : await this.localOsm.infrastructure(category, boxes);
+              result.source = 'local';
+            } catch {
+              elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass';
+            }
+          } else { elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass'; }
+          if (abort.aborted) throw new OverpassCancelledError();
+          const touching = elements.filter(el => {
+            const points = el.geometry?.map((p: any) => [p.lon, p.lat, 0]) ?? (el.type === 'node' ? [[el.lon, el.lat, 0]] : (el.members ?? []).flatMap((m: any) => (m.geometry ?? []).map((p: any) => [p.lon, p.lat, 0])));
+            return geometryTouchesArea(points, area);
+          });
+          const converted = category === 'roads' ? this.osmWaysToRoads(touching, scenarioId) : category === 'buildings' ? this.osmElementsToBuildings(touching, scenarioId) : this.osmElementsToMetro(touching, scenarioId);
+          result.skipped = touching.length - converted.length;
+          const seen = new Set<string>();
+          const additions: CityObject[] = [], pending: CityObject[] = [];
+          for (const obj of converted) {
+            if (seen.has(obj.id)) continue; seen.add(obj.id);
+            const legacy = category === 'buildings' ? `osm_b_${(obj as any).osmId}` : category === 'metro' ? `osm_m_${(obj as any).osmId}` : obj.id;
+            const legacyObject = this.objectManager.getById(legacy);
+            const sourceType = (obj as any).osmElementType;
+            const legacyType = (legacyObject as any)?.osmElementType;
+            // Historical numeric IDs were ambiguous. Never conflate a relation with a way.
+            const compatibleLegacy = legacyObject && (legacyType === sourceType || (!legacyType && sourceType !== 'relation' && legacyObject.type === obj.type));
+            const existing = this.objectManager.getById(obj.id) ?? (compatibleLegacy ? legacyObject : undefined);
+            if (existing) {
+              result.preserved++;
+              // Retry a failed save using the current object, preserving any intervening edits.
+              if (this.pendingImportSaves.has(existing.id)) pending.push(existing);
+              continue;
+            }
+            if (deleted.has(obj.id) || deleted.has(legacy)) { result.preserved++; continue; }
+            additions.push(obj);
+          }
+          this.studyAreaImportProgress = { category, phase: 'saving', completed: report.categories.length - 1, total: categories.length }; this.notify();
+          // Cancellation is honoured before saving; an in-flight save finishes so its status stays honest.
+          if (abort.aborted) throw new OverpassCancelledError();
+          for (const obj of additions) this.pendingImportSaves.set(obj.id, obj);
+          if (additions.length) this.historyManager?.recordAdd?.(additions, `Import ${category} into ${area.name}`);
+          await this.objectManager.addMultipleAndSave([...pending, ...additions]);
+          for (const obj of [...pending, ...additions]) this.pendingImportSaves.delete(obj.id);
+          result.added = additions.length;
+        } catch (err) {
+          if (abort.aborted || err instanceof OverpassCancelledError) { report.cancelled = true; break; }
+          result.error = err instanceof Error ? err.message : String(err);
+        }
+        this.notify();
+      }
+      report.completed = !report.cancelled && report.categories.length === categories.length && report.categories.every(c => !c.error);
+      return report;
+    } finally { this.studyAreaImportProgress = null; this.setIsImporting(false); this.notify(); }
+  }
+
+  private async fetchAreaElements(area: Area, category: Exclude<InfrastructureCategory, 'signals'>, signal: AbortSignal): Promise<any[]> {
+    const box = `${area.minLat},${area.minLon},${area.maxLat},${area.maxLon}`;
+    // Keep full ways crossing the boundary as connecting network context; only polygon-overlapping features are imported.
+    const selector = category === 'roads' ? `way["highway"~"^(${STUDY_AREA_HIGHWAYS})$"](${box});` : category === 'buildings' ? `way["building"](${box});relation["building"](${box});` : `way["railway"="subway"](${box});way["railway"="construction"]["construction"="subway"](${box});node["railway"="station"]["station"="subway"](${box});way["railway"="station"]["station"="subway"](${box});`;
+    const data = await this.overpass.query(`[out:json][timeout:50];(${selector});out geom;`, signal);
+    if (typeof data?.remark === 'string') throw new Error(`OpenStreetMap returned an incomplete result: ${data.remark}`);
+    if (!Array.isArray(data?.elements)) throw new Error('OpenStreetMap returned an invalid result.');
+    return data.elements;
+  }
+
+  private osmElementsToBuildings(elements: any[], activeScenarioId: string): CityObject[] {
+      const buildingObjs: any[] = [];
+      for (const el of elements) {
+        const coordinates = buildingRing(el);
+        if (!coordinates) continue;
+        const id = `osm_b_${el.type}_${el.id}`;
         const tags = el.tags || {};
-        
+
         const usageType: BuildingUsage = tags.amenity === 'school' || tags.building === 'school' ? 'educational' :
                           tags.building === 'commercial' || tags.building === 'office' ? 'commercial' :
                           tags.building === 'industrial' || tags.building === 'manufactory' ? 'industrial' :
@@ -778,7 +1194,7 @@ export class EditingEngine {
           const parsed = parseInt(tags["building:levels"]);
           if (!isNaN(parsed) && parsed > 0) floors = parsed;
         }
-        
+
         let height = floors * 3;
         if (tags.height) {
           const parsed = parseFloat(tags.height);
@@ -878,6 +1294,8 @@ export class EditingEngine {
 
           // OSM Provenance
           osmId: el.id,
+          osmElementType: el.type,
+          osmSourceId: `${el.type}/${el.id}`,
           originalOsmTags: tags,
           source: 'OSM' as const,
           originalFootprint: coordinates,
@@ -885,52 +1303,24 @@ export class EditingEngine {
         };
 
         buildingObjs.push(buildingObj);
-        count++;
       }
 
-      this.objectManager.addMultiple(buildingObjs);
-      return count;
-    } catch (err) {
-      console.error("OSM Buildings Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
+      return buildingObjs;
   }
 
-  private getDistanceMeters(p1: [number, number], p2: [number, number]): number {
-    const R = 6371000;
-    const dLat = (p2[1] - p1[1]) * Math.PI / 180;
-    const dLon = (p2[0] - p1[0]) * Math.PI / 180;
-    const lat1 = p1[1] * Math.PI / 180;
-    const lat2 = p2[1] * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1) * Math.cos(lat2) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  public async importOSMBuildingsInsideArea(area: Area, scenarioId: string): Promise<number> {
+    const report = await this.importStudyArea(area, scenarioId, ['buildings']);
+    const result = report.categories[0];
+    if (result?.error) throw new Error(result.error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    return result?.added ?? 0;
   }
 
-  public async importOSMMetroInsideArea(area: Area, activeScenarioId: string): Promise<{ lines: number; stations: number }> {
-    this.setIsImporting(true);
-    try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:90];(
-        way["railway"="subway"](poly:"${polyCoords}");
-        way["railway"="construction"]["construction"="subway"](poly:"${polyCoords}");
-        node["railway"="station"]["station"="subway"](poly:"${polyCoords}");
-        way["railway"="station"]["station"="subway"](poly:"${polyCoords}");
-      );out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return { lines: 0, stations: 0 };
-
-      let linesCount = 0;
-      let stationsCount = 0;
+  private osmElementsToMetro(elements: any[], activeScenarioId: string): CityObject[] {
       const metroObjs: any[] = [];
 
-      for (const el of data.elements) {
-        const id = `osm_m_${el.id}`;
+      for (const el of elements) {
+        const id = `osm_m_${el.type}_${el.id}`;
         const tags = el.tags || {};
         const isStation = tags.railway === 'station';
 
@@ -949,32 +1339,6 @@ export class EditingEngine {
             continue;
           }
 
-          // Deduplicate overlapping stations within 100 meters
-          let duplicateIdx = -1;
-          for (let i = 0; i < metroObjs.length; i++) {
-            const existing = metroObjs[i];
-            if (existing.type === 'metro_station') {
-              const dist = this.getDistanceMeters(
-                [coordinates[0], coordinates[1]],
-                [existing.coordinates[0], existing.coordinates[1]]
-              );
-              if (dist < 100) {
-                duplicateIdx = i;
-                break;
-              }
-            }
-          }
-
-          if (duplicateIdx !== -1) {
-            const existingObj = metroObjs[duplicateIdx];
-            const newName = tags.name;
-            if (newName && (!existingObj.name || existingObj.name.includes('Subway Station') || existingObj.name === 'N/A')) {
-              existingObj.name = newName;
-              existingObj.stationName = newName;
-            }
-            continue;
-          }
-
           const stationObj = {
             id,
             type: 'metro_station' as const,
@@ -986,27 +1350,30 @@ export class EditingEngine {
             length: 140,
             width: 20,
             height: 8,
-            elevation: 12,
+            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
             capacity: 25000,
+            osmElementType: el.type,
+            osmId: el.id,
+            osmSourceId: `${el.type}/${el.id}`,
+            originalOsmTags: tags,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
 
           metroObjs.push(stationObj);
-          stationsCount++;
         } else {
           if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) continue;
 
           // Double check tags to filter out arbitrary railway=construction
           const isSubway = tags.railway === 'subway';
           const isConstructionSubway = tags.railway === 'construction' && tags.construction === 'subway';
-          
+
           if (!isSubway && !isConstructionSubway) continue;
 
           const status = isSubway ? 'operational' : 'under_construction';
-          
-          // Elevated metro track default height = 12m (above ground)
-          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 12]);
+
+          // OSM level tags distinguish underground, elevated and surface tracks.
+          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0]);
 
           const lineObj = {
             id,
@@ -1018,60 +1385,36 @@ export class EditingEngine {
             trackCount: 2,
             trackGauge: 1.435,
             deckWidth: 8.0,
-            elevation: 12,
+            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
             pierSpacing: 30,
             status,
             tags: tags as Record<string, string>,
+            osmElementType: el.type,
+            osmId: el.id,
+            osmSourceId: `${el.type}/${el.id}`,
+            originalOsmTags: tags,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
 
           metroObjs.push(lineObj);
-          linesCount++;
         }
       }
 
-      this.objectManager.addMultiple(metroObjs);
-      return { lines: linesCount, stations: stationsCount };
-    } catch (err) {
-      console.error("OSM Metro Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
+      return metroObjs;
   }
 
-  private async fetchFromOverpass(query: string): Promise<any> {
-    const endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.osm.ch/api/interpreter'
-    ];
+  public async importOSMMetroInsideArea(area: Area, scenarioId: string): Promise<{ lines: number; stations: number }> {
+    const before = new Set(this.objectManager.getAll().map(o => o.id));
+    const report = await this.importStudyArea(area, scenarioId, ['metro']);
+    if (report.categories[0]?.error) throw new Error(report.categories[0].error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    const added = this.objectManager.getAll().filter(o => !before.has(o.id));
+    return { lines: added.filter(o => o.type === 'metro_line').length, stations: added.filter(o => o.type === 'metro_station').length };
+  }
 
-    let lastError: any = null;
-    for (const endpoint of endpoints) {
-      try {
-        console.log(`[Overpass] Querying endpoint: ${endpoint}`);
-        const url = `${endpoint}?data=${encodeURIComponent(query)}`;
-        const response = await fetch(url, {
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.remark && data.remark.includes('timeout')) {
-            throw new Error(`Overpass server returned busy/timeout: ${data.remark}`);
-          }
-          return data;
-        }
-        throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
-      } catch (err) {
-        console.warn(`[Overpass] Attempt failed on ${endpoint}:`, err);
-        lastError = err;
-      }
-    }
-    throw lastError || new Error("All Overpass API endpoints failed.");
+  /** Cancels an in-flight OSM import (the Cancel button on the import overlay). */
+  public cancelImport() {
+    this.importAbort?.abort();
   }
 }

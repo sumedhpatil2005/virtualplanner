@@ -1,6 +1,6 @@
 import type { TrafficNetwork } from '../objects/trafficTypes';
 
-class MinHeap {
+export class MinHeap {
   private heap: { nodeId: string; score: number }[] = [];
 
   public isEmpty(): boolean {
@@ -147,5 +147,28 @@ export class Pathfinder {
     }
 
     return path.reverse();
+  }
+
+  /** Travel time (s) from one node to every node it can reach, with the same costs as findPath. */
+  public static travelTimesFrom(network: TrafficNetwork, startNodeId: string): Map<string, number> {
+    const dist = new Map<string, number>([[startNodeId, 0]]);
+    const done = new Set<string>();
+    const heap = new MinHeap();
+    heap.insert(startNodeId, 0);
+    while (!heap.isEmpty()) {
+      const { nodeId, score } = heap.extractMin()!;
+      if (done.has(nodeId)) continue;
+      done.add(nodeId);
+      for (const edgeId of network.nodes.get(nodeId)?.outgoingSegments ?? []) {
+        const edge = network.edges.get(edgeId);
+        if (!edge || done.has(edge.toNodeId)) continue;
+        const d = score + edge.length / ((edge.speedLimit || 50) / 3.6);
+        if (d < (dist.get(edge.toNodeId) ?? Infinity)) {
+          dist.set(edge.toNodeId, d);
+          heap.insert(edge.toNodeId, d);
+        }
+      }
+    }
+    return dist;
   }
 }

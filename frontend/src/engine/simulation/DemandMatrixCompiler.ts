@@ -2,12 +2,13 @@ import type { RoadObject, BuildingObject } from '../objects/types';
 import type { TrafficNetwork, TrafficNode } from '../objects/trafficTypes';
 import { SpatialHashGrid } from '../rendering/spatial/SpatialHashGrid';
 import { Pathfinder } from './Pathfinder';
-import type { 
-  ODTrip, 
-  DemandZone, 
-  ExternalGateway, 
-  BuildingDemandProfile, 
-  TimePeriod, 
+import { resolveBuildingTripEvents, hasTripOverrides, profileModeSplitToFractions, PERIOD_SHARE } from './modeSplit';
+import type {
+  ODTrip,
+  DemandZone,
+  ExternalGateway,
+  BuildingDemandProfile,
+  TimePeriod,
   TransportMode,
   ModeSplit,
   TrafficDemandMatrix
@@ -169,7 +170,7 @@ export class DemandMatrixCompiler {
     const cellSize = 200; // grid cell size
     const cellX = Math.floor(x / cellSize);
     const cellY = Math.floor(y / cellSize);
-    
+
     const neighborKeys: string[] = [];
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -178,7 +179,7 @@ export class DemandMatrixCompiler {
     }
 
     const candidateIds = edgeGrid.getObjectsInTiles(neighborKeys);
-    const edgesToCheck = candidateIds.length > 0 
+    const edgesToCheck = candidateIds.length > 0
       ? candidateIds.map(id => network.edges.get(id)).filter(e => !!e)
       : Array.from(network.edges.values()); // fallback if no local edges found
 
@@ -189,11 +190,11 @@ export class DemandMatrixCompiler {
         const p1 = edge.coordinates[i];
         const p2 = edge.coordinates[i + 1];
         const res = pointToSegmentDistance(accessPt[0], accessPt[1], p1[0], p1[1], p2[0], p2[1]);
-        
+
         if (res.distance < minDistance) {
           minDistance = res.distance;
           nearestEdgeId = edge.id;
-          
+
           const distToFromNode = getDistanceMeters(res.closestPt[0], res.closestPt[1], p1[0], p1[1]);
           const distToToNode = getDistanceMeters(res.closestPt[0], res.closestPt[1], p2[0], p2[1]);
           accessNodeId = distToFromNode < distToToNode ? edge.fromNodeId : edge.toNodeId;
@@ -242,7 +243,7 @@ export class DemandMatrixCompiler {
       gateways.forEach(gw => {
         let closestNode: any = null;
         let minDistance = Infinity;
-        
+
         network.nodes.forEach(node => {
           const dist = getDistanceMeters(gw.coordinates[0], gw.coordinates[1], node.coordinates[0], node.coordinates[1]);
           if (dist < minDistance) {
@@ -250,10 +251,10 @@ export class DemandMatrixCompiler {
             closestNode = node;
           }
         });
-        
+
         if (closestNode) {
           gw.connectedNodeId = closestNode.id;
-          
+
           // Write back to original GatewayObject in memory if accessible
           const allObjs = typeof window !== 'undefined' && (window as any).engineInstance?.objects.getAll();
           if (allObjs) {
@@ -262,7 +263,7 @@ export class DemandMatrixCompiler {
               gwObj.connectedNodeId = closestNode.id;
             }
           }
-          
+
           // Find connected road (nearest edge)
           let nearestEdge = '';
           let minEdgeDist = Infinity;
@@ -275,7 +276,7 @@ export class DemandMatrixCompiler {
               }
             }
           });
-          
+
           console.log(`Gateway: ${gw.name}`);
           console.log(`  -> coordinates: [${gw.coordinates[0].toFixed(5)}, ${gw.coordinates[1].toFixed(5)}]`);
           console.log(`  -> nearest/boundary TrafficNode: ${closestNode.id}`);
@@ -362,7 +363,10 @@ export class DemandMatrixCompiler {
       // Manually surveyed/edited planning profiles
       const isManuallySurveyed = b.source === 'manual' || b.source === 'municipal' || b.source === 'surveyed';
 
-      return isImportantCategory || isMajorComplex || isManuallySurveyed;
+      // Buildings with an Activity Profile were configured on purpose
+      const hasActivityProfile = hasTripOverrides(b) || !!profileModeSplitToFractions(b.activityProfile?.modeSplit);
+
+      return isImportantCategory || isMajorComplex || isManuallySurveyed || hasActivityProfile;
     });
 
     // 4. Generate snapped building demand profiles
@@ -383,7 +387,7 @@ export class DemandMatrixCompiler {
       explicitBuildings.forEach(b => {
         const profile = this.snapBuildingToNetwork(b, network, edgeGrid);
         DemandMatrixCompiler.cachedBuildingProfiles.set(b.id, profile);
-        
+
         // Save snap result properties directly back to original building object for UI
         if (profile.nearestEdgeId && profile.accessNodeId) {
           b.nearestEdgeId = profile.nearestEdgeId;
@@ -393,7 +397,7 @@ export class DemandMatrixCompiler {
           failedSnapped++;
         }
       });
-      
+
       console.log(`Buildings processed (re-snapped): ${explicitBuildings.length}`);
       console.log(`Buildings successfully snapped: ${successfullySnapped}`);
       console.log(`Buildings failed to snap: ${failedSnapped}`);
@@ -442,7 +446,7 @@ export class DemandMatrixCompiler {
             sumLat += c[1];
           });
           const centroid = [sumLon / z.boundaryPolygon.length, sumLat / z.boundaryPolygon.length];
-          
+
           const sortedNodes = Array.from(network.nodes.values()).map(node => {
             const dist = getDistanceMeters(centroid[0], centroid[1], node.coordinates[0], node.coordinates[1]);
             return { node, dist };
@@ -485,7 +489,7 @@ export class DemandMatrixCompiler {
 
         DemandMatrixCompiler.cachedZoneAccessNodes.set(z.id, normalized);
       });
-      
+
       // Update roads signature since snap / access nodes rebuild depends on it
       DemandMatrixCompiler.lastRoadsSig = roadsSig;
       DemandMatrixCompiler.lastZonesSig = zonesSig;
@@ -502,12 +506,8 @@ export class DemandMatrixCompiler {
 
     let compiledTripsCount = 0;
 
-    const periodMultipliers: Record<TimePeriod, number> = {
-      AM_Peak: 0.35,
-      PM_Peak: 0.40,
-      Midday: 0.15,
-      Night: 0.10
-    };
+    const periodMultipliers: Record<TimePeriod, number> = PERIOD_SHARE;
+    const buildingEvents = new Map(explicitBuildings.map(b => [b.id, resolveBuildingTripEvents(b, this.defaultModeSplit)]));
 
     timePeriods.forEach(period => {
       const origins: { id: string; type: 'zone' | 'building' | 'gateway'; coords: [number, number, number]; capacity: number; modeSplit: ModeSplit }[] = [];
@@ -534,52 +534,15 @@ export class DemandMatrixCompiler {
         }
       });
 
-      // Building flows
+      // Building flows (defaults, or the building's Activity Profile when set)
       explicitBuildings.forEach(b => {
-        const center = buildingProfiles.get(b.id)!;
-        const coords = explicitBuildings.find(eb => eb.id === b.id)!.coordinates[0];
-
-        if (b.residents && b.residents > 0) {
-          const dailyTrips = b.residents * 2.0;
-          const periodTrips = dailyTrips * periodMultipliers[period];
-
-          if (period === 'AM_Peak') {
-            origins.push({
-              id: b.id,
-              type: 'building',
-              coords,
-              capacity: periodTrips,
-              modeSplit: center.modeSplit
-            });
-          } else if (period === 'PM_Peak') {
-            destinations.push({
-              id: b.id,
-              type: 'building',
-              coords,
-              capacity: periodTrips
-            });
-          }
-        }
-
-        if (b.employees && b.employees > 0) {
-          const dailyTrips = b.employees * 1.5;
-          const periodTrips = dailyTrips * periodMultipliers[period];
-
-          if (period === 'AM_Peak') {
-            destinations.push({
-              id: b.id,
-              type: 'building',
-              coords,
-              capacity: periodTrips
-            });
-          } else if (period === 'PM_Peak') {
-            origins.push({
-              id: b.id,
-              type: 'building',
-              coords,
-              capacity: periodTrips,
-              modeSplit: center.modeSplit
-            });
+        const coords = b.coordinates[0];
+        for (const ev of buildingEvents.get(b.id) ?? []) {
+          if (ev.period !== period || ev.trips <= 0) continue;
+          if (ev.role === 'origin') {
+            origins.push({ id: b.id, type: 'building', coords, capacity: ev.trips, modeSplit: ev.modeSplit });
+          } else {
+            destinations.push({ id: b.id, type: 'building', coords, capacity: ev.trips });
           }
         }
       });
@@ -597,8 +560,8 @@ export class DemandMatrixCompiler {
           sumLat += c[1];
         });
         const centroid: [number, number, number] = [
-          sumLon / z.boundaryPolygon.length, 
-          sumLat / z.boundaryPolygon.length, 
+          sumLon / z.boundaryPolygon.length,
+          sumLat / z.boundaryPolygon.length,
           0
         ];
 
@@ -661,7 +624,7 @@ export class DemandMatrixCompiler {
             dest.coords[0], dest.coords[1]
           );
           const distClamped = Math.max(100, dist);
-          
+
           const weight = dest.capacity / (distClamped * distClamped);
           return { dest, weight };
         });
@@ -745,9 +708,10 @@ export class DemandMatrixCompiler {
     trips.forEach(t => odPairSet.add(`${t.originId}->${t.destinationId}`));
 
     let checkedPairs = 0;
+    let uncheckedPairs = 0;
     odPairSet.forEach(pair => {
       const [origId, destId] = pair.split('->');
-      
+
       const startNodeId = this.findClosestNodeForSeeding(origId, buildings, zones, gateways, network);
       const endNodeId = this.findClosestNodeForSeeding(destId, buildings, zones, gateways, network);
 
@@ -766,8 +730,8 @@ export class DemandMatrixCompiler {
           }
           checkedPairs++;
         } else {
-          // Assume success/estimate for subsequent diagnostics to run in O(1)
-          successfulDijkstra++;
+          // Not route-checked (sampling cap) — counted separately, never reported as success
+          uncheckedPairs++;
         }
       } else {
         failedDijkstra++;
@@ -808,15 +772,17 @@ Metro trips: ${metTrips.toLocaleString()}
 Walking trips: ${walkTrips.toLocaleString()}
 
 OD pairs: ${odPairSet.size}
-Valid OD pairs: ${successfulDijkstra}
-Failed OD pairs: ${failedDijkstra}
+Route-checked OD pairs (sample of up to 10): ${successfulDijkstra} ok, ${failedDijkstra} failed
+Not route-checked: ${uncheckedPairs}
+Buildings using an Activity Profile: ${explicitBuildings.filter(b => hasTripOverrides(b) || !!profileModeSplitToFractions(b.activityProfile?.modeSplit)).length}
 
 === ROUTING READINESS ===
 
 OD pairs with valid origin: ${validOriginCount}
 OD pairs with valid destination: ${validDestCount}
-OD pairs with successful Dijkstra route: ${successfulDijkstra}
-OD pairs with failed route: ${failedDijkstra}
+OD pairs with successful Dijkstra route (sampled): ${successfulDijkstra}
+OD pairs with failed route (incl. missing origin/destination): ${failedDijkstra}
+OD pairs not route-checked: ${uncheckedPairs}
 
 === VEHICLE READINESS ===
 
@@ -841,7 +807,7 @@ ${spawnedVehicles === 0 ? "EXPLANATION: Spawned vehicles count is 0 because no t
     network: TrafficNetwork
   ): string | null {
     let coords: [number, number, number] | null = null;
-    
+
     const b = buildings.find(x => x.id === id);
     if (b) {
       coords = b.accessPoints?.vehicleEntrance || b.coordinates[0];
@@ -856,7 +822,7 @@ ${spawnedVehicles === 0 ? "EXPLANATION: Spawned vehicles count is 0 because no t
         }
       }
     }
-    
+
     if (!coords) return null;
 
     let minDist = Infinity;

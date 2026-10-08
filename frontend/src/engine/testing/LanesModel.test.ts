@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { TrafficNetworkBuilder } from '../simulation/TrafficNetworkBuilder';
@@ -6,13 +6,17 @@ import { EditingEngine } from '../editing/EditingEngine';
 import { ProceduralGeometryGenerator } from '../rendering/geometry/ProceduralGeometryGenerator';
 
 describe('Unified Road Lane Model & Systems Integration', () => {
+  beforeEach(() => {
+    vi.spyOn(EditingEngine.prototype, 'fetchSavedAreas').mockResolvedValue();
+    vi.spyOn(ObjectManager.prototype, 'addMultipleAndSave').mockImplementation(async function (objects) { this.addMultiple(objects, true); });
+  });
+  afterEach(() => vi.restoreAllMocks());
   it('Scenario 1: parses lanes=3 + oneway=yes into 3 forward, 0 backward', async () => {
     const objManager = new ObjectManager();
     const editingEngine = new EditingEngine(objManager, {} as any);
 
     // Mock overpass response for a one-way 3-lane road
-    (editingEngine as any).fetchFromOverpass = async () => ({
-      elements: [
+    (editingEngine as any).fetchAreaElements = async () => [
         {
           type: 'way',
           id: 101,
@@ -26,8 +30,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
             { lon: 73.8577, lat: 18.5204 }
           ]
         }
-      ]
-    });
+    ];
 
     const count = await editingEngine.importOSMRoadsInsideArea({
       id: 'area1',
@@ -50,8 +53,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
     const objManager = new ObjectManager();
     const editingEngine = new EditingEngine(objManager, {} as any);
 
-    (editingEngine as any).fetchFromOverpass = async () => ({
-      elements: [
+    (editingEngine as any).fetchAreaElements = async () => [
         {
           type: 'way',
           id: 102,
@@ -65,8 +67,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
             { lon: 73.8577, lat: 18.5204 }
           ]
         }
-      ]
-    });
+    ];
 
     await editingEngine.importOSMRoadsInsideArea({
       id: 'area1',
@@ -89,8 +90,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
     const objManager = new ObjectManager();
     const editingEngine = new EditingEngine(objManager, {} as any);
 
-    (editingEngine as any).fetchFromOverpass = async () => ({
-      elements: [
+    (editingEngine as any).fetchAreaElements = async () => [
         {
           type: 'way',
           id: 103,
@@ -105,8 +105,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
             { lon: 73.8577, lat: 18.5204 }
           ]
         }
-      ]
-    });
+    ];
 
     await editingEngine.importOSMRoadsInsideArea({
       id: 'area1',
@@ -129,8 +128,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
     const objManager = new ObjectManager();
     const editingEngine = new EditingEngine(objManager, {} as any);
 
-    (editingEngine as any).fetchFromOverpass = async () => ({
-      elements: [
+    (editingEngine as any).fetchAreaElements = async () => [
         {
           type: 'way',
           id: 104,
@@ -144,8 +142,7 @@ describe('Unified Road Lane Model & Systems Integration', () => {
             { lon: 73.8577, lat: 18.5204 }
           ]
         }
-      ]
-    });
+    ];
 
     await editingEngine.importOSMRoadsInsideArea({
       id: 'area1',

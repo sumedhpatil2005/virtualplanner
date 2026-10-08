@@ -1,4 +1,10 @@
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
+import { elevatedLayer } from '../../objects/bridgeElevation';
+import { junctionLayout } from '../../objects/junctionLayout';
+import { ROAD_CLASS_LIFT_M } from '../../objects/roadSurface';
+import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
+import { resolveStationHeading } from '../../objects/stationAlignment';
+import { GeometryContext } from './GeometryContext';
 import type { MeshData, MaterialConfig } from '../types';
 
 /**
@@ -44,49 +50,22 @@ function normalize(v: [number, number, number]): [number, number, number] {
   return [v[0] / len, v[1] / len, v[2] / len];
 }
 
-function shortenPathAtStart(coords: [number, number, number][], distMeters: number): [number, number, number][] {
-  if (coords.length < 2) return coords;
-  const newCoords = [...coords.map(c => [...c] as [number, number, number])];
-  let remaining = distMeters;
-
-  while (newCoords.length >= 2 && remaining > 0) {
-    const p1 = newCoords[0];
-    const p2 = newCoords[1];
-    
-    const lonMetersPerDegree = 111000 * Math.cos((p1[1] * Math.PI) / 180);
-    const latMetersPerDegree = 111000;
-    
-    const dx = (p2[0] - p1[0]) * lonMetersPerDegree;
-    const dy = (p2[1] - p1[1]) * latMetersPerDegree;
-    const len = Math.sqrt(dx * dx + dy * dy);
-
-    if (len <= remaining) {
-      remaining -= len;
-      newCoords.shift();
-    } else {
-      const t = remaining / len;
-      newCoords[0] = [
-        p1[0] + t * (p2[0] - p1[0]),
-        p1[1] + t * (p2[1] - p1[1]),
-        p1[2] + t * (p2[2] - p1[2])
-      ];
-      break;
-    }
-  }
-  return newCoords;
-}
-
-function shortenPathAtEnd(coords: [number, number, number][], distMeters: number): [number, number, number][] {
-  const reversed = [...coords.map(c => [...c] as [number, number, number])].reverse();
-  const shortened = shortenPathAtStart(reversed, distMeters);
-  return shortened.reverse();
-}
-
 export class ProceduralGeometryGenerator {
   /**
    * Translates a CityObject configuration to a group of MeshData meshes
    */
-  public generateMeshData(obj: CityObject, allObjects?: Map<string, CityObject>): MeshData[] {
+  /**
+   * @param scene Either a GeometryContext shared across a batch (fast), or a plain
+   *   map of all objects (a context is built for this single call).
+   */
+  public generateMeshData(obj: CityObject, scene?: ReadonlyMap<string, CityObject> | GeometryContext): MeshData[] {
+    // A part cut away entirely (e.g. a footpath on a road that is all junction) has no geometry,
+    // and an empty buffer stops Cesium rendering altogether
+    return this.generateAllMeshData(obj, scene).filter(m => m.positions.length > 0 && m.indices.length > 0);
+  }
+
+  private generateAllMeshData(obj: CityObject, scene?: ReadonlyMap<string, CityObject> | GeometryContext): MeshData[] {
+    const allObjects = scene instanceof GeometryContext ? scene : scene ? new GeometryContext(scene) : undefined;
     try {
       if (obj.type === 'building') {
         return this.generateBuildingMesh(obj as BuildingObject);
@@ -95,10 +74,10 @@ export class ProceduralGeometryGenerator {
         return this.generateRoadMeshes(obj as RoadObject, allObjects);
       }
       if (obj.type === 'flyover') {
-        return this.generateFlyoverMeshes(obj as FlyoverObject, allObjects);
+        return this.generateFlyoverMeshes(obj as FlyoverObject);
       }
       if (obj.type === 'metro_flyover') {
-        return this.generateMetroFlyoverMeshes(obj as MetroFlyoverObject, allObjects);
+        return this.generateMetroFlyoverMeshes(obj as MetroFlyoverObject);
       }
       if (obj.type === 'metro_line') {
         return this.generateMetroLineMeshes(obj as MetroLineObject);
@@ -110,7 +89,7 @@ export class ProceduralGeometryGenerator {
         return [this.generateUtilityMesh(obj as UtilityObject)];
       }
       if (obj.type === 'junction') {
-        return [this.generateJunctionMesh(obj as JunctionObject, allObjects)];
+        return this.generateJunctionMeshes(obj as JunctionObject, allObjects);
       }
     } catch (err) {
       console.error(`Failed to generate procedural geometry for object ${obj.id}:`, err);
@@ -130,13 +109,13 @@ export class ProceduralGeometryGenerator {
     // --- 1. FAR LOD: Flat footprint mesh ---
     const farPositions: number[] = [];
     const farIndices: number[] = [];
-    
+
     for (let i = 0; i < numPoints; i++) {
       const pt = footprint[i];
       const bot = wgs84ToCartesian(pt[0], pt[1], 0.1); // 0.1m height to prevent z-fighting
       farPositions.push(...bot);
     }
-    
+
     // Triangle fan for flat footprint
     for (let i = 1; i < numPoints - 1; i++) {
       farIndices.push(0, i, i + 1);
@@ -237,7 +216,7 @@ export class ProceduralGeometryGenerator {
       const prev = coords[i - 1] || curr;
 
       const pCurr = wgs84ToCartesian(curr[0], curr[1], (curr[2] || 0) + elevation);
-      
+
       // Ellipsoidal surface normal (up direction)
       const up = normalize(pCurr);
 
@@ -378,7 +357,7 @@ export class ProceduralGeometryGenerator {
                         (roadside.parkingWidth || 0) > 0 ||
                         (roadside.drainageWidth || 0) > 0;
     const curbWidth = hasElements ? 0.2 : 0;
-    
+
     let current = baseOffset;
 
     // Curb
@@ -421,68 +400,47 @@ export class ProceduralGeometryGenerator {
     };
   }
 
-  private generateRoadMeshes(road: RoadObject, allObjects?: Map<string, CityObject>): MeshData[] {
+  private generateRoadMeshes(road: RoadObject, allObjects?: GeometryContext): MeshData[] {
     const meshes: MeshData[] = [];
     const coords = road.coordinates;
     if (coords.length < 2) return meshes;
 
     let roadCoords = coords;
-    const isBridge = road.osmProvenance?.bridge || false;
+    // Bridges and roads on a raised OSM layer: their heights come from liftOsmBridges (ramped at the ends)
+    const isBridge = !!road.osmProvenance?.bridge || elevatedLayer(road) > 0;
     const isTunnel = road.osmProvenance?.tunnel || false;
     const bridgeElevation = 6.0;
+    const maxElev = coords.reduce((max, c) => Math.max(max, c[2] || 0), 0);
 
-    // Check if coords have 0 elevation but the road is a bridge
-    const averageElev = coords.reduce((sum, c) => sum + (c[2] || 0), 0) / coords.length;
-    if (isBridge && averageElev < 0.5) {
+    if (isBridge && maxElev < 0.01) {
+      // Heights not worked out (yet): draw the deck level at the usual height
       roadCoords = coords.map(c => [c[0], c[1], bridgeElevation]);
     } else if (isTunnel) {
       // Offset tunnels slightly below the surface
       roadCoords = coords.map(c => [c[0], c[1], -0.2]);
+    } else {
+      // Where roads overlap at a junction the bigger road lies on top, a few
+      // centimetres up, so surfaces never flicker against each other and the
+      // smaller road's markings stay under the bigger road's asphalt
+      const lift = ROAD_CLASS_LIFT_M[road.roadClass] ?? 0;
+      if (lift > 0) roadCoords = coords.map(c => [c[0], c[1], (c[2] || 0) + lift]);
     }
+
 
     // Use synthesized sections if not present
     const sections = road.sections && road.sections.length > 0
       ? road.sections
       : this.synthesizeDefaultSectionsForGenerator(road);
 
-    // Resolve junctions
-    const junctions = allObjects 
-      ? Array.from(allObjects.values()).filter(o => o.type === 'junction') as JunctionObject[]
-      : [];
-
-    const isAtJunction = (pt: [number, number, number]) => {
-      return junctions.find(j => {
-        const dx = j.coordinates[0] - pt[0];
-        const dy = j.coordinates[1] - pt[1];
-        return (dx * dx + dy * dy) < 0.000000004;
-      });
-    };
-
-    const getJunctionRadius = (j: JunctionObject) => {
-      let maxRoadWidth = 6.0;
-      if (j.connectedRoads && j.connectedRoads.length > 0 && allObjects) {
-        j.connectedRoads.forEach(roadId => {
-          const rObj = allObjects.get(roadId);
-          if (rObj && rObj.type === 'road') {
-            const rWidth = (rObj as RoadObject).width || 6.0;
-            if (rWidth > maxRoadWidth) maxRoadWidth = rWidth;
-          }
-        });
-      }
-      return Math.max(3.0, maxRoadWidth / 2 + 0.5);
-    };
-
-    const jStart = isAtJunction(roadCoords[0]);
-    const jEnd = isAtJunction(roadCoords[roadCoords.length - 1]);
-
-    // Visual road class asphalt colors (subtle dark-mode professional hierarchy)
-    let asphaltColor = '#1e293b'; // default: arterial
+    // One asphalt grey, a shade darker for bigger roads: where roads overlap at a
+    // junction the surface reads as one, not as patches of different colours
+    let asphaltColor = '#2b313b'; // default: arterial
     if (road.roadClass === 'highway') {
-      asphaltColor = '#0f172a'; // slate-900
+      asphaltColor = '#262b34';
     } else if (road.roadClass === 'collector') {
-      asphaltColor = '#334155'; // slate-700
+      asphaltColor = '#30363f';
     } else if (road.roadClass === 'local') {
-      asphaltColor = '#475569'; // slate-600
+      asphaltColor = '#353b45';
     }
 
     for (const section of sections) {
@@ -490,32 +448,24 @@ export class ProceduralGeometryGenerator {
       const endIdx = Math.max(startIdx, Math.min(section.endNodeIndex, coords.length - 1));
       if (endIdx - startIdx < 1) continue;
 
-      let sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
+      const sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
       const offsets = this.calculateOffsetsForSection(section);
 
-      // Shorten coordinates at junctions to prevent overlapping meshes
-      let totalLength = 0;
-      for (let i = 0; i < sectionCoords.length - 1; i++) {
-        const p1 = sectionCoords[i];
-        const p2 = sectionCoords[i + 1];
-        const lonMetersPerDegree = 111000 * Math.cos((p1[1] * Math.PI) / 180);
-        const latMetersPerDegree = 111000;
-        const dx = (p2[0] - p1[0]) * lonMetersPerDegree;
-        const dy = (p2[1] - p1[1]) * latMetersPerDegree;
-        totalLength += Math.sqrt(dx * dx + dy * dy);
-      }
-
-      const shortenStart = (startIdx === 0 && jStart) ? getJunctionRadius(jStart) : 0;
-      const shortenEnd = (endIdx === roadCoords.length - 1 && jEnd) ? getJunctionRadius(jEnd) : 0;
-
-      if (shortenStart + shortenEnd < totalLength * 0.75) {
-        if (shortenStart > 0) {
-          sectionCoords = shortenPathAtStart(sectionCoords, shortenStart);
+      // Keep the road surface continuous. The junction surface overlaps its approaches.
+      // Footpaths, kerbs, medians and lane markings stop where other roads meet or
+      // cross this one, so junctions are clean asphalt rather than criss-crossed
+      const pieces = this.junctionPieces(sectionCoords, road, allObjects);
+      const onPieces = (left: number, right: number, elevation = 0, thickness = 0) => {
+        const positions: number[] = [];
+        const indices: number[] = [];
+        for (const piece of pieces) {
+          const r = this.generateRibbon(piece as [number, number, number][], left, right, elevation, thickness);
+          const base = positions.length / 3;
+          positions.push(...r.positions);
+          for (const i of r.indices) indices.push(i + base);
         }
-        if (shortenEnd > 0) {
-          sectionCoords = shortenPathAtEnd(sectionCoords, shortenEnd);
-        }
-      }
+        return { positions, indices };
+      };
 
       // 1. Asphalt (Carriageway A)
       if (offsets.carriageA[1] - offsets.carriageA[0] > 0.1) {
@@ -534,7 +484,7 @@ export class ProceduralGeometryGenerator {
           const laneW = A_width / lanesA;
           for (let i = 1; i < lanesA; i++) {
             const offsetMark = offsets.carriageA[0] + i * laneW;
-            const marking = this.generateRibbon(sectionCoords, offsetMark - 0.06, offsetMark + 0.06, 0.01);
+            const marking = onPieces(offsetMark - 0.06, offsetMark + 0.06, 0.01);
             meshes.push({
               positions: new Float64Array(marking.positions),
               indices: new Uint32Array(marking.indices),
@@ -562,7 +512,7 @@ export class ProceduralGeometryGenerator {
           const laneW = B_width / lanesB;
           for (let i = 1; i < lanesB; i++) {
             const offsetMark = offsets.carriageB[0] + i * laneW;
-            const marking = this.generateRibbon(sectionCoords, offsetMark - 0.06, offsetMark + 0.06, 0.01);
+            const marking = onPieces(offsetMark - 0.06, offsetMark + 0.06, 0.01);
             meshes.push({
               positions: new Float64Array(marking.positions),
               indices: new Uint32Array(marking.indices),
@@ -576,9 +526,9 @@ export class ProceduralGeometryGenerator {
       // 2c. Center Divider Yellow Markings (for undivided two-way roads)
       if (offsets.carriageB && !section.hasMedian) {
         const centerOffset = offsets.carriageA[1];
-        const yellowLeft = this.generateRibbon(sectionCoords, centerOffset - 0.12, centerOffset - 0.04, 0.015);
-        const yellowRight = this.generateRibbon(sectionCoords, centerOffset + 0.04, centerOffset + 0.12, 0.015);
-        
+        const yellowLeft = onPieces(centerOffset - 0.12, centerOffset - 0.04, 0.015);
+        const yellowRight = onPieces(centerOffset + 0.04, centerOffset + 0.12, 0.015);
+
         meshes.push({
           positions: new Float64Array(yellowLeft.positions),
           indices: new Uint32Array(yellowLeft.indices),
@@ -595,7 +545,7 @@ export class ProceduralGeometryGenerator {
 
       // 3. Central Median
       if (section.hasMedian && section.medianWidth > 0) {
-        const divider = this.generateRibbon(sectionCoords, offsets.median[0], offsets.median[1], 0.15, 0.15);
+        const divider = onPieces(offsets.median[0], offsets.median[1], 0.15, 0.15);
         meshes.push({
           positions: new Float64Array(divider.positions),
           indices: new Uint32Array(divider.indices),
@@ -613,7 +563,7 @@ export class ProceduralGeometryGenerator {
 
         // Curb (extruded 0.22m)
         if (elements.curb[1] - elements.curb[0] > 0.05) {
-          const curb = this.generateRibbon(sectionCoords, elements.curb[0], elements.curb[1], 0.22, 0.22);
+          const curb = onPieces(elements.curb[0], elements.curb[1], 0.22, 0.22);
           meshes.push({
             positions: new Float64Array(curb.positions),
             indices: new Uint32Array(curb.indices),
@@ -624,7 +574,7 @@ export class ProceduralGeometryGenerator {
 
         // Footpath (extruded 0.22m)
         if (elements.footpath[1] - elements.footpath[0] > 0.05) {
-          const fp = this.generateRibbon(sectionCoords, elements.footpath[0], elements.footpath[1], 0.22, 0.22);
+          const fp = onPieces(elements.footpath[0], elements.footpath[1], 0.22, 0.22);
           meshes.push({
             positions: new Float64Array(fp.positions),
             indices: new Uint32Array(fp.indices),
@@ -635,7 +585,7 @@ export class ProceduralGeometryGenerator {
 
         // Cycle Track (extruded 0.05m)
         if (elements.cycleTrack[1] - elements.cycleTrack[0] > 0.05) {
-          const ct = this.generateRibbon(sectionCoords, elements.cycleTrack[0], elements.cycleTrack[1], 0.05, 0.05);
+          const ct = onPieces(elements.cycleTrack[0], elements.cycleTrack[1], 0.05, 0.05);
           meshes.push({
             positions: new Float64Array(ct.positions),
             indices: new Uint32Array(ct.indices),
@@ -646,7 +596,7 @@ export class ProceduralGeometryGenerator {
 
         // Verge (extruded 0.02m)
         if (elements.verge[1] - elements.verge[0] > 0.05) {
-          const vg = this.generateRibbon(sectionCoords, elements.verge[0], elements.verge[1], 0.02, 0.02);
+          const vg = onPieces(elements.verge[0], elements.verge[1], 0.02, 0.02);
           meshes.push({
             positions: new Float64Array(vg.positions),
             indices: new Uint32Array(vg.indices),
@@ -657,7 +607,7 @@ export class ProceduralGeometryGenerator {
 
         // Parking (extruded 0.0m)
         if (elements.parking[1] - elements.parking[0] > 0.05) {
-          const pk = this.generateRibbon(sectionCoords, elements.parking[0], elements.parking[1], 0);
+          const pk = onPieces(elements.parking[0], elements.parking[1], 0);
           meshes.push({
             positions: new Float64Array(pk.positions),
             indices: new Uint32Array(pk.indices),
@@ -668,7 +618,7 @@ export class ProceduralGeometryGenerator {
 
         // Drainage (extruded 0.0m, or slightly lower)
         if (elements.drainage[1] - elements.drainage[0] > 0.05) {
-          const dr = this.generateRibbon(sectionCoords, elements.drainage[0], elements.drainage[1], -0.1, 0.1);
+          const dr = onPieces(elements.drainage[0], elements.drainage[1], -0.1, 0.1);
           meshes.push({
             positions: new Float64Array(dr.positions),
             indices: new Uint32Array(dr.indices),
@@ -684,17 +634,28 @@ export class ProceduralGeometryGenerator {
       generateRoadside(offsets.leftB);
       generateRoadside(offsets.rightB);
 
-      // 5. If it's a bridge, generate concrete deck slab under the road
+      // 5. Bridge deck: a pale concrete slab with parapet walls, so a deck reads
+      // clearly against the dark roads beneath it
       if (isBridge) {
         const roadWidth = road.width || (offsets.carriageA[1] - offsets.carriageA[0]) * 2;
         const halfW = roadWidth / 2;
-        const slab = this.generateRibbon(sectionCoords, -halfW, halfW, -0.05, 0.4);
+        const slab = this.generateRibbon(sectionCoords, -halfW, halfW, -0.05, 1.1);
         meshes.push({
           positions: new Float64Array(slab.positions),
           indices: new Uint32Array(slab.indices),
-          material: { type: 'solid', color: '#475569' }, // concrete grey
+          material: { type: 'solid', color: '#a8b3c1' },
           layerId: 'transit_deck'
         });
+        for (const [from, to] of [[-halfW, -halfW + 0.35], [halfW - 0.35, halfW]]) {
+          // Broken where another deck joins, so merging carriageways do not wall each other off
+          const parapet = onPieces(from, to, 0.95, 1.0);
+          meshes.push({
+            positions: new Float64Array(parapet.positions),
+            indices: new Uint32Array(parapet.indices),
+            material: { type: 'solid', color: '#e2e8f0' },
+            layerId: 'transit_deck'
+          });
+        }
       }
     }
 
@@ -712,6 +673,26 @@ export class ProceduralGeometryGenerator {
     }
 
     return meshes;
+  }
+
+  /** The pieces of a road's centre line between the places other roads meet or cross it. */
+  private junctionPieces(path: [number, number, number][], road: RoadObject, allObjects?: GeometryContext): number[][][] {
+    if (!allObjects || path.length < 2) return [path];
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    for (const p of path) {
+      minLng = Math.min(minLng, p[0]); maxLng = Math.max(maxLng, p[0]);
+      minLat = Math.min(minLat, p[1]); maxLat = Math.max(maxLat, p[1]);
+    }
+    const pad = 0.0003; // about 30 m: widest roads plus the T-junction reach
+    const gaps: Gap[] = [];
+    for (const other of allObjects.drivablesNear(minLng - pad, minLat - pad, maxLng + pad, maxLat + pad)) {
+      if (other.id === road.id) continue;
+      // The other road's surface, as drawn: its class lift on top of its points
+      const lift = other.type === 'road' && !other.osmProvenance?.bridge && elevatedLayer(other) === 0 ? ROAD_CLASS_LIFT_M[other.roadClass] ?? 0 : 0;
+      const coordinates = lift ? other.coordinates.map(c => [c[0], c[1], (c[2] || 0) + lift]) : other.coordinates;
+      gaps.push(...crossingGaps(path, { coordinates, width: other.width || 10 }));
+    }
+    return gaps.length > 0 ? piecesBetween(path, gaps) : [path];
   }
 
   private synthesizeDefaultSectionsForGenerator(road: RoadObject): any[] {
@@ -795,7 +776,7 @@ export class ProceduralGeometryGenerator {
   /**
    * Generates procedural meshes for flyovers, including concrete pillars
    */
-  private generateFlyoverMeshes(flyover: FlyoverObject, allObjects?: Map<string, CityObject>): MeshData[] {
+  private generateFlyoverMeshes(flyover: FlyoverObject): MeshData[] {
     const meshes: MeshData[] = [];
     const coords = flyover.coordinates;
     if (coords.length < 2) return meshes;
@@ -950,7 +931,7 @@ export class ProceduralGeometryGenerator {
 
     // 7. Support Columns (Pillars) and horizontal Pier Caps
     const pierSpacing = flyover.pierSpacing || 30;
-    const pillarMeshes = this.generateFlyoverPillars(flyover, slabWidth, pierSpacing, allObjects);
+    const pillarMeshes = this.generateFlyoverPillars(flyover, slabWidth, pierSpacing);
     meshes.push(...pillarMeshes);
 
     // 8. Ramp side walls (abutments) — solid concrete side walls down to ground
@@ -967,8 +948,7 @@ export class ProceduralGeometryGenerator {
   private generateFlyoverPillars(
     flyover: FlyoverObject,
     deckSlabWidth: number,
-    spacing: number,
-    allObjects?: Map<string, CityObject>
+    spacing: number
   ): MeshData[] {
     const pillars: MeshData[] = [];
     const coords = flyover.coordinates;
@@ -989,16 +969,6 @@ export class ProceduralGeometryGenerator {
       );
       totalDist += dist;
       distanceList.push(totalDist);
-    }
-
-    // Get all roads in the scene for clash checking
-    const allRoads: RoadObject[] = [];
-    if (allObjects) {
-      allObjects.forEach(obj => {
-        if (obj.type === 'road' && obj.id !== flyover.id) {
-          allRoads.push(obj as RoadObject);
-        }
-      });
     }
 
     let currentMarker = spacing / 2; // Offset first column from ramp start
@@ -1045,11 +1015,11 @@ export class ProceduralGeometryGenerator {
 
         // --- 2. Tapered Rectangular Pier (Pillar) ---
         // Scale pillar width relative to deck width to look structurally sound (like metro)
-        const topWidth = Math.max(2.0, deckSlabWidth * 0.4); 
+        const topWidth = Math.max(2.0, deckSlabWidth * 0.4);
         const topLength = 1.4; // longitudinal length
         const botWidth = topWidth * 0.8;
         const botLength = 1.2;
-        
+
         // Height of column: reaches the bottom of the pier cap, which is deckZ - 1.7
         const pillarHeight = deckHeight - 1.7;
 
@@ -1246,7 +1216,7 @@ export class ProceduralGeometryGenerator {
     const positionsList: number[] = [];
     const indicesList: number[] = [];
     let indexOffset = 0;
-    
+
     // Half width of the slab
     const halfW = deckSlabWidth / 2;
 
@@ -1266,17 +1236,17 @@ export class ProceduralGeometryGenerator {
       // Calculate tangent to get perpendicular left/right vectors
       const c1 = wgs84ToCartesian(p1[0], p1[1], 0);
       const c2 = wgs84ToCartesian(p2[0], p2[1], 0);
-      
+
       // Normalizing vectors (length)
       const dx = c2[0] - c1[0];
       const dy = c2[1] - c1[1];
       const dz = c2[2] - c1[2];
       const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
       const tangent = [dx / len, dy / len, dz / len] as [number, number, number];
-      
+
       const up1 = normalize(wgs84ToCartesian(p1[0], p1[1], p1[2] || 0));
       const right1 = normalize(cross(tangent, up1));
-      
+
       const up2 = normalize(wgs84ToCartesian(p2[0], p2[1], p2[2] || 0));
       const right2 = normalize(cross(tangent, up2));
 
@@ -1300,11 +1270,11 @@ export class ProceduralGeometryGenerator {
       groundLeft2[0] -= right2[0] * halfW;
       groundLeft2[1] -= right2[1] * halfW;
       groundLeft2[2] -= right2[2] * halfW;
-      
+
       // Left Wall Quads (counter-clockwise)
       positionsList.push(...deckLeft1, ...groundLeft1, ...groundLeft2, ...deckLeft2);
       indicesList.push(
-        indexOffset, indexOffset + 1, indexOffset + 2, 
+        indexOffset, indexOffset + 1, indexOffset + 2,
         indexOffset, indexOffset + 2, indexOffset + 3
       );
       indexOffset += 4;
@@ -1333,7 +1303,7 @@ export class ProceduralGeometryGenerator {
       // Right Wall Quads (reverse winding)
       positionsList.push(...deckRight1, ...deckRight2, ...groundRight2, ...groundRight1);
       indicesList.push(
-        indexOffset, indexOffset + 1, indexOffset + 2, 
+        indexOffset, indexOffset + 1, indexOffset + 2,
         indexOffset, indexOffset + 2, indexOffset + 3
       );
       indexOffset += 4;
@@ -1446,7 +1416,7 @@ export class ProceduralGeometryGenerator {
     return meshes;
   }
 
-  private generateMetroFlyoverMeshes(mf: MetroFlyoverObject, allObjects?: Map<string, CityObject>): MeshData[] {
+  private generateMetroFlyoverMeshes(mf: MetroFlyoverObject): MeshData[] {
     const meshes: MeshData[] = [];
     const coords = mf.coordinates;
     if (coords.length < 2) return meshes;
@@ -1692,7 +1662,7 @@ export class ProceduralGeometryGenerator {
     // 3. PILLARS & PIER CAPS (DOUBLE-DECKER SYSTEM)
     // ==========================================
     const pierSpacing = mf.pierSpacing || 30;
-    
+
     // Subsample positions along path based on spacing
     const distanceList: number[] = [0];
     let totalDist = 0;
@@ -1706,15 +1676,6 @@ export class ProceduralGeometryGenerator {
       );
       totalDist += dist;
       distanceList.push(totalDist);
-    }
-
-    const allRoads: RoadObject[] = [];
-    if (allObjects) {
-      allObjects.forEach(obj => {
-        if (obj.type === 'road' && obj.id !== mf.id) {
-          allRoads.push(obj as RoadObject);
-        }
-      });
     }
 
     let currentMarker = pierSpacing / 2;
@@ -1944,10 +1905,10 @@ export class ProceduralGeometryGenerator {
    * Generates a cylinder pier geometry representing a support column
    */
   private generateCylinder(
-    lng: number, 
-    lat: number, 
-    height: number, 
-    radius: number, 
+    lng: number,
+    lat: number,
+    height: number,
+    radius: number,
     layerId?: any,
     color = '#64748b',
     baseElevation = 0
@@ -1961,7 +1922,7 @@ export class ProceduralGeometryGenerator {
     for (let hOffset = 0; hOffset <= height; hOffset += height) {
       const base = wgs84ToCartesian(lng, lat, baseElevation + hOffset);
       const up = normalize(base);
-      
+
       // Calculate right/forward vectors orthogonal to local up
       let arbitrary = [1, 0, 0] as [number, number, number];
       if (Math.abs(up[0]) > 0.9) arbitrary = [0, 1, 0];
@@ -2002,111 +1963,47 @@ export class ProceduralGeometryGenerator {
     };
   }
 
-  private getJunctionRadius(j: JunctionObject, allObjects?: Map<string, CityObject>): number {
-    if (!allObjects) return 4.0;
-    
-    let maxRoadWidth = 6.0;
-    
-    if (j.connectedRoads && j.connectedRoads.length > 0) {
-      j.connectedRoads.forEach(roadId => {
-        const road = allObjects.get(roadId);
-        if (road && road.type === 'road') {
-          const r = road as RoadObject;
-          if (r.width && r.width > maxRoadWidth) {
-            maxRoadWidth = r.width;
-          }
-        }
+  private generateJunctionMeshes(j: JunctionObject, scene?: GeometryContext): MeshData[] {
+    if (!scene) return [];
+    const [lng, lat] = j.coordinates;
+    const nearby = scene.drivablesNear(lng - 0.0003, lat - 0.0003, lng + 0.0003, lat + 0.0003);
+    const layout = junctionLayout(j.coordinates, nearby);
+    if (!layout.valid) return [];
+    // Above the overlapping approaches, without cutting their asphalt away.
+    const z = layout.elevation + 0.18;
+    const positions = layout.boundary.flatMap(p => wgs84ToCartesian(p[0], p[1], z));
+    const indices: number[] = [];
+    for (let i = 1; i < layout.boundary.length - 1; i++) indices.push(0, i, i + 1);
+    const meshes: MeshData[] = [{ positions: new Float64Array(positions), indices: new Uint32Array(indices), material: { type: 'solid', color: '#30363f' }, layerId: 'asphalt' }];
+    const kx = 111320 * Math.cos(lat * Math.PI / 180);
+    const box = (x: number, y: number, dx: number, dy: number, length: number, width: number) => {
+      const ps = [[-1, -1], [1, -1], [1, 1], [-1, 1]].flatMap(([a, b]) => {
+        const px = x + dx * length / 2 * a - dy * width / 2 * b;
+        const py = y + dy * length / 2 * a + dx * width / 2 * b;
+        return wgs84ToCartesian(lng + px / kx, lat + py / 111320, z + 0.025);
       });
-    } else {
-      Array.from(allObjects.values()).forEach(obj => {
-        if (obj.type === 'road') {
-          const r = obj as RoadObject;
-          const coords = r.coordinates;
-          if (coords.length > 0) {
-            const startPt = coords[0];
-            const endPt = coords[coords.length - 1];
-            
-            const distStart = Math.sqrt(
-              Math.pow(startPt[0] - j.coordinates[0], 2) + 
-              Math.pow(startPt[1] - j.coordinates[1], 2)
-            );
-            const distEnd = Math.sqrt(
-              Math.pow(endPt[0] - j.coordinates[0], 2) + 
-              Math.pow(endPt[1] - j.coordinates[1], 2)
-            );
-            
-            if (distStart < 0.00006 || distEnd < 0.00006) {
-              if (r.width && r.width > maxRoadWidth) {
-                maxRoadWidth = r.width;
-              }
-            }
-          }
-        }
-      });
-    }
-
-    return Math.max(3.0, maxRoadWidth / 2 + 0.5);
-  }
-
-  private generateJunctionMesh(j: JunctionObject, allObjects?: Map<string, CityObject>): MeshData {
-    const radius = this.getJunctionRadius(j, allObjects);
-    let elevation = j.coordinates[2] || 0;
-
-    if (allObjects) {
-      let maxRoadElev = elevation;
-      
-      // Determine dynamic junction elevation matching the maximum of connected elevated roads
-      if (j.connectedRoads && j.connectedRoads.length > 0) {
-        j.connectedRoads.forEach(roadId => {
-          const road = allObjects.get(roadId);
-          if (road && road.type === 'road') {
-            const r = road as RoadObject;
-            const coords = r.coordinates;
-            if (coords.length > 0) {
-              const startPt = coords[0];
-              const endPt = coords[coords.length - 1];
-              
-              const distStart = Math.sqrt(
-                Math.pow(startPt[0] - j.coordinates[0], 2) + 
-                Math.pow(startPt[1] - j.coordinates[1], 2)
-              );
-              const distEnd = Math.sqrt(
-                Math.pow(endPt[0] - j.coordinates[0], 2) + 
-                Math.pow(endPt[1] - j.coordinates[1], 2)
-              );
-              
-              if (distStart < 0.00006) {
-                const startZ = r.osmProvenance?.bridge ? 6.0 : (startPt[2] || 0);
-                if (startZ > maxRoadElev) maxRoadElev = startZ;
-              } else if (distEnd < 0.00006) {
-                const endZ = r.osmProvenance?.bridge ? 6.0 : (endPt[2] || 0);
-                if (endZ > maxRoadElev) maxRoadElev = endZ;
-              }
-            }
-          }
-        });
+      return { positions: new Float64Array(ps), indices: new Uint32Array([0, 1, 2, 0, 2, 3]), material: { type: 'solid' as const, color: '#e2e8f0' }, layerId: 'marking' as const };
+    };
+    for (const arm of layout.arms) {
+      const { dx, dy, width, reach } = arm;
+      // Stop bar covers the approaching half of an Indian left-hand-traffic road.
+      if (j.hasSignals) {
+        const side = width / 4;
+        meshes.push(box(dx * (reach + 1.3) + dy * side, dy * (reach + 1.3) - dx * side, -dy, dx, width / 2 - 0.3, 0.4));
       }
-      
-      elevation = maxRoadElev;
+      if (j.hasPedestrianCrossing) {
+        const stripes = Math.floor((width - 0.6) / 1.2);
+        for (let i = 0; i < stripes; i++) {
+          const side = (i - (stripes - 1) / 2) * 1.2;
+          meshes.push(box(dx * reach - dy * side, dy * reach + dx * side, dx, dy, 2, 0.55));
+        }
+      }
     }
-
-    return this.generateCylinder(
-      j.coordinates[0], 
-      j.coordinates[1], 
-      0.02, 
-      radius, 
-      'asphalt', 
-      '#1e293b', 
-      elevation
-    );
+    return meshes;
   }
 
   private dot(a: [number, number, number], b: [number, number, number]): number {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  }
-
-  private sub(a: [number, number, number], b: [number, number, number]): [number, number, number] {
-    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   }
 
   private generateLocalBox(
@@ -2174,7 +2071,7 @@ export class ProceduralGeometryGenerator {
   ): MeshData {
     const positionsList: number[] = [];
     const indicesList: number[] = [];
-    
+
     const stepsX = 16;
     const stepsY = 10;
 
@@ -2219,7 +2116,7 @@ export class ProceduralGeometryGenerator {
     };
   }
 
-  private generateMetroStationMeshes(station: MetroStationObject, allObjects?: Map<string, CityObject>): MeshData[] {
+  private generateMetroStationMeshes(station: MetroStationObject, allObjects?: GeometryContext): MeshData[] {
     const meshes: MeshData[] = [];
     const position = station.coordinates;
     const length = station.length || 140;
@@ -2230,77 +2127,23 @@ export class ProceduralGeometryGenerator {
     const center = wgs84ToCartesian(position[0], position[1], elevation);
     const up = normalize(center);
 
-    let forward = [0, 0, 0] as [number, number, number];
-    let right = [0, 0, 0] as [number, number, number];
-    let aligned = false;
-
-    if (allObjects) {
-      let minDist = Infinity;
-      let bestTangent = [0, 0, 0] as [number, number, number];
-
-      for (const obj of allObjects.values()) {
-        if (obj.type === 'metro_line') {
-          const line = obj as MetroLineObject;
-          const coords = line.coordinates;
-          if (coords.length < 2) continue;
-
-          const pECEF = coords.map(c => wgs84ToCartesian(c[0], c[1], elevation));
-
-          for (let i = 0; i < pECEF.length - 1; i++) {
-            const p1 = pECEF[i];
-            const p2 = pECEF[i + 1];
-
-            const v = this.sub(p2, p1);
-            const w = this.sub(center, p1);
-
-            const c1 = this.dot(w, v);
-            const c2 = this.dot(v, v);
-
-            let proj: [number, number, number];
-            if (c1 <= 0) {
-              proj = p1;
-            } else if (c2 <= c1) {
-              proj = p2;
-            } else {
-              const b = c1 / c2;
-              proj = [p1[0] + v[0] * b, p1[1] + v[1] * b, p1[2] + v[2] * b];
-            }
-
-            const distVec = this.sub(center, proj);
-            const dist = Math.sqrt(this.dot(distVec, distVec));
-
-            if (dist < minDist) {
-              minDist = dist;
-              bestTangent = normalize(v);
-            }
-          }
-        }
-      }
-
-      if (minDist < 100) {
-        const dotVal = this.dot(bestTangent, up);
-        const tangentProj = [
-          bestTangent[0] - up[0] * dotVal,
-          bestTangent[1] - up[1] * dotVal,
-          bestTangent[2] - up[2] * dotVal
-        ] as [number, number, number];
-
-        forward = normalize(tangentProj);
-        right = normalize(cross(forward, up));
-        aligned = true;
-      }
-    }
-
-    if (!aligned) {
-      let arbitrary = [1, 0, 0] as [number, number, number];
-      if (Math.abs(up[0]) > 0.9) arbitrary = [0, 1, 0];
-      right = normalize(cross(up, arbitrary));
-      forward = normalize(cross(up, right));
-    }
+    // Long axis follows the nearest track (default) or the user-set heading.
+    const tracks = allObjects ? [...allObjects.ofType('metro_line'), ...allObjects.ofType('metro_flyover')] : [];
+    const { heading } = resolveStationHeading(station, tracks);
+    const lonR = (position[0] * Math.PI) / 180;
+    const latR = (position[1] * Math.PI) / 180;
+    const hR = (heading * Math.PI) / 180;
+    const east = [-Math.sin(lonR), Math.cos(lonR), 0];
+    const north = [-Math.sin(latR) * Math.cos(lonR), -Math.sin(latR) * Math.sin(lonR), Math.cos(latR)];
+    const dir = [0, 1, 2].map(i => north[i] * Math.cos(hR) + east[i] * Math.sin(hR)) as [number, number, number];
+    // Remove any component along our (geocentric) up so the box stays level
+    const dirUp = this.dot(dir, up);
+    const forward = normalize([dir[0] - up[0] * dirUp, dir[1] - up[1] * dirUp, dir[2] - up[2] * dirUp]);
+    const right = normalize(cross(forward, up));
 
     // A. Concrete Pillars (4 rectangular support columns from ground level to concourse deck)
     const pillarHeight = elevation - 2.0;
-    
+
     const ox = (width - 2) / 3;
     const oy = (length - 20) / 3;
     const pillarOffsets = [
@@ -2493,7 +2336,7 @@ export class ProceduralGeometryGenerator {
 
     // Utilities are rendered as a subterranean 3D ribbon profile
     const ribbon = this.generateRibbon(coords, -thickness / 2, thickness / 2, -depth, thickness);
-    
+
     let color = '#38bdf8'; // water: blue
     if (utility.utilityType === 'electricity') color = '#eab308'; // electric: yellow
     if (utility.utilityType === 'sewage') color = '#a1a1aa'; // sewage: grey

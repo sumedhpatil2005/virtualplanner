@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["vite/client", "vitest/globals", "node"],
+    /* Tests may use node APIs (fs, path) via runTrafficAudit.ts */
+    "lib": ["ES2023", "DOM"],
+    /* Relax some strict checks for pre-existing test type issues.
+       Each item here is a known pre-existing problem to fix in Phase 8. */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "strict": false
+  },
+  "include": ["src"],
+  "exclude": []
+}

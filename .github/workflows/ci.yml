@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, p0, "phase/*"]
+  pull_request:
+    branches: [main]
+
+# Only one CI run per branch at a time; cancel in-flight runs on new pushes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Frontend — TypeScript, lint, tests
+  # ────────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (tsc + lint + vitest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Copy .env for CI
+        run: cp .env.example .env
+
+      # Type check — must pass before tests run
+      - name: TypeScript type check
+        run: npx tsc --noEmit --project tsconfig.app.json
+
+      # Linting
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      # Unit / integration tests via Vitest
+      - name: Run tests
+        run: npm test
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Backend — pytest
+  # ────────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Seed the database
+        run: python seed.py
+
+      - name: Run pytest
+        run: pytest -v --tb=short

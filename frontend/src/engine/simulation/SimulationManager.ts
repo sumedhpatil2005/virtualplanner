@@ -5,6 +5,26 @@ import type { VehicleAgent } from './VehicleAgent';
 import { interpolateCoordsAlongPolyline } from './VehicleAgent';
 import { VehicleVisualizer } from '../rendering/renderers/VehicleVisualizer';
 import { renderManagerInstance } from '../rendering/RenderManager';
+import { boundingBoxAreaKm2 } from '../objects/geo';
+
+export const FLOOD_UNAVAILABLE_REASON =
+  'Flood modelling is not available: the project has no terrain elevation, rainfall or drainage data to compute it from.';
+
+/** Assumed share of residents making a trip in the peak hour (shown next to the result). */
+export const PEAK_HOUR_TRIP_RATE = 0.45;
+
+/**
+ * Level of service from a volume/capacity ratio, using Highway Capacity Manual
+ * v/c thresholds: A ≤ 0.60, B ≤ 0.70, C ≤ 0.80, D ≤ 0.90, E ≤ 1.00, F > 1.00.
+ */
+export function levelOfServiceForRatio(vc: number): 'A' | 'B' | 'C' | 'D' | 'E' | 'F' {
+  if (vc <= 0.6) return 'A';
+  if (vc <= 0.7) return 'B';
+  if (vc <= 0.8) return 'C';
+  if (vc <= 0.9) return 'D';
+  if (vc <= 1.0) return 'E';
+  return 'F';
+}
 
 export interface TrafficSimResult {
   averageSpeed: number; // km/h
@@ -22,8 +42,9 @@ export interface FloodSimResult {
 
 export interface PopulationSimResult {
   totalPopulation: number;
-  averageDensity: number; // people/sq km
-  peakMovementVolume: number; // vehicles or pedestrian trips
+  averageDensity: number; // people/sq km over extentKm2
+  extentKm2: number; // bounding-box area of all building footprints
+  peakMovementVolume: number; // trips/h, assuming PEAK_HOUR_TRIP_RATE of residents travel
   demandMetrics: {
     waterTotal: number; // Liters/day
     electricityTotal: number; // kWh/day
@@ -78,6 +99,12 @@ export class SimulationManager {
   }
 
   public startSimulation(type: SimulationType, objects: CityObject[], onComplete?: () => void) {
+    if (type === 'flood') {
+      // There is no elevation, rainfall or drainage data to model flooding with.
+      // Previously this produced random depths; refusing is the honest answer.
+      (window as any).showToast?.(FLOOD_UNAVAILABLE_REASON, 'error');
+      return;
+    }
     if (this.isSimulating[type]) return;
     this.isSimulating[type] = true;
     this.notify();
@@ -87,9 +114,7 @@ export class SimulationManager {
     } else {
       // Simulate async running process for non-traffic models
       setTimeout(() => {
-        if (type === 'flood') {
-          this.runFloodSim(objects);
-        } else if (type === 'population') {
+        if (type === 'population') {
           this.runPopulationSim(objects);
         }
         this.isSimulating[type] = false;
@@ -113,7 +138,7 @@ export class SimulationManager {
         this.visualizer.clear();
         this.visualizer = null;
       }
-      
+
       // Restore default road colors
       const engine = (window as any).engineInstance;
       if (engine) {
@@ -136,7 +161,7 @@ export class SimulationManager {
   private findClosestNode(objId: string, objects: CityObject[], network: TrafficNetwork): string | null {
     const obj = objects.find(o => o.id === objId);
     if (!obj) return null;
-    
+
     let coords: [number, number, number] = [0, 0, 0];
     if (obj.type === 'building') {
       const b = obj as BuildingObject;
@@ -156,7 +181,7 @@ export class SimulationManager {
         coords = g.coordinates[0];
       }
     }
-    
+
     // Find closest node
     let minDist = Infinity;
     let closestNodeId: string | null = null;
@@ -169,15 +194,17 @@ export class SimulationManager {
         closestNodeId = node.id;
       }
     });
-    
+
     return closestNodeId;
   }
 
   private runTrafficSim(objects: CityObject[], onComplete?: () => void) {
     const engine = (window as any).engineInstance;
     if (!engine) {
+      console.warn('Traffic simulation aborted: engine instance not ready.');
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.('Traffic simulation failed: TwinCity Engine not ready.', 'error');
       return;
     }
 
@@ -186,9 +213,15 @@ export class SimulationManager {
     const viewer = engine.getViewer();
 
     if (!network || network.nodes.size === 0 || !viewer) {
-      console.warn('Traffic simulation aborted: network or viewer not ready.');
+      const reason = !viewer
+        ? '3D Viewport canvas not initialized'
+        : (!network || network.nodes.size === 0)
+          ? 'No road network found. Draw roads or import OSM infrastructure first'
+          : 'Traffic network not ready';
+      console.warn('Traffic simulation aborted:', reason);
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.(`Traffic simulation aborted: ${reason}.`, 'error');
       return;
     }
 
@@ -202,15 +235,15 @@ export class SimulationManager {
     this.tickCount = 0;
 
     const nodes = Array.from(network.nodes.keys());
-    
+
     // 1. Spawning Agents from travel demand matrix snaps
     if (demandMatrix && demandMatrix.trips && demandMatrix.trips.length > 0) {
       demandMatrix.trips.forEach((trip: any) => {
         if (this.activeAgents.length >= 80) return; // Cap at 80 demand trips
-        
+
         const startNodeId = this.findClosestNode(trip.originId, objects, network);
         const endNodeId = this.findClosestNode(trip.destinationId, objects, network);
-        
+
         if (startNodeId && endNodeId && startNodeId !== endNodeId) {
           const path = Pathfinder.findPath(network, startNodeId, endNodeId);
           if (path && path.length > 0) {
@@ -235,7 +268,7 @@ export class SimulationManager {
       const startNodeId = nodes[Math.floor(Math.random() * nodes.length)];
       const endNodeId = nodes[Math.floor(Math.random() * nodes.length)];
       if (startNodeId === endNodeId) continue;
-      
+
       const path = Pathfinder.findPath(network, startNodeId, endNodeId);
       if (path && path.length > 0) {
         this.activeAgents.push({
@@ -254,14 +287,24 @@ export class SimulationManager {
     console.log(`[SIMULATION] Spawned ${this.initialAgentCount} agents.`);
 
     if (this.initialAgentCount === 0) {
-      console.warn('Traffic simulation aborted: no routable paths could be resolved.');
+      const msg = 'Traffic simulation aborted: No valid routable paths could be resolved between network nodes. Ensure roads connect at shared junctions.';
+      console.warn(msg);
       this.isSimulating.traffic = false;
       this.notify();
+      (window as any).showToast?.(msg, 'error');
       return;
     }
 
     // 3. Real-time Tick Update Loop (ticks every 100ms with dt = 1.0s)
     const dt = 1.0;
+    // Road lookup built once per run, not filtered from every object on every tick
+    const tintableRoads = new Map(
+      (objects.filter(o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') as (RoadObject | FlyoverObject | MetroFlyoverObject)[])
+        .map(r => [r.id, r])
+    );
+    // Roads given a congestion colour on the previous tick; the only ones that may need resetting
+    let tintedLastTick = new Set<string>();
+
     this.simInterval = setInterval(() => {
       this.tickCount++;
 
@@ -324,9 +367,14 @@ export class SimulationManager {
         }
       });
 
-      // Dynamic edge painting on the GPU (live traffic flow visual)
-      const roads = objects.filter(o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') as (RoadObject | FlyoverObject | MetroFlyoverObject)[];
-      roads.forEach(road => {
+      // Dynamic edge painting on the GPU (live traffic flow visual).
+      // Only occupied roads, plus roads that were tinted last tick and have emptied.
+      const toPaint = new Set<string>(tintedLastTick);
+      roadOccupancy.forEach((_, roadId) => toPaint.add(roadId));
+      const tintedThisTick = new Set<string>();
+      toPaint.forEach(roadId => {
+        const road = tintableRoads.get(roadId);
+        if (!road) return;
         const count = roadOccupancy.get(road.id) || 0;
         const laneCount = road.laneCount || 2;
         const congestion = count / (laneCount * 1.5);
@@ -342,8 +390,10 @@ export class SimulationManager {
           // Default class colors
           color = road.roadClass === 'highway' ? '#0f172a' : road.roadClass === 'collector' ? '#334155' : road.roadClass === 'local' ? '#475569' : '#1e293b';
         }
+        if (congestion > 0.1) tintedThisTick.add(road.id);
         renderManagerInstance.setRoadColor(road.id, color);
       });
+      tintedLastTick = tintedThisTick;
 
     }, 100);
   }
@@ -365,11 +415,14 @@ export class SimulationManager {
     let roadCount = 0;
 
     const roads = objects.filter(o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') as (RoadObject | FlyoverObject | MetroFlyoverObject)[];
+    const losCounts: Record<keyof TrafficSimResult['levelOfService'], number> = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
     roads.forEach(road => {
       const peakCount = this.roadPeakOccupancy.get(road.id) || 0;
       const laneCount = road.laneCount || 2;
-      const congestionFactor = Math.min(1.0, peakCount / (laneCount * 2));
-      
+      const volumeCapacityRatio = peakCount / (laneCount * 2);
+      const congestionFactor = Math.min(1.0, volumeCapacityRatio);
+      losCounts[levelOfServiceForRatio(volumeCapacityRatio)]++;
+
       congestedRoadIds[road.id] = congestionFactor;
 
       const freeSpeed = road.speedLimit || 50;
@@ -382,37 +435,23 @@ export class SimulationManager {
       renderManagerInstance.setRoadColor(road.id, defaultColor);
     });
 
-    const averageSpeed = roadCount > 0 ? Math.round(totalSpeed / roadCount) : 48;
+    const averageSpeed = roadCount > 0 ? Math.round(totalSpeed / roadCount) : 0;
     const travelTimeIndex = Math.min(2.5, 1.0 + (1.0 - averageSpeed / 50));
 
-    // Compile levels of service based on congestion distribution
-    let cCount = 0, hCount = 0, mCount = 0, fCount = 0;
-    roads.forEach(r => {
-      const c = congestedRoadIds[r.id] || 0;
-      if (c > 0.8) cCount++;
-      else if (c > 0.4) hCount++;
-      else if (c > 0.1) mCount++;
-      else fCount++;
-    });
-
-    const total = roads.length || 1;
-    const a = Math.round((fCount / total) * 50);
-    const b = Math.round((fCount / total) * 30);
-    const c = Math.round((mCount / total) * 12);
-    const d = Math.round((mCount / total) * 5);
-    const e = Math.round((hCount / total) * 2.5);
-    const f = Math.round((cCount / total) * 0.5);
+    // Share of roads (%) in each level of service — sums to 100 when there are roads
+    const total = roads.length;
+    const pct = (n: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0);
 
     this.trafficResults = {
       averageSpeed,
       travelTimeIndex,
       levelOfService: {
-        A: Math.max(5, a),
-        B: Math.max(5, b),
-        C: Math.max(2, c),
-        D: Math.max(2, d),
-        E: Math.max(1, e),
-        F: Math.max(1, f)
+        A: pct(losCounts.A),
+        B: pct(losCounts.B),
+        C: pct(losCounts.C),
+        D: pct(losCounts.D),
+        E: pct(losCounts.E),
+        F: pct(losCounts.F)
       },
       congestedRoadIds
     };
@@ -424,46 +463,13 @@ export class SimulationManager {
     if (onComplete) onComplete();
   }
 
-  private runFloodSim(objects: CityObject[]) {
-    const buildings = objects.filter(o => o.type === 'building');
-    const roads = objects.filter(o => o.type === 'road');
-    
-    const floodedBuildingIds: Record<string, number> = {};
-    let affectedPop = 0;
-    
-    buildings.forEach((b) => {
-      if (b.type === 'building') {
-        const isFlooded = Math.random() > 0.6;
-        if (isFlooded) {
-          const depth = Math.round((Math.random() * 2.5 + 0.1) * 10) / 10;
-          floodedBuildingIds[b.id] = depth;
-          affectedPop += b.population;
-        }
-      }
-    });
-
-    const floodedRoadIds: Record<string, number> = {};
-    roads.forEach((r) => {
-      if (Math.random() > 0.5) {
-        floodedRoadIds[r.id] = Math.round((Math.random() * 1.5 + 0.1) * 10) / 10;
-      }
-    });
-
-    this.floodResults = {
-      waterDepthMax: 2.8,
-      floodedBuildingIds,
-      affectedPopulation: affectedPop,
-      floodedRoadIds
-    };
-  }
-
   private runPopulationSim(objects: CityObject[]) {
     const buildings = objects.filter(o => o.type === 'building');
-    
+
     let totalPop = 0;
     let totalWater = 0;
     let totalElec = 0;
-    
+
     buildings.forEach((b) => {
       if (b.type === 'building') {
         totalPop += b.population;
@@ -472,10 +478,14 @@ export class SimulationManager {
       }
     });
 
+    // Density over the bounding box of all building footprints (not an assumed 0.5 km²)
+    const extentKm2 = boundingBoxAreaKm2(buildings.flatMap(b => b.coordinates as number[][]));
+
     this.populationResults = {
       totalPopulation: totalPop,
-      averageDensity: Math.round(totalPop / 0.5),
-      peakMovementVolume: Math.round(totalPop * 0.45),
+      averageDensity: extentKm2 > 0 ? Math.round(totalPop / extentKm2) : 0,
+      extentKm2,
+      peakMovementVolume: Math.round(totalPop * PEAK_HOUR_TRIP_RATE),
       demandMetrics: {
         waterTotal: totalWater,
         electricityTotal: totalElec,

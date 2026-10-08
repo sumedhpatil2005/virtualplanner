@@ -1,0 +1,70 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env.local
+ENV/
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+# Never commit the binary DB; use seed.py to recreate
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ─── Frontend ─────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+frontend/public/Cesium/
+
+# ─── Environment / Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+# Example template is safe to commit — un-ignore it:
+!.env.example
+
+# ─── SUMO Outputs ─────────────────────────────────────────────────────────────
+# Generated network files are reproducible from source data
+sumo_tmp/
+*.net.xml
+*.rou.xml
+*.sumocfg
+sumo_output/
+*.fcd.xml
+*.tripinfo.xml
+
+# ─── IDE / OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ─── TypeScript build cache ───────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ─── OpenStreetMap extracts and the road index built from them ───────────────
+backend/data/
