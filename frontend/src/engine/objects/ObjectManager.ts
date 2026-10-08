@@ -5,6 +5,7 @@ import { remapRoadSections, repairRoadSections } from './roadSections';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
+import { BridgeFeasibilityEngine } from '../simulation/BridgeFeasibilityEngine';
 
 /** Objects per save request, and requests in flight at once, when saving many objects. */
 const SAVE_CHUNK = 1000;
@@ -254,6 +255,53 @@ export class ObjectManager {
       this.syncRoadProperties(fresh as RoadObject);
     } else if (fresh.type === 'flyover' || fresh.type === 'metro_flyover') {
       applyFlyoverElevationProfile(fresh);
+
+      // Run bridge feasibility checks using ground-level coordinates (before elevation applied)
+      const flyover = fresh as any;
+      const groundCoords: [number, number, number][] = flyover.groundCoordinates && flyover.groundCoordinates.length > 1
+        ? flyover.groundCoordinates
+        : flyover.coordinates;
+
+      const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
+
+      const engine = new BridgeFeasibilityEngine();
+      const feasibility = engine.run(
+        groundCoords,
+        flyover.elevation ?? 6.0,
+        flyover.laneCount ?? 4,
+        surfaceRoads
+      );
+
+      flyover.feasibilityResult = feasibility;
+
+      // Apply surface road capacity reductions for each impacted road
+      const impactedIds: string[] = [];
+      for (const impact of feasibility.surfaceRoadImpacts) {
+        const road = this.objects.get(impact.roadId) as RoadObject | undefined;
+        if (!road) continue;
+
+        impactedIds.push(impact.roadId);
+
+        const updatedRoad: RoadObject = {
+          ...road,
+          trafficCapacity: impact.reducedCapacity,
+          flyoverImpact: {
+            flyoverId: fresh.id,
+            flyoverName: fresh.name,
+            capacityReductionPercent: impact.capacityReductionPercent,
+            originalCapacity: impact.originalCapacity,
+            reason: impact.reason
+          },
+          updatedAt: new Date().toISOString()
+        };
+
+        this.objects.set(road.id, updatedRoad);
+        // Sync road update to backend without triggering a full onChange cascade here;
+        // the flyover's own notify() call below will handle the rebuild.
+        if (!skipSync) this.syncPost(updatedRoad);
+      }
+
+      flyover.surfaceRoadIds = impactedIds;
     }
 
     this.objects.set(obj.id, fresh);

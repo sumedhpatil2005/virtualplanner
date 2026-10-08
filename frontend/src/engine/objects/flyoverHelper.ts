@@ -91,15 +91,24 @@ export function applyFlyoverElevationProfile(flyover: any) {
 
   const baseCoords = flyover.groundCoordinates;
 
-  // Apply profile to coordinates
+  // Apply profile to coordinates.
+  // RAMP_FOOT_CLEARANCE: The ramp starts 0.25m above ground so the base road
+  // surface is always visible beneath the ramp ends (prevents z-fighting with surface road).
+  const RAMP_FOOT_CLEARANCE = 0.25;
+
   flyover.coordinates = baseCoords.map((c: any, i: number) => {
     const d = distanceList[i];
     let offset = 0;
     if (d < actualRampLength) {
-      offset = (d / actualRampLength) * elevation;
+      const t = d / actualRampLength;
+      // Smooth cubic ease-in for ramp rise: t³ ensures a gradual start
+      const easedT = t * t * (3 - 2 * t); // smoothstep
+      offset = RAMP_FOOT_CLEARANCE + easedT * (elevation - RAMP_FOOT_CLEARANCE);
     } else if (d > totalDist - actualRampLength) {
       const remaining = totalDist - d;
-      offset = (remaining / actualRampLength) * elevation;
+      const t = remaining / actualRampLength;
+      const easedT = t * t * (3 - 2 * t);
+      offset = RAMP_FOOT_CLEARANCE + easedT * (elevation - RAMP_FOOT_CLEARANCE);
     } else {
       offset = elevation;
     }
