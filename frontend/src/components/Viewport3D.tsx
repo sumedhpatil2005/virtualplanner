@@ -87,8 +87,8 @@ const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = 
   place_station: () => 'Placing Metro Station: click on the map to place one',
   draw_gateway: () => 'Placing Gateway: click on or near a boundary road to place one',
   import_osm: n => n > 0
-    ? `Import OSM: ${n} boundary points placed. Add more, then press "Save Area" in the tool panel`
-    : 'Import OSM: click 3+ points to outline an area, Save Area, then select it and choose what to import',
+    ? `Study area: ${n} boundary points placed. Add more, then choose "Create and import" in the tool panel`
+    : 'Study area: click 3+ points to outline an area, then choose Create and import',
 };
 
 const DrawingHUD: React.FC = () => {

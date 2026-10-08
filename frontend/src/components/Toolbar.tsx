@@ -1,25 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Building,
   Undo2,
   Redo2,
   Construction,
-  Train,
   Globe,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { EditingMode } from '../engine/editing/EditingEngine';
 import { TOOLS } from './tools';
-import { OverpassCancelledError } from '../engine/editing/OverpassClient';
-
-const reportImportError = (err: any) => {
-  if (err instanceof OverpassCancelledError) {
-    (window as any).showToast?.('Import cancelled. Nothing was added.', 'info');
-    return;
-  }
-  console.error(err);
-  (window as any).showToast?.(`Import failed: ${err?.message || err}`, 'error');
-};
+import { INFRASTRUCTURE_CATEGORIES, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from '../engine/editing/studyAreaImport';
+import type { Area } from '../engine/objects/types';
+import { STUDY_AREA_ROADS_PREFIX } from '../engine/simulation/osmCoverage';
 
 /** Build mode's drawing and editing tools. */
 export const Toolbar: React.FC = () => {
@@ -34,6 +26,10 @@ export const Toolbar: React.FC = () => {
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [showNameModal, setShowNameModal] = useState(false);
   const [areaName, setAreaName] = useState('');
+  const [categories, setCategories] = useState<InfrastructureCategory[]>([...INFRASTRUCTURE_CATEGORIES]);
+  const [progress, setProgress] = useState<StudyAreaImportProgress | null>(null);
+  const [report, setReport] = useState<StudyAreaImportReport | null>(null);
+  const [savingBoundary, setSavingBoundary] = useState(false);
 
   // Sync state with engine
   useEffect(() => {
@@ -42,7 +38,10 @@ export const Toolbar: React.FC = () => {
       setActiveMode(mode);
       setIsImporting(engineInstance.editing.getIsImporting());
       setDrawingPointsCount(engineInstance.editing.getDrawingPoints().length);
-      setSavedAreas(engineInstance.editing.getSavedAreas());
+      setSavedAreas(engineInstance.editing.getSavedAreas().filter(area => !area.id.startsWith(STUDY_AREA_ROADS_PREFIX)));
+      setProgress(engineInstance.editing.studyAreaImportProgress ? { ...engineInstance.editing.studyAreaImportProgress } : null);
+      const currentReport = engineInstance.editing.studyAreaImportReport;
+      setReport(currentReport ? { ...currentReport, categories: currentReport.categories.map(c => ({ ...c })) } : null);
     });
 
     const unsubSelection = engineInstance.selection.onChange(() => {
@@ -58,7 +57,7 @@ export const Toolbar: React.FC = () => {
     // Initial check
     setCanUndo(engineInstance.history.canUndo());
     setCanRedo(engineInstance.history.canRedo());
-    setSavedAreas(engineInstance.editing.getSavedAreas());
+    setSavedAreas(engineInstance.editing.getSavedAreas().filter(area => !area.id.startsWith(STUDY_AREA_ROADS_PREFIX)));
     setActiveMode(engineInstance.editing.getMode());
 
     return () => {
@@ -94,15 +93,19 @@ export const Toolbar: React.FC = () => {
       (window as any).showToast?.("Area name cannot be empty.", "error");
       return;
     }
+    if (!categories.length) { (window as any).showToast?.('Choose at least one infrastructure category.', 'error'); return; }
     try {
-      const newArea = await engineInstance.editing.saveArea(areaName);
+      if (savingBoundary) return;
+      setSavingBoundary(true);
+      const newArea = await engineInstance.editing.saveArea(areaName.trim());
       (window as any).showToast?.(`Area "${newArea.name}" saved successfully to project!`, "success");
       setShowNameModal(false);
       // Auto-select the newly saved area
       engineInstance.selection.selectSingle(newArea.id);
+      await handleImportAll(newArea);
     } catch (err: any) {
       (window as any).showToast?.(err.message || "Failed to save area.", "error");
-    }
+    } finally { setSavingBoundary(false); }
   };
 
   const handleAreaSelect = (areaId: string) => {
@@ -110,10 +113,10 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleDeleteArea = async (areaId: string) => {
-    if (confirm("Are you sure you want to delete this saved Area boundary and ALL its imported OSM infrastructure? The infrastructure deletion can be undone with Ctrl+Z.")) {
+    if (confirm("Delete this saved study area boundary? Imported infrastructure is kept.")) {
       try {
-        await engineInstance.editing.deleteArea(areaId, true);
-        (window as any).showToast?.("Area and associated infrastructure deleted from project.", "info");
+        await engineInstance.editing.deleteArea(areaId);
+        (window as any).showToast?.("Study area boundary deleted. Imported infrastructure is kept.", "info");
         engineInstance.selection.selectSingle(null);
       } catch (err: any) {
         (window as any).showToast?.(err.message || "Failed to delete area.", "error");
@@ -121,57 +124,28 @@ export const Toolbar: React.FC = () => {
     }
   };
 
-  const handleImportRoads = async () => {
-    const activeArea = savedAreas.find(a => a.id === selectedAreaId);
-    if (!activeArea) return;
+  const activeArea: Area | undefined = savedAreas.find(a => a.id === selectedAreaId) ?? (selectedAreaId ? engineInstance.editing.studyAreaFromZone(selectedAreaId) ?? undefined : undefined);
+
+  const handleImportAll = async (area = activeArea, selected = categories) => {
+    if (!area) return;
     try {
-      (window as any).showToast?.(`Querying Overpass API for roads in "${activeArea.name}"...`, "info");
-      const count = await engineInstance.editing.importOSMRoadsInsideArea(activeArea, 'base');
-      const skipped = Object.values(engineInstance.editing.lastRoadImportSkipped).reduce((a, b) => a + b, 0);
-      const skippedNote = skipped > 0 ? ` Skipped ${skipped} footpaths, cycleways and other ways vehicles can't use.` : '';
-      (window as any).showToast?.(`Successfully imported ${count} roads inside "${activeArea.name}"!${skippedNote}`, "success");
-    } catch (err: any) {
-      reportImportError(err);
-    }
+      const outcome = await engineInstance.editing.importStudyArea(area, engineInstance.scenarios.getActiveScenarioId(), selected);
+      const added = outcome.categories.filter(c => c.category !== 'signals').reduce((n, c) => n + c.added, 0);
+      (window as any).showToast?.(`${outcome.cancelled ? 'Import cancelled' : outcome.completed ? 'Import saved' : 'Import partially complete'}: ${added} new objects. See the study area summary.`, outcome.completed ? 'success' : 'info');
+    } catch (err: any) { (window as any).showToast?.(err.message || 'Import failed.', 'error'); }
   };
 
-  const handleImportBuildings = async () => {
-    const activeArea = savedAreas.find(a => a.id === selectedAreaId);
-    if (!activeArea) return;
-    try {
-      const startTime = performance.now();
-      (window as any).showToast?.(`Querying Overpass API for buildings in "${activeArea.name}"...`, "info");
-      const count = await engineInstance.editing.importOSMBuildingsInsideArea(activeArea, 'base');
-      const endTime = performance.now();
-
-      const importTimeSec = ((endTime - startTime) / 1000).toFixed(1);
-      const fps = (window as any).twincity_fps || 60;
-      const primitivesCount = engineInstance.getPrimitivesCount();
-      const mem = (performance as any).memory;
-      const heapMB = mem ? Math.round(mem.usedJSHeapSize / (1024 * 1024)) : 0;
-
-      (window as any).showToast?.(
-        `Import: ${count} buildings in ${importTimeSec}s | FPS: ${fps} | Primitives: ${primitivesCount} | Heap: ${heapMB}MB`,
-        "success"
-      );
-    } catch (err: any) {
-      reportImportError(err);
-    }
-  };
-
-  const handleImportMetro = async () => {
-    const activeArea = savedAreas.find(a => a.id === selectedAreaId);
-    if (!activeArea) return;
-    try {
-      (window as any).showToast?.(`Querying Overpass API for subway network in "${activeArea.name}"...`, "info");
-      const result = await engineInstance.editing.importOSMMetroInsideArea(activeArea, 'base');
-      (window as any).showToast?.(`Successfully imported ${result.lines} metro lines and ${result.stations} stations inside "${activeArea.name}"!`, "success");
-    } catch (err: any) {
-      reportImportError(err);
-    }
-  };
-
-  const activeArea = savedAreas.find(a => a.id === selectedAreaId);
+  const categoryChoices = (
+    <fieldset className="flex flex-col gap-1 text-xs text-slate-300" disabled={isImporting || savingBoundary}>
+      <legend className="text-slate-400 mb-1">Infrastructure to import</legend>
+      {INFRASTRUCTURE_CATEGORIES.map(category => (
+        <label key={category} className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={categories.includes(category)} onChange={event => setCategories(current => event.target.checked ? [...current, category] : current.filter(c => c !== category))} />
+          {category === 'metro' ? 'Metro lines and stations' : category === 'signals' ? 'Mapped traffic signals' : category.charAt(0).toUpperCase() + category.slice(1)}
+        </label>
+      ))}
+    </fieldset>
+  );
 
   return (
     <div data-coach="toolbar" className="relative z-40 flex items-center gap-2 pointer-events-auto w-max">
@@ -197,11 +171,12 @@ export const Toolbar: React.FC = () => {
 
                 {/* Floating active sub-settings directly below button (above would clip off-screen) */}
                 {isActive && activeMode !== 'select' && (
-                  <div className="absolute top-14 left-1/2 transform -translate-x-1/2 glass-panel rounded-xl p-2.5 flex flex-col gap-2 w-60 text-sm shadow-2xl border border-indigo-500/10 animate-fade-in">
+                  <div className="absolute top-14 left-1/2 transform -translate-x-1/2 bg-slate-950/95 backdrop-blur-xl rounded-xl p-2.5 flex flex-col gap-2 w-60 text-sm shadow-2xl border border-indigo-500/20 animate-fade-in">
                     <div className="font-semibold text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-1">
                       <Construction size={12} className="text-indigo-400" />
                       <span>Settings</span>
                     </div>
+                    {activeMode === 'draw_junction' && <p className="text-xs text-slate-300 leading-relaxed">Move onto a road connection. The cyan footprint shows the roads that will join; red means placement is unavailable. Click to place, then use Select to edit signals and crossings.</p>}
 
                     {(activeMode === 'draw_road' || activeMode === 'draw_flyover') && (
                       <div className="flex flex-col gap-0.5">
@@ -258,7 +233,7 @@ export const Toolbar: React.FC = () => {
                     )}
 
                     {activeMode === 'import_osm' && (
-                      <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+                      <div className="flex flex-col gap-2 max-h-[calc(100vh-23rem)] min-h-48 overflow-y-auto">
                         <div className="text-xs text-slate-400 font-medium leading-relaxed">
                           {drawingPointsCount > 0 ? (
                             <div className="flex flex-col gap-1.5">
@@ -268,7 +243,7 @@ export const Toolbar: React.FC = () => {
                                   onClick={handleFinishArea}
                                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded py-1 font-bold text-xs cursor-pointer"
                                 >
-                                  Save Area
+                                  {savingBoundary ? 'Saving…' : 'Create and import'}
                                 </button>
                                 <button
                                   onClick={() => engineInstance.editing.clearDrawing()}
@@ -279,13 +254,13 @@ export const Toolbar: React.FC = () => {
                               </div>
                             </div>
                           ) : (
-                            <span>Draw an area boundary by clicking 3+ points on the map.</span>
+                            <span>Click 3+ points to draw a study area, or select a saved area or demand zone.</span>
                           )}
                         </div>
 
                         {/* List of Saved Areas */}
                         <div className="border-t border-white/5 pt-2 flex flex-col gap-1.5">
-                          <label className="text-xs text-slate-500 uppercase font-semibold">Saved Areas</label>
+                          <label className="text-xs text-slate-500 uppercase font-semibold">Saved study areas</label>
                           {savedAreas.length === 0 ? (
                             <span className="text-xs text-slate-600 italic">No saved areas yet</span>
                           ) : (
@@ -295,14 +270,13 @@ export const Toolbar: React.FC = () => {
                                 return (
                                   <div
                                     key={area.id}
-                                    onClick={() => handleAreaSelect(area.id)}
                                     className={`flex items-center justify-between rounded p-1.5 cursor-pointer border text-xs transition-all ${
                                       isSelected
                                         ? 'bg-indigo-950/30 text-indigo-400 border-indigo-500/30 font-semibold'
                                         : 'bg-slate-900/60 text-slate-300 border-slate-700/30 hover:bg-slate-800/40'
                                     }`}
                                   >
-                                    <span className="truncate max-w-[80px]">{area.name}</span>
+                                    <button type="button" aria-pressed={isSelected} onClick={() => handleAreaSelect(area.id)} className="truncate flex-1 text-left cursor-pointer">{area.name}</button>
                                     {isSelected && (
                                       <button
                                         onClick={(e) => {
@@ -328,27 +302,22 @@ export const Toolbar: React.FC = () => {
                             <div className="text-xs text-indigo-400 font-semibold bg-indigo-950/40 rounded p-1 text-center">
                               Selected: {activeArea.name}
                             </div>
-                            <button
-                              onClick={handleImportRoads}
-                              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded py-1.5 font-bold text-xs cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-emerald-600/10"
-                            >
-                              <Globe size={10} />
-                              Import Roads
+                            {categoryChoices}
+                            <button onClick={() => handleImportAll()} disabled={!categories.length || isImporting}
+                              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded py-1.5 font-bold text-xs cursor-pointer flex items-center justify-center gap-1">
+                              <Globe size={10} /> {categories.length === 4 ? 'Import all infrastructure' : 'Import selected infrastructure'}
                             </button>
-                            <button
-                              onClick={handleImportBuildings}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded py-1.5 font-bold text-xs cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-blue-600/10"
-                            >
-                              <Building size={10} />
-                              Import Buildings
-                            </button>
-                            <button
-                              onClick={handleImportMetro}
-                              className="w-full bg-purple-600 hover:bg-purple-500 text-white rounded py-1.5 font-bold text-xs cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-purple-600/10"
-                            >
-                              <Train size={10} />
-                              Import Metro
-                            </button>
+                            <p className="text-xs text-slate-500">Existing objects and manual edits are preserved. Full connecting roads crossing the boundary are retained.</p>
+                          </div>
+                        )}
+                        {report && !isImporting && (
+                          <div className="border-t border-white/10 pt-2 text-xs flex flex-col gap-1" role="status">
+                            <strong className="text-slate-200">{report.cancelled ? 'Cancelled' : report.completed ? 'Saved' : 'Partial import'} · {report.areaName}</strong>
+                            {report.categories.map(c => <div key={c.category} className={c.error ? 'text-amber-300' : 'text-slate-400'}>
+                              {c.category}: {c.error ? `failed — ${c.error}` : c.category === 'signals' ? `${c.added} mapped signals available` : `${c.added} added, ${c.preserved} preserved, ${c.skipped} unsupported/skipped`} {c.source && !c.error ? `(${c.source})` : ''}
+                            </div>)}
+                            {report.categories.some(c => c.error) && activeArea && <button className="text-indigo-300 underline" onClick={() => handleImportAll(activeArea, report.categories.filter(c => c.error).map(c => c.category))}>Retry failed categories</button>}
+                            {report.cancelled && activeArea && <button className="text-indigo-300 underline" onClick={() => handleImportAll()}>Resume import</button>}
                           </div>
                         )}
                       </div>
@@ -384,13 +353,13 @@ export const Toolbar: React.FC = () => {
           </button>
         </div>
 
-      {isImporting && (
+      {isImporting && createPortal(
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center z-[9999] pointer-events-auto">
           <div className="glass-panel p-6 rounded-2xl flex flex-col items-center gap-4 max-w-sm border border-indigo-500/20 text-center shadow-2xl" role="dialog" aria-modal="true" aria-label="Importing from OpenStreetMap">
             <Globe className="text-indigo-400 animate-spin" size={40} />
             <div>
-              <h3 className="text-slate-100 font-semibold text-sm">Querying OpenStreetMap</h3>
-              <p className="text-slate-400 text-xs mt-1">Downloading data inside the selected area. Busy mirrors are skipped automatically; each request times out after 60 s.</p>
+              <h3 className="text-slate-100 font-semibold text-sm">{progress ? `${progress.phase === 'saving' ? 'Saving' : 'Loading'} ${progress.category}` : 'Importing study area'}</h3>
+              <p className="text-slate-400 text-xs mt-1">{progress ? `${progress.completed} of ${progress.total} categories complete. ` : ''}Completed categories stay saved if you cancel. Any save already in progress will finish.</p>
             </div>
             <button
               onClick={() => engineInstance.editing.cancelImport()}
@@ -401,16 +370,17 @@ export const Toolbar: React.FC = () => {
             </button>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* Name Input Modal Dialog */}
-      {showNameModal && (
+      {showNameModal && createPortal(
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center z-[9999] pointer-events-auto">
           <div className="glass-panel p-6 rounded-2xl flex flex-col gap-4 max-w-sm border border-indigo-500/20 shadow-2xl animate-scale-in">
             <div className="flex flex-col gap-1 text-center">
-              <h3 className="text-slate-100 font-semibold text-sm">Save Area Boundary</h3>
-              <p className="text-slate-400 text-xs">Enter a descriptive name for this permanent project area boundary.</p>
+              <h3 className="text-slate-100 font-semibold text-sm">Create study area</h3>
+              <p className="text-slate-400 text-xs">Name the boundary and choose the infrastructure to import.</p>
             </div>
+            {categoryChoices}
             <input
               type="text"
               autoFocus
@@ -426,9 +396,10 @@ export const Toolbar: React.FC = () => {
             <div className="flex gap-2 text-xs font-semibold">
               <button
                 onClick={handleSaveAreaConfirm}
+                disabled={savingBoundary || !categories.length}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-2 cursor-pointer transition-all"
               >
-                Save Area
+                {savingBoundary ? 'Saving…' : 'Create and import'}
               </button>
               <button
                 onClick={() => setShowNameModal(false)}
@@ -439,7 +410,7 @@ export const Toolbar: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 };

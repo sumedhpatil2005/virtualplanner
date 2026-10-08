@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  MousePointerClick, Pause, Play, RotateCcw, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair,
+  MousePointerClick, Pause, Play, RotateCcw, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, Target, GitCompareArrows, Flag, X,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSimulationMode } from '../hooks/useSimulationMode';
@@ -44,7 +44,7 @@ export const SimulationPanel: React.FC = () => {
   return (
     <SidePanel label="Simulate traffic">
       <PanelHeader
-        title={hasRoad ? sim.seedRoadIds.map(roadName).join(' + ') : 'Simulate traffic'}
+        title={hasRoad ? sim.seedRoadIds.map(roadName).join(' + ') : 'Traffic lab'}
         subtitle={hasRoad ? `Traffic within ${formatDistanceM(sim.rangeMeters)} along the roads` : 'Pick a distance, then click a road'}
         onBack={hasRoad ? () => mode.clearSeeds() : undefined}
         backLabel="Choose another road"
@@ -114,7 +114,10 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             </span>
           </div>
           <TrafficControls traffic={traffic} waiting={osmRoads.status === 'loading' ? 'Waiting for roads' : signals.status === 'loading' ? 'Loading signals' : null} />
+          {traffic.demand && <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">{traffic.demand.source === 'project-estimate' ? `Project demand · ${traffic.demand.period.replace('_', ' ').replace('Peak', 'peak')}` : 'Synthetic traffic'}</p><p className="mt-1 text-xs leading-relaxed text-slate-400">{traffic.demand.label}</p></div>}
           <SignalsNote signals={signals} />
+          <VehicleInspector sim={sim} />
+          <ScenarioExperiment sim={sim} />
           {traffic.metrics && <LiveFigures traffic={traffic} seedRoadIds={sim.seedRoadIds} />}
           <NetworkChecks problems={area.problems} provisional={osmRoads.status === 'loading'} />
           <Assumptions seed={traffic.seed} />
@@ -130,8 +133,8 @@ const SignalsNote: React.FC<{ signals: SignalsState }> = ({ signals }) => {
   const text =
     signals.status === 'loading' ? 'Loading the real traffic signals from OpenStreetMap…'
     : signals.status === 'error' ? 'OpenStreetMap could not be reached, so signals are placed where two main roads cross.'
-    : signals.count === 0 ? 'OpenStreetMap shows no traffic signals in this area, so every junction is give-way.'
-    : `${signals.count} real traffic signal${signals.count === 1 ? '' : 's'} from OpenStreetMap control the junctions here.`;
+    : signals.count === 0 ? 'No signals mapped in OpenStreetMap here. Your placed junction controls take precedence.'
+    : `${signals.count} mapped traffic signal${signals.count === 1 ? '' : 's'} found. Your placed junction controls take precedence.`;
   return <p className={`text-xs ${signals.status === 'error' ? 'text-amber-300/80' : 'text-slate-500'}`}>{text}</p>;
 };
 
@@ -153,7 +156,7 @@ const TrafficControls: React.FC<{ traffic: TrafficRunState; waiting: string | nu
       {traffic.error && <Notice tone="warn" icon={AlertTriangle}>{traffic.error}</Notice>}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 pt-1">
         <span className="text-sm text-slate-400">Routes</span>
-        <Segmented label="Where traffic goes" options={ROUTE_OPTIONS} value={traffic.focus ? 'focus' : 'natural'} onChange={v => mode.setFocus(v === 'focus')} />
+        {traffic.demand?.source === 'project-estimate' ? <span className="text-xs text-indigo-300">Project origins and destinations</span> : <Segmented label="Where traffic goes" options={ROUTE_OPTIONS} value={traffic.focus ? 'focus' : 'natural'} onChange={v => mode.setFocus(v === 'focus')} />}
         <span className="text-sm text-slate-400">Volume</span>
         <Segmented label="Traffic volume" options={LEVEL_OPTIONS} value={nearestLevel(traffic.demandLevel)} onChange={v => mode.setDemandLevel(v)} />
         <span className="text-sm text-slate-400">Speed</span>
@@ -172,6 +175,56 @@ const TrafficControls: React.FC<{ traffic: TrafficRunState; waiting: string | nu
 const nearestLevel = (v: number) =>
   TRAFFIC_LEVELS.reduce((best, l) => (Math.abs(l.value - v) < Math.abs(best.value - v) ? l : best)).value;
 
+const VehicleInspector: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+  if (sim.selectedVehicleId === null) return <p className="text-xs text-slate-500">Click a moving vehicle to inspect it. Shift+click adds a road to the study.</p>;
+  const mode = engineInstance.simMode;
+  const vehicle = mode.inspectVehicle(sim.selectedVehicleId);
+  return <section className="rounded-xl border border-cyan-400/25 bg-cyan-500/5 p-3 space-y-2">
+    <div className="flex justify-between items-center"><span className="text-sm font-semibold text-cyan-100">{vehicle ? vehicle.kind.replaceAll('_', ' ') : 'Vehicle'} #{sim.selectedVehicleId}</span><button aria-label="Close vehicle inspector" onClick={() => mode.selectVehicle(null)} className="cursor-pointer text-slate-400 hover:text-white"><X size={15} /></button></div>
+    {vehicle ? <><p className="text-xs text-slate-300">{Math.round(vehicle.speedKmh)} km/h · {Math.round(vehicle.speedRatio * 100)}% of road speed limit · {vehicle.focus ? 'Uses selected road' : 'Area traffic'}</p><Button size="sm" variant="ghost" icon={Crosshair} onClick={() => mode.flyTo([vehicle.lng, vehicle.lat, vehicle.z])}>Locate vehicle</Button></> : <p className="text-xs text-slate-400">This vehicle has left the active simulation.</p>}
+  </section>;
+};
+
+/** Both columns come from fresh, equal-duration runs with the same frozen trips. */
+const ScenarioExperiment: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+  const mode = engineInstance.simMode;
+  const { baseline, current, staleReason, running } = sim.comparison;
+  const [error, setError] = useState<string | null>(null);
+  const run = async (baselineRun: boolean) => {
+    setError(null);
+    try { await (baselineRun ? mode.captureBaseline(300) : mode.runComparison()); }
+    catch (e) { setError(e instanceof Error ? e.message : 'The experiment could not finish.'); }
+  };
+  const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
+  const before = baseline?.metrics, after = current?.metrics;
+  const delayReduction = before?.meanDelayS != null && after?.meanDelayS != null && before.meanDelayS > 0.1
+    ? (before.meanDelayS - after.meanDelayS) / before.meanDelayS * 100 : null;
+  const complete = !!before && !!after && delayReduction !== null && delayReduction >= 10 && after.completedTrips >= before.completedTrips && after.onNetwork + after.waitingToEnter <= before.onNetwork + before.waitingToEnter && after.gridlockRemovals <= before.gridlockRemovals && after.unroutable <= before.unroutable;
+  const scenarioName = (id: string) => engineInstance.scenarios.getAll().find(s => s.id === id)?.name ?? id;
+  const rows: [string, string, string][] = before && after ? [
+    ['Trips completed', String(before.completedTrips), String(after.completedTrips)],
+    ['Mean trip time', before.meanTravelTimeS === null ? '—' : `${before.meanTravelTimeS.toFixed(1)} s`, after.meanTravelTimeS === null ? '—' : `${after.meanTravelTimeS.toFixed(1)} s`],
+    ['Mean delay', before.meanDelayS === null ? '—' : `${before.meanDelayS.toFixed(1)} s`, after.meanDelayS === null ? '—' : `${after.meanDelayS.toFixed(1)} s`],
+    ['Travel-time ratio', before.delayIndex === null ? '—' : `${before.delayIndex.toFixed(2)}×`, after.delayIndex === null ? '—' : `${after.delayIndex.toFixed(2)}×`],
+    ['Stops per trip', before.stopsPerTrip === null ? '—' : before.stopsPerTrip.toFixed(1), after.stopsPerTrip === null ? '—' : after.stopsPerTrip.toFixed(1)],
+    ['Unfinished trips', String(before.onNetwork + before.waitingToEnter), String(after.onNetwork + after.waitingToEnter)],
+    ['Removed / unroutable', String(before.gridlockRemovals + before.unroutable), String(after.gridlockRemovals + after.unroutable)],
+  ] : [];
+  return <section className="overflow-hidden rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/10 to-slate-900/50">
+    <div className="p-3 space-y-3">
+      <div className="flex items-center gap-2"><Target size={17} className="text-indigo-300" /><h3 className="text-sm font-semibold text-white">Make the city flow</h3><span className="ml-auto text-[10px] uppercase tracking-wide text-indigo-300">5-minute trial</span></div>
+      <p className="text-xs text-slate-300 leading-relaxed">Reduce excess travel time by 10% while completing at least as many trips. Save a baseline, improve the roads or signals in Build, then test the change.</p>
+      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className={`h-full transition-all ${complete ? 'bg-emerald-400' : 'bg-indigo-400'}`} style={{ width: `${delayReduction === null ? 0 : Math.max(0, Math.min(100, delayReduction * 10))}%` }} /></div>
+      <p className={`text-xs ${complete ? 'text-emerald-300' : 'text-slate-400'}`}>{complete ? 'Objective achieved in this modelled trial' : delayReduction === null ? 'Run both trials to measure progress' : `${delayReduction.toFixed(1)}% less excess travel time · check trip totals below`}</p>
+      <div className="flex gap-2"><Button size="sm" icon={running ? Loader2 : Flag} spin={running} disabled={busy} onClick={() => void run(true)}>{baseline ? 'Replace baseline' : 'Save baseline'}</Button><Button size="sm" variant="primary" icon={GitCompareArrows} disabled={busy || !baseline} onClick={() => void run(false)}>Test change</Button></div>
+      {running && <p role="status" className="text-xs text-cyan-300">Running a repeatable trial…</p>}
+      {baseline && <p className="text-xs text-slate-400">Baseline: {scenarioName(baseline.scenarioId)} · {baseline.durationS / 60} min · seed {baseline.seed}</p>}
+      {(error || staleReason) && <p role="status" className="text-xs text-amber-300">{error || staleReason}</p>}
+    </div>
+    {rows.length > 0 && <div className="border-t border-white/10 p-3"><table className="w-full text-xs tabular-nums"><caption className="text-left mb-2 text-slate-400">Same demand, duration and random seed</caption><thead><tr className="text-slate-500"><th className="text-left pb-2 font-medium">Result</th><th className="text-right pb-2 font-medium">Before</th><th className="text-right pb-2 font-medium">After</th></tr></thead><tbody>{rows.map(([label, a, b]) => <tr key={label} className="border-t border-white/5"><th className="py-2 text-left font-normal text-slate-400">{label}</th><td className="text-right text-slate-300">{a}</td><td className="text-right text-white">{b}</td></tr>)}</tbody></table><p className="mt-2 text-[11px] text-slate-500">Travel results cover completed trips. Always compare unfinished and removed trips too.</p></div>}
+  </section>;
+};
+
 const LiveFigures: React.FC<{ traffic: TrafficRunState; seedRoadIds: string[] }> = ({ traffic, seedRoadIds }) => {
   const m = traffic.metrics!;
   const delayPct = m.delayIndex === null ? null : Math.round((m.delayIndex - 1) * 100);
@@ -185,6 +238,8 @@ const LiveFigures: React.FC<{ traffic: TrafficRunState; seedRoadIds: string[] }>
           <Figure label="Vehicles on the roads" value={m.onNetwork.toLocaleString()} hint={m.waitingToEnter > 0 ? `${m.waitingToEnter.toLocaleString()} queuing to enter` : undefined} tone={m.waitingToEnter > 50 ? 'warn' : undefined} />
           <Figure label="Average speed" value={m.meanSpeedKmh === null ? '—' : `${Math.round(m.meanSpeedKmh)} km/h`} />
           <Figure label="Trips completed" value={m.completedTrips.toLocaleString()} />
+          <Figure label="Mean trip time" value={m.meanTravelTimeS === null ? '—' : `${Math.round(m.meanTravelTimeS)} s`} hint="completed trips, includes entry queues" />
+          <Figure label="Mean delay" value={m.meanDelayS === null ? '—' : `${Math.round(m.meanDelayS)} s`} hint="completed trips vs. empty roads" />
           <Figure
             label="Extra travel time"
             value={delayPct === null ? '—' : `${delayPct > 0 ? '+' : ''}${delayPct}%`}
@@ -235,7 +290,7 @@ const NetworkChecks: React.FC<{ problems: StudyProblem[]; provisional: boolean }
   if (shown.length === 0) {
     return (
       <Notice tone="good" icon={CheckCircle2}>
-        {provisional ? 'No connection problems so far.' : 'The roads in this area connect up properly.'}
+        {provisional ? 'No connection problems found so far.' : 'No connection problems found by the network checks.'}
       </Notice>
     );
   }
@@ -274,9 +329,9 @@ const Assumptions: React.FC<{ seed: number }> = ({ seed }) => {
     <details className="text-sm text-slate-400">
       <summary className="cursor-pointer text-slate-300 hover:text-white">How the traffic is modelled</summary>
       <ul className="list-disc pl-5 mt-2 space-y-1.5 text-xs leading-relaxed">
-        <li>Vehicles arrive at random where roads enter the area and leave by the exits they can reach. Volume is a share of the entering roads' lane capacity ({Object.entries(LANE_CAPACITY_VPH).map(([k, v]) => `${k} ${v}`).join(', ')} vehicles/h per lane): Light 5%, Normal 12%, Heavy 25%.</li>
+        <li>Project demand estimates trips from buildings, zones and gateways. When those inputs are absent, synthetic arrivals use a share of road capacity ({Object.entries(LANE_CAPACITY_VPH).map(([k, v]) => `${k} ${v}`).join(', ')} vehicles/h per lane): Light 5%, Normal 12%, Heavy 25%. These are planning estimates, not measured traffic counts.</li>
         <li>Fleet: {fleet}. Traffic keeps left and follows the car-following model used in research simulators (IDM).</li>
-        <li>Junctions with a traffic signal on OpenStreetMap are signalised; if the map cannot be reached, signals go where two main roads cross. Each runs a fixed {SIGNAL_GREEN_S} s green, {SIGNAL_AMBER_S} s amber, {SIGNAL_ALL_RED_S} s all-red per direction. Elsewhere the smaller road gives way.</li>
+        <li>Your placed junctions control signals and cycle length. Other mapped signals use {SIGNAL_GREEN_S} s green, {SIGNAL_AMBER_S} s amber, {SIGNAL_ALL_RED_S} s all-red per direction. If the map cannot be reached, signals are estimated where two main roads cross. Elsewhere the smaller road gives way.</li>
         <li>OpenStreetMap bridges and flyovers are raised to deck height with ramps, so they pass over the roads below. Roads you build join any road their ends stop within 25 m of.</li>
         <li>The roads around the study area are checked against OpenStreetMap (once a fortnight per place) and any that are missing are loaded, so the study runs on every mapped road.</li>
         <li>With Routes set to Through this road, extra trips enter at the area edge, drive along the selected road and leave by another edge. Their volume is {Math.round(FOCUS_LOAD_PER_LEVEL * 100) / 100}× the volume share of the selected road's capacity (Light {Math.round(TRAFFIC_LEVELS[0].value * FOCUS_LOAD_PER_LEVEL * 100)}%, Normal {Math.round(TRAFFIC_LEVELS[1].value * FOCUS_LOAD_PER_LEVEL * 100)}%, Heavy {Math.round(TRAFFIC_LEVELS[2].value * FOCUS_LOAD_PER_LEVEL * 100)}%). Entries and exits for which the road is on or near the fastest way through are used most.</li>

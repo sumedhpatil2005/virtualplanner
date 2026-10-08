@@ -37,9 +37,13 @@ export class TrafficSignalSource {
   /** Signals inside `bounds`. Rejects if OpenStreetMap cannot be reached and nothing is cached. */
   public async signalsIn(bounds: Bounds, signal?: AbortSignal): Promise<SignalPoint[]> {
     // The backend's OSM extract, where it covers the area: complete and quick, nothing to cache
-    if (this.local && (await this.local.covers([bounds]))) {
-      return (await this.local.signals([bounds])).map(n => [n.lon, n.lat] as SignalPoint);
-    }
+    try {
+      if (this.local && (await this.local.covers([bounds]))) {
+        const nodes = await this.local.signals([bounds]);
+        if (signal?.aborted) throw new Error('Signal loading cancelled.');
+        return nodes.filter(n => Number.isFinite(n.lon) && Number.isFinite(n.lat)).map(n => [n.lon, n.lat] as SignalPoint);
+      }
+    } catch (error) { if (signal?.aborted) throw error; }
     const tiles: { key: string; tx: number; ty: number }[] = [];
     for (let tx = Math.floor(bounds.minLng / TILE_DEG); tx <= Math.floor(bounds.maxLng / TILE_DEG); tx++) {
       for (let ty = Math.floor(bounds.minLat / TILE_DEG); ty <= Math.floor(bounds.maxLat / TILE_DEG); ty++) {
@@ -63,16 +67,17 @@ export class TrafficSignalSource {
         .join('');
       const data = await this.overpass.query(`[out:json][timeout:30];(${parts});out skel qt;`, signal);
       if (typeof data?.remark === 'string') throw new Error(`OpenStreetMap did not finish the query: ${data.remark}`);
+      if (!Array.isArray(data?.elements)) throw new Error('OpenStreetMap returned an invalid signal result.');
       const byTile = new Map<string, SignalPoint[]>(missing.map(t => [t.key, []]));
       for (const el of data?.elements ?? []) {
-        if (el.type !== 'node' || typeof el.lon !== 'number') continue;
+        if (el.type !== 'node' || !Number.isFinite(el.lon) || !Number.isFinite(el.lat)) continue;
         byTile.get(tileKey(Math.floor(el.lon / TILE_DEG), Math.floor(el.lat / TILE_DEG)))?.push([el.lon, el.lat]);
       }
       const now = Date.now();
       byTile.forEach((points, key) => this.memory.set(key, points));
       // An all-empty answer may come from a mirror with partial data: use it now, but don't keep it
       if ([...byTile.values()].some(p => p.length > 0)) {
-        void cachePutMany<CachedTile>('osm-signals', [...byTile].map(([key, points]) => [key, { fetchedAt: now, points }]));
+        await cachePutMany<CachedTile>('osm-signals', [...byTile].map(([key, points]) => [key, { fetchedAt: now, points }]));
       }
     }
 

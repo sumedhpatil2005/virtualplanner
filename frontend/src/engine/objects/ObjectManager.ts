@@ -1,6 +1,7 @@
 import type { CityObject, RoadObject, RoadSectionProfile, CarriagewayProfile, RoadsideProfile } from './types';
 import { applyFlyoverElevationProfile } from './flyoverHelper';
-import { bridgeHeights } from './bridgeElevation';
+import { bridgeGeometry } from './bridgeElevation';
+import { remapRoadSections, repairRoadSections } from './roadSections';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
@@ -109,8 +110,9 @@ export class ObjectManager {
    * update, so the renderer redraws them.
    */
   public liftBridges() {
-    bridgeHeights(this.objects.values()).forEach((coordinates, road) => {
-      this.objects.set(road.id, { ...road, coordinates });
+    bridgeGeometry(this.objects.values()).forEach(({ coordinates, originalIndices }, road) => {
+      const sections = remapRoadSections(repairRoadSections(road), road.coordinates, coordinates, originalIndices);
+      this.objects.set(road.id, { ...road, coordinates, sections });
     });
   }
 
@@ -127,11 +129,12 @@ export class ObjectManager {
   }
 
   public syncRoadProperties(road: RoadObject) {
-    if (!road.sections || road.sections.length === 0) {
+    road.sections = repairRoadSections(road);
+    if (road.sections.length === 0) {
       road.sections = this.synthesizeDefaultSections(road);
     }
     if (!road.sourceCoordinates) {
-      road.sourceCoordinates = [...road.coordinates];
+      road.sourceCoordinates = road.coordinates.map(point => [...point] as [number, number, number]);
     }
     
     const sec = road.sections[0];
@@ -290,7 +293,7 @@ export class ObjectManager {
     this.notify(new Set(freshObjs.map(o => o.type)));
 
     if (!skipSync && freshObjs.length > 0) {
-      this.syncPostMultiple(freshObjs).catch((e) => {
+      this.syncPostMultiple(freshObjs.map(obj => this.objects.get(obj.id)!)).catch((e) => {
         console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
         (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
       });
@@ -308,6 +311,11 @@ export class ObjectManager {
     } as CityObject;
 
     if (updated.type === 'road') {
+      // Explicit sections (undo/redo and section-aware editors) already refer
+      // to the supplied geometry. Otherwise carry profiles through the edit.
+      if (existing.type === 'road' && updates.coordinates && !Object.hasOwn(updates, 'sections')) {
+        updated.sections = remapRoadSections(existing.sections ?? [], existing.coordinates, updated.coordinates);
+      }
       this.syncRoadProperties(updated as RoadObject);
     } else if (updated.type === 'flyover' || updated.type === 'metro_flyover') {
       applyFlyoverElevationProfile(updated);

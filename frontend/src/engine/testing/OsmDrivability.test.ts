@@ -67,6 +67,8 @@ describe('classifyOsmWay', () => {
 });
 
 describe('OSM road import', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const saveLocally = (om: ObjectManager) => vi.spyOn(om, 'addMultipleAndSave').mockImplementation(async objects => { om.addMultiple(objects, true); });
   const way = (id: number, tags: Record<string, string>) => ({
     type: 'way',
     id,
@@ -84,8 +86,8 @@ describe('OSM road import', () => {
   it('imports only vehicle roads and reports what it skipped', async () => {
     const om = new ObjectManager();
     const editing = new EditingEngine(om, {} as any);
-    (editing as any).fetchFromOverpass = async () => ({
-      elements: [
+    saveLocally(om);
+    (editing as any).fetchAreaElements = async () => [
         way(1, { highway: 'residential' }),
         way(2, { highway: 'footway' }),
         way(3, { highway: 'footway' }),
@@ -95,8 +97,7 @@ describe('OSM road import', () => {
         way(7, { highway: 'service', access: 'private' }),
         way(8, { highway: 'pedestrian' }),
         way(9, { highway: 'primary', motor_vehicle: 'no' }),
-      ],
-    });
+      ];
 
     const count = await editing.importOSMRoadsInsideArea(area, 'base');
 
@@ -127,7 +128,8 @@ describe('OSM road import', () => {
     om.add(oldFootway, true);
     const before = JSON.parse(JSON.stringify(om.getById('osm_99')));
 
-    (editing as any).fetchFromOverpass = async () => ({ elements: [way(11, { highway: 'residential' }), way(12, { highway: 'footway' })] });
+    saveLocally(om);
+    (editing as any).fetchAreaElements = async () => [way(11, { highway: 'residential' }), way(12, { highway: 'footway' })];
     await editing.importOSMRoadsInsideArea(area, 'base');
 
     expect(om.getAll().map(o => o.id).sort()).toEqual(['osm_11', 'osm_99']);

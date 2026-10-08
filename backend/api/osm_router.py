@@ -40,3 +40,21 @@ def osm_ways(bbox: str = Query(..., description=BBOX_HELP)):
 @router.get("/osm/signals")
 def osm_signals(bbox: str = Query(..., description=BBOX_HELP)):
     return {"elements": index.signals(_boxes(bbox))}
+
+
+@router.get("/osm/buildings")
+def osm_buildings(bbox: str = Query(..., description=BBOX_HELP)):
+    return _infrastructure("buildings", bbox)
+
+
+@router.get("/osm/metro")
+def osm_metro(bbox: str = Query(..., description=BBOX_HELP)):
+    return _infrastructure("metro", bbox)
+
+
+def _infrastructure(category: str, bbox: str):
+    boxes = _boxes(bbox)
+    try:
+        return {"elements": index.infrastructure(category, boxes)}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))

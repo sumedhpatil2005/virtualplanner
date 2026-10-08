@@ -113,3 +113,20 @@ html, body, #root {
   pointer-events: none;
   z-index: 9999;
 }
+
+.build-toolbar { top: 4.25rem; left: 50%; transform: translateX(-50%); }
+@media (max-width: 1560px) {
+  .build-toolbar { top: 13rem; }
+}
+@media (max-width: 1200px) {
+  .build-toolbar { left: 1rem; transform: none; }
+  .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
+}
+.simulation-hud { max-width: calc(100vw - 25rem); }
+@media (max-width: 1050px) {
+  .simulation-hud > div:nth-child(2) { gap: .65rem; padding: .65rem; }
+  .simulation-hud > div:nth-child(2) > div:nth-last-child(2) { display: none; }
+}
+@media (max-width: 760px) {
+  .simulation-hud { display: none; }
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { RoadObject, RoadClassification } from '../objects/types';
+import type { RoadObject, RoadClassification, JunctionObject } from '../objects/types';
 import { StudyAreaExplorer, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { TrafficMicroSim, STEP_S, idmAcceleration, VEHICLE_TYPES, type MicroSimOptions } from '../simulation/TrafficMicroSim';
 
@@ -84,6 +84,59 @@ describe('IDM car-following', () => {
 });
 
 describe('TrafficMicroSim', () => {
+  it('uses placed signals and cycle length, while an unsignalled override removes an estimated signal', () => {
+    const c = { cls: 'collector' as const };
+    const { area, map } = areaFor([road('ew', [-400, 0], [400, 0], c), road('ns', [0, -400], [0, 400], c)], 'ew', 500);
+    const j = { id: 'j', type: 'junction', coordinates: pt(0, 0), connectedRoads: ['ew', 'ns'], hasSignals: true, signalTiming: 20 } as JunctionObject;
+    const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 42, junctions: [j] });
+    const west = linkBetween(area, [-400, 0], [0, 0]);
+    expect(sim.signalStateOf(west)).toBe('green');
+    run(sim, 10); expect(sim.signalStateOf(west)).toBe('red');
+    run(sim, 10); expect(sim.signalStateOf(west)).toBe('green');
+    const noSignals = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 42, junctions: [{ ...j, hasSignals: false }] });
+    expect(noSignals.getMetrics().signals).toBe(0);
+    expect(noSignals.signalStateOf(west)).toBeNull();
+    const above = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 42, junctions: [{ ...j, coordinates: [j.coordinates[0], j.coordinates[1], 12], hasSignals: false }] });
+    expect(above.getMetrics().signals).toBe(1);
+  });
+  it('travels continuously through a right-angle turn without a position or heading jump', () => {
+    const rs = [road('west', [-600, 0], [0, 0]), road('north', [0, 0], [0, 600])];
+    const { area, map } = areaFor(rs, 'west', 500);
+    const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 42 });
+    expect(sim.spawnVehicle(nodeAt(area, -600, 0), nodeAt(area, 0, 600), 'car')).toBe(true);
+    let last: { lng: number; lat: number; heading: number } | null = null;
+    let turningSamples = 0;
+    run(sim, 200, () => sim.forEachVehicle(v => {
+      if (last) {
+        const travelled = Math.hypot((v.lng - last.lng) / M_LNG, (v.lat - last.lat) / M_LAT);
+        expect(travelled).toBeLessThan(5);
+        const angle = Math.abs(Math.atan2(Math.sin(v.heading - last.heading), Math.cos(v.heading - last.heading)));
+        expect(angle).toBeLessThan(.8);
+      }
+      if (v.heading > .1 && v.heading < Math.PI / 2 - .1) turningSamples++;
+      last = { ...v };
+    }));
+    expect(turningSamples).toBeGreaterThan(3);
+    expect(sim.getMetrics().completedTrips).toBe(1);
+  });
+  it('turns a platoon through a wide junction without stalling or passing a stop line', () => {
+    // Wide roads give long turn paths: past the stop line the old speed ramp went
+    // below zero and froze turning vehicles inside the junction.
+    const wide = { cls: 'arterial' as const, lanes: 6 };
+    const rs = [road('west', [-600, 0], [0, 0], wide), road('north', [0, 0], [0, 600], wide)];
+    const { area, map } = areaFor(rs, 'west', 500);
+    const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 42 });
+    for (let i = 0; i < 6; i++) expect(sim.spawnVehicle(nodeAt(area, -600, 0), nodeAt(area, 0, 600), 'car')).toBe(true);
+    let slowestTurning = Infinity;
+    run(sim, 240, () => sim.debugLanes().forEach(lanes => lanes.forEach(lane => lane.forEach((v, i) => {
+      if (v.crossing) slowestTurning = Math.min(slowestTurning, v.v);
+      // Only the front vehicle, once cleared, may pass its line
+      if (i > 0 && !v.crossing) expect(v.pos).toBeLessThanOrEqual(v.stopLine + 1e-6);
+    }))));
+    expect(sim.getMetrics().completedTrips).toBe(6);
+    expect(slowestTurning).toBeGreaterThan(1);
+    expect(sim.getMetrics().gridlockRemovals).toBe(0);
+  });
   it('enters and leaves where roads cross the area edge', () => {
     const { area, map } = corridor(2, 2);
     const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 1 });
@@ -138,7 +191,6 @@ describe('TrafficMicroSim', () => {
     expect(sim.getSourceNodes()).toContain(west);
     const westArm = linkBetween(area, [-400, 0], [0, 0]);
     const eastArm = linkBetween(area, [0, 0], [400, 0]);
-    const armLength = sim.linkLength(westArm)!;
 
     const where = new Map<number, string>();
     let stoppedAtRed = 0;
@@ -149,7 +201,7 @@ describe('TrafficMicroSim', () => {
       sim.step();
       sim.debugLanes().forEach((lanes, linkId) => lanes.flat().forEach(v => {
         if (where.get(v.id) === westArm && linkId === eastArm && stateBefore === 'red') crossedOnRed++;
-        if (linkId === westArm && stateBefore === 'red' && v.v < 0.3 && armLength - v.pos < 3) stoppedAtRed++;
+        if (linkId === westArm && stateBefore === 'red' && v.v < 0.3 && v.stopLine - v.pos < 3) stoppedAtRed++;
         where.set(v.id, linkId);
       }));
     }

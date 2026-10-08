@@ -1,5 +1,6 @@
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
 import { elevatedLayer } from '../../objects/bridgeElevation';
+import { junctionLayout } from '../../objects/junctionLayout';
 import { ROAD_CLASS_LIFT_M } from '../../objects/roadSurface';
 import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
 import { resolveStationHeading } from '../../objects/stationAlignment';
@@ -49,44 +50,6 @@ function normalize(v: [number, number, number]): [number, number, number] {
   return [v[0] / len, v[1] / len, v[2] / len];
 }
 
-function shortenPathAtStart(coords: [number, number, number][], distMeters: number): [number, number, number][] {
-  if (coords.length < 2) return coords;
-  const newCoords = [...coords.map(c => [...c] as [number, number, number])];
-  let remaining = distMeters;
-
-  while (newCoords.length >= 2 && remaining > 0) {
-    const p1 = newCoords[0];
-    const p2 = newCoords[1];
-
-    const lonMetersPerDegree = 111000 * Math.cos((p1[1] * Math.PI) / 180);
-    const latMetersPerDegree = 111000;
-
-    const dx = (p2[0] - p1[0]) * lonMetersPerDegree;
-    const dy = (p2[1] - p1[1]) * latMetersPerDegree;
-    const len = Math.sqrt(dx * dx + dy * dy);
-
-    if (len <= remaining) {
-      remaining -= len;
-      newCoords.shift();
-    } else {
-      const t = remaining / len;
-      newCoords[0] = [
-        p1[0] + t * (p2[0] - p1[0]),
-        p1[1] + t * (p2[1] - p1[1]),
-        p1[2] + t * (p2[2] - p1[2])
-      ];
-      break;
-    }
-  }
-  return newCoords;
-}
-
-function shortenPathAtEnd(coords: [number, number, number][], distMeters: number): [number, number, number][] {
-  const reversed = [...coords.map(c => [...c] as [number, number, number])].reverse();
-  const shortened = shortenPathAtStart(reversed, distMeters);
-  return shortened.reverse();
-}
-
 export class ProceduralGeometryGenerator {
   /**
    * Translates a CityObject configuration to a group of MeshData meshes
@@ -126,7 +89,7 @@ export class ProceduralGeometryGenerator {
         return [this.generateUtilityMesh(obj as UtilityObject)];
       }
       if (obj.type === 'junction') {
-        return [this.generateJunctionMesh(obj as JunctionObject, allObjects)];
+        return this.generateJunctionMeshes(obj as JunctionObject, allObjects);
       }
     } catch (err) {
       console.error(`Failed to generate procedural geometry for object ${obj.id}:`, err);
@@ -469,33 +432,6 @@ export class ProceduralGeometryGenerator {
       ? road.sections
       : this.synthesizeDefaultSectionsForGenerator(road);
 
-    // Resolve junctions
-    const isAtJunction = (pt: [number, number, number]) => {
-      if (!allObjects) return undefined;
-      return allObjects.junctionsNear(pt[0], pt[1]).find(j => {
-        const dx = j.coordinates[0] - pt[0];
-        const dy = j.coordinates[1] - pt[1];
-        return (dx * dx + dy * dy) < 0.000000004;
-      });
-    };
-
-    const getJunctionRadius = (j: JunctionObject) => {
-      let maxRoadWidth = 6.0;
-      if (j.connectedRoads && j.connectedRoads.length > 0 && allObjects) {
-        j.connectedRoads.forEach(roadId => {
-          const rObj = allObjects.all.get(roadId);
-          if (rObj && rObj.type === 'road') {
-            const rWidth = (rObj as RoadObject).width || 6.0;
-            if (rWidth > maxRoadWidth) maxRoadWidth = rWidth;
-          }
-        });
-      }
-      return Math.max(3.0, maxRoadWidth / 2 + 0.5);
-    };
-
-    const jStart = isAtJunction(roadCoords[0]);
-    const jEnd = isAtJunction(roadCoords[roadCoords.length - 1]);
-
     // One asphalt grey, a shade darker for bigger roads: where roads overlap at a
     // junction the surface reads as one, not as patches of different colours
     let asphaltColor = '#2b313b'; // default: arterial
@@ -512,33 +448,10 @@ export class ProceduralGeometryGenerator {
       const endIdx = Math.max(startIdx, Math.min(section.endNodeIndex, coords.length - 1));
       if (endIdx - startIdx < 1) continue;
 
-      let sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
+      const sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
       const offsets = this.calculateOffsetsForSection(section);
 
-      // Shorten coordinates at junctions to prevent overlapping meshes
-      let totalLength = 0;
-      for (let i = 0; i < sectionCoords.length - 1; i++) {
-        const p1 = sectionCoords[i];
-        const p2 = sectionCoords[i + 1];
-        const lonMetersPerDegree = 111000 * Math.cos((p1[1] * Math.PI) / 180);
-        const latMetersPerDegree = 111000;
-        const dx = (p2[0] - p1[0]) * lonMetersPerDegree;
-        const dy = (p2[1] - p1[1]) * latMetersPerDegree;
-        totalLength += Math.sqrt(dx * dx + dy * dy);
-      }
-
-      const shortenStart = (startIdx === 0 && jStart) ? getJunctionRadius(jStart) : 0;
-      const shortenEnd = (endIdx === roadCoords.length - 1 && jEnd) ? getJunctionRadius(jEnd) : 0;
-
-      if (shortenStart + shortenEnd < totalLength * 0.75) {
-        if (shortenStart > 0) {
-          sectionCoords = shortenPathAtStart(sectionCoords, shortenStart);
-        }
-        if (shortenEnd > 0) {
-          sectionCoords = shortenPathAtEnd(sectionCoords, shortenEnd);
-        }
-      }
-
+      // Keep the road surface continuous. The junction surface overlaps its approaches.
       // Footpaths, kerbs, medians and lane markings stop where other roads meet or
       // cross this one, so junctions are clean asphalt rather than criss-crossed
       const pieces = this.junctionPieces(sectionCoords, road, allObjects);
@@ -1889,97 +1802,43 @@ export class ProceduralGeometryGenerator {
     };
   }
 
-  private getJunctionRadius(j: JunctionObject, allObjects?: GeometryContext): number {
-    if (!allObjects) return 4.0;
-
-    let maxRoadWidth = 6.0;
-
-    if (j.connectedRoads && j.connectedRoads.length > 0) {
-      j.connectedRoads.forEach(roadId => {
-        const road = allObjects.all.get(roadId);
-        if (road && road.type === 'road') {
-          const r = road as RoadObject;
-          if (r.width && r.width > maxRoadWidth) {
-            maxRoadWidth = r.width;
-          }
-        }
+  private generateJunctionMeshes(j: JunctionObject, scene?: GeometryContext): MeshData[] {
+    if (!scene) return [];
+    const [lng, lat] = j.coordinates;
+    const nearby = scene.drivablesNear(lng - 0.0003, lat - 0.0003, lng + 0.0003, lat + 0.0003);
+    const layout = junctionLayout(j.coordinates, nearby);
+    if (!layout.valid) return [];
+    // Above the overlapping approaches, without cutting their asphalt away.
+    const z = layout.elevation + 0.18;
+    const positions = layout.boundary.flatMap(p => wgs84ToCartesian(p[0], p[1], z));
+    const indices: number[] = [];
+    for (let i = 1; i < layout.boundary.length - 1; i++) indices.push(0, i, i + 1);
+    const meshes: MeshData[] = [{ positions: new Float64Array(positions), indices: new Uint32Array(indices), material: { type: 'solid', color: '#30363f' }, layerId: 'asphalt' }];
+    const kx = 111320 * Math.cos(lat * Math.PI / 180);
+    const box = (x: number, y: number, dx: number, dy: number, length: number, width: number) => {
+      const ps = [[-1, -1], [1, -1], [1, 1], [-1, 1]].flatMap(([a, b]) => {
+        const px = x + dx * length / 2 * a - dy * width / 2 * b;
+        const py = y + dy * length / 2 * a + dx * width / 2 * b;
+        return wgs84ToCartesian(lng + px / kx, lat + py / 111320, z + 0.025);
       });
-    } else {
-      allObjects.roadsWithEndpointNear(j.coordinates[0], j.coordinates[1]).forEach(r => {
-        const coords = r.coordinates;
-        if (coords.length === 0) return;
-        const startPt = coords[0];
-        const endPt = coords[coords.length - 1];
-
-        const distStart = Math.sqrt(
-          Math.pow(startPt[0] - j.coordinates[0], 2) +
-          Math.pow(startPt[1] - j.coordinates[1], 2)
-        );
-        const distEnd = Math.sqrt(
-          Math.pow(endPt[0] - j.coordinates[0], 2) +
-          Math.pow(endPt[1] - j.coordinates[1], 2)
-        );
-
-        if ((distStart < 0.00006 || distEnd < 0.00006) && r.width && r.width > maxRoadWidth) {
-          maxRoadWidth = r.width;
-        }
-      });
-    }
-
-    return Math.max(3.0, maxRoadWidth / 2 + 0.5);
-  }
-
-  private generateJunctionMesh(j: JunctionObject, allObjects?: GeometryContext): MeshData {
-    const radius = this.getJunctionRadius(j, allObjects);
-    let elevation = j.coordinates[2] || 0;
-
-    if (allObjects) {
-      let maxRoadElev = elevation;
-
-      // Determine dynamic junction elevation matching the maximum of connected elevated roads
-      if (j.connectedRoads && j.connectedRoads.length > 0) {
-        j.connectedRoads.forEach(roadId => {
-          const road = allObjects.all.get(roadId);
-          if (road && road.type === 'road') {
-            const r = road as RoadObject;
-            const coords = r.coordinates;
-            if (coords.length > 0) {
-              const startPt = coords[0];
-              const endPt = coords[coords.length - 1];
-
-              const distStart = Math.sqrt(
-                Math.pow(startPt[0] - j.coordinates[0], 2) +
-                Math.pow(startPt[1] - j.coordinates[1], 2)
-              );
-              const distEnd = Math.sqrt(
-                Math.pow(endPt[0] - j.coordinates[0], 2) +
-                Math.pow(endPt[1] - j.coordinates[1], 2)
-              );
-
-              if (distStart < 0.00006) {
-                const startZ = r.osmProvenance?.bridge && !startPt[2] ? 6.0 : (startPt[2] || 0);
-                if (startZ > maxRoadElev) maxRoadElev = startZ;
-              } else if (distEnd < 0.00006) {
-                const endZ = r.osmProvenance?.bridge && !endPt[2] ? 6.0 : (endPt[2] || 0);
-                if (endZ > maxRoadElev) maxRoadElev = endZ;
-              }
-            }
-          }
-        });
+      return { positions: new Float64Array(ps), indices: new Uint32Array([0, 1, 2, 0, 2, 3]), material: { type: 'solid' as const, color: '#e2e8f0' }, layerId: 'marking' as const };
+    };
+    for (const arm of layout.arms) {
+      const { dx, dy, width, reach } = arm;
+      // Stop bar covers the approaching half of an Indian left-hand-traffic road.
+      if (j.hasSignals) {
+        const side = width / 4;
+        meshes.push(box(dx * (reach + 1.3) + dy * side, dy * (reach + 1.3) - dx * side, -dy, dx, width / 2 - 0.3, 0.4));
       }
-
-      elevation = maxRoadElev;
+      if (j.hasPedestrianCrossing) {
+        const stripes = Math.floor((width - 0.6) / 1.2);
+        for (let i = 0; i < stripes; i++) {
+          const side = (i - (stripes - 1) / 2) * 1.2;
+          meshes.push(box(dx * reach - dy * side, dy * reach + dx * side, dx, dy, 2, 0.55));
+        }
+      }
     }
-
-    return this.generateCylinder(
-      j.coordinates[0],
-      j.coordinates[1],
-      0.02,
-      radius,
-      'asphalt',
-      '#1e293b',
-      elevation
-    );
+    return meshes;
   }
 
   private dot(a: [number, number, number], b: [number, number, number]): number {

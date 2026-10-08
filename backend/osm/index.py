@@ -33,6 +33,8 @@ SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE ways (id INTEGER PRIMARY KEY, tags TEXT NOT NULL, geometry TEXT NOT NULL);
 CREATE VIRTUAL TABLE ways_rtree USING rtree(id, min_lon, max_lon, min_lat, max_lat);
+CREATE TABLE infrastructure (key INTEGER PRIMARY KEY, category TEXT NOT NULL, element TEXT NOT NULL);
+CREATE VIRTUAL TABLE infrastructure_rtree USING rtree(id, min_lon, max_lon, min_lat, max_lat);
 CREATE TABLE signals (id INTEGER PRIMARY KEY, lon REAL NOT NULL, lat REAL NOT NULL);
 CREATE VIRTUAL TABLE signals_rtree USING rtree(id, min_lon, max_lon, min_lat, max_lat);
 """
@@ -72,8 +74,10 @@ class OsmIndex:
             meta = dict(db.execute("SELECT key, value FROM meta"))
             ways = db.execute("SELECT COUNT(*) FROM ways").fetchone()[0]
             signals = db.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+        capabilities = json.loads(meta.get("capabilities", '["roads", "signals"]'))
         return {
             "available": True,
+            "capabilities": capabilities,
             "dataTimestamp": meta.get("data_timestamp"),
             "builtAt": meta.get("built_at"),
             "source": meta.get("source"),
@@ -123,4 +127,21 @@ class OsmIndex:
                 )
                 for node_id, lon, lat in rows:
                     out[node_id] = {"type": "node", "id": node_id, "lon": lon, "lat": lat}
+        return list(out.values())
+
+    def infrastructure(self, category: str, boxes: Iterable[Box]) -> list[dict]:
+        if category not in ("buildings", "metro"):
+            raise ValueError("Unknown infrastructure category")
+        if category not in self.status().get("capabilities", []):
+            raise ValueError("Rebuild the local index to include this category")
+        out: dict[int, dict] = {}
+        with self._connect() as db:
+            for x0, y0, x1, y1 in boxes:
+                rows = db.execute(
+                    "SELECT f.key, f.element FROM infrastructure_rtree r JOIN infrastructure f ON f.key = r.id "
+                    "WHERE f.category = ? AND r.max_lon >= ? AND r.min_lon <= ? AND r.max_lat >= ? AND r.min_lat <= ?",
+                    (category, x0, x1, y0, y1),
+                )
+                for key, element in rows:
+                    out[key] = json.loads(element)
         return list(out.values())

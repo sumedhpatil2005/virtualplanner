@@ -41,7 +41,7 @@ export const TOOLS: ToolDef[] = [
   { mode: 'draw_utility', label: 'Lay Utility Conduit', short: 'Utility', icon: Settings, hotkey: '9' },
   { mode: 'draw_zone', label: 'Create Demand Zone (Polygon)', short: 'Zone', icon: Square },
   { mode: 'draw_gateway', label: 'Create Traffic Gateway', short: 'Gateway', icon: DoorOpen },
-  { mode: 'import_osm', label: 'Import from OpenStreetMap', short: 'Import', icon: Globe },
+  { mode: 'import_osm', label: 'Create Study Area and Import Infrastructure', short: 'Study area', icon: Globe },
 ];
 
 export const toolByHotkey = (key: string): ToolDef | undefined =>

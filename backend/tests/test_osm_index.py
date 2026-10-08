@@ -82,3 +82,49 @@ def test_reports_a_missing_index(tmp_path, client, monkeypatch):
     monkeypatch.setattr(osm_router, "index", OsmIndex(str(tmp_path / "none.db")))
     assert client.get("/api/osm/status").json() == {"available": False}
     assert client.get("/api/osm/ways", params={"bbox": "73.80,18.50,73.90,18.60"}).status_code == 404
+
+
+def test_indexes_buildings_metro_and_complete_multipolygons(tmp_path, client, monkeypatch):
+    extra = """
+      <node id="10" lat="18.532" lon="73.851" version="1"/>
+      <node id="11" lat="18.532" lon="73.852" version="1"/>
+      <node id="12" lat="18.533" lon="73.852" version="1"/>
+      <node id="13" lat="18.533" lon="73.851" version="1"/>
+      <node id="20" lat="18.535" lon="73.857" version="1"><tag k="railway" v="station"/><tag k="station" v="subway"/></node>
+      <way id="200" version="1"><nd ref="10"/><nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="10"/><tag k="building" v="yes"/></way>
+      <way id="201" version="1"><nd ref="10"/><nd ref="11"/><nd ref="12"/></way>
+      <way id="202" version="1"><nd ref="12"/><nd ref="13"/><nd ref="10"/></way>
+      <way id="203" version="1"><nd ref="10"/><nd ref="12"/><tag k="railway" v="subway"/><tag k="tunnel" v="yes"/></way>
+      <relation id="200" version="1"><member type="way" ref="201" role="outer"/><member type="way" ref="202" role="outer"/><tag k="type" v="multipolygon"/><tag k="building" v="yes"/></relation>
+      <relation id="204" version="1"><member type="way" ref="201" role="outer"/><tag k="type" v="multipolygon"/><tag k="building" v="yes"/></relation>
+    """
+    # OSM streams require nodes before ways and ways before relations.
+    xml = OSM_XML.replace('  <way id="100"', extra[:extra.index('      <way id="200"')] + '  <way id="100"').replace('</osm>', extra[extra.index('      <way id="200"'):] + '</osm>')
+    source = tmp_path / "features.osm"
+    source.write_text(xml, encoding="utf-8")
+    output = tmp_path / "features.db"
+    build(str(source), BBOX, str(output))
+    index = OsmIndex(str(output))
+    assert index.status()["capabilities"] == ["roads", "signals", "buildings", "metro"]
+    buildings = index.infrastructure("buildings", [BBOX])
+    assert {(el["type"], el["id"]) for el in buildings} == {("way", 200), ("relation", 200)}
+    relation = next(el for el in buildings if el["type"] == "relation")
+    assert relation["members"][0]["geometry"][0] == relation["members"][0]["geometry"][-1]
+    metro = index.infrastructure("metro", [BBOX])
+    assert {(el["type"], el["id"]) for el in metro} == {("node", 20), ("way", 203)}
+    monkeypatch.setattr(osm_router, "index", index)
+    assert client.get("/api/osm/buildings", params={"bbox": "73.80,18.50,73.90,18.60"}).status_code == 200
+    assert client.get("/api/osm/metro", params={"bbox": "73.80,18.50,73.90,18.60"}).json()["elements"] == metro
+
+
+def test_old_indexes_advertise_only_the_categories_they_hold(tmp_path, client, monkeypatch):
+    import sqlite3
+    index = make_index(tmp_path)
+    with sqlite3.connect(index.path) as db:
+        db.execute("DELETE FROM meta WHERE key = 'capabilities'")
+        db.execute("DROP TABLE infrastructure")
+        db.execute("DROP TABLE infrastructure_rtree")
+    assert index.status()["capabilities"] == ["roads", "signals"]
+    monkeypatch.setattr(osm_router, "index", index)
+    assert client.get("/api/osm/buildings", params={"bbox": "73.80,18.50,73.90,18.60"}).status_code == 409
+    assert len(index.ways([BBOX])) == 2

@@ -133,6 +133,26 @@ export class RenderManager {
     // roads around a new or changed road are rebuilt to fit their junctions
     const isRoadLike = (o: CityObject) => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover';
     const changedRoads = [...toRegister, ...toUpdate].filter(isRoadLike);
+    const roadsRemoved = ['road', 'flyover', 'metro_flyover'].some(t => removedTypes.has(t));
+    if (changedRoads.length > 0 || roadsRemoved) {
+      const pending = new Set([...toRegister, ...toUpdate].map(o => o.id));
+      // Junction footprints are derived from approach geometry, including legacy junctions
+      // whose connectedRoads metadata was never populated. Only those beside a changed
+      // road need rebuilding; a removal carries no geometry, so it rebuilds them all.
+      const reach = 0.0003; // the radius junctionLayout searches for approaches
+      const boxes = roadsRemoved ? null : changedRoads.map(o => {
+        const c = o.coordinates as number[][];
+        return [
+          Math.min(...c.map(p => p[0])) - reach, Math.min(...c.map(p => p[1])) - reach,
+          Math.max(...c.map(p => p[0])) + reach, Math.max(...c.map(p => p[1])) + reach,
+        ];
+      });
+      currentObjects.forEach(o => {
+        if (o.type !== 'junction' || pending.has(o.id)) return;
+        const [x, y] = o.coordinates;
+        if (!boxes || boxes.some(b => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3])) toUpdate.push(o);
+      });
+    }
     if (changedRoads.length > 0 && changedRoads.length < currentObjects.length / 2) {
       const pad = 0.0003; // about 30 m
       const box = (o: CityObject) => {

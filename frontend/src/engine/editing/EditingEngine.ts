@@ -3,7 +3,7 @@ import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
 import { SnapManager, type SnapResult } from './SnapManager';
-import { OverpassClient } from './OverpassClient';
+import { OverpassCancelledError, OverpassClient } from './OverpassClient';
 import { LocalOsmIndex } from './LocalOsmIndex';
 import { findNearestTrack } from '../objects/stationAlignment';
 import { utilityLayerId } from '../layers/LayerManager';
@@ -13,6 +13,9 @@ import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
+import { junctionLayout } from '../objects/junctionLayout';
+import { TrafficSignalSource } from '../simulation/trafficSignals';
+import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 
 /** highway=* values fetched for study areas; the importer's allowlist, plus tracks it may keep. */
 const STUDY_AREA_HIGHWAYS = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|track';
@@ -42,7 +45,8 @@ export class EditingEngine {
 
   public setIsImporting(val: boolean) {
     // Each import gets a fresh cancellation token
-    this.importAbort = val ? new AbortController() : null;
+    if (val && !this.isImporting) this.importAbort = new AbortController();
+    if (!val) this.importAbort = null;
     if (this.isImporting !== val) {
       this.isImporting = val;
       this.notify();
@@ -126,7 +130,8 @@ export class EditingEngine {
   }
 
   public addDrawingPoint(point: [number, number, number]) {
-    const snap = this.activeSnap || this.snapManager.findSnap(point);
+    // A throttled hover preview may still describe an older pointer location.
+    const snap = this.snapManager.findSnap(point);
     const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
 
     // A double-click also fires two single clicks at the same spot; ignore
@@ -301,6 +306,44 @@ export class EditingEngine {
     return connectEnds(points, roads) ?? [...points];
   }
 
+  public getJunctionLayout(point: [number, number, number], scenarioId: string) {
+    const roads = filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(
+      o => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover'
+    ) as Parameters<typeof junctionLayout>[1];
+    return junctionLayout(point, roads);
+  }
+
+  private connectJunctionApproaches(point: [number, number, number], roadIds: string[], junctionId: string): HistoryDiff[] {
+    const kx = 111320 * Math.cos(point[1] * Math.PI / 180);
+    const diffs: HistoryDiff[] = [];
+    for (const id of roadIds) {
+      const road = this.objectManager.getById(id);
+      if (!road || (road.type !== 'road' && road.type !== 'flyover' && road.type !== 'metro_flyover')) continue;
+      let best = { distance: Infinity, segment: 0, t: 0 };
+      for (let i = 1; i < road.coordinates.length; i++) {
+        const a = road.coordinates[i - 1], b = road.coordinates[i];
+        const hit = this.pointToSegmentDist(0, 0, (a[0]-point[0])*kx, (a[1]-point[1])*111320, (b[0]-point[0])*kx, (b[1]-point[1])*111320);
+        if (hit.distance < best.distance) best = { distance: hit.distance, segment: i - 1, t: hit.t };
+      }
+      let coordinates = [...road.coordinates];
+      let sections = 'sections' in road ? road.sections : undefined;
+      const vertex = best.t < 0.01 ? best.segment : best.t > 0.99 ? best.segment + 1 : -1;
+      // Move only in plan: the road keeps its own height (a ramp or deck is not
+      // flattened to wherever the cursor picked the scene).
+      if (vertex >= 0) coordinates[vertex] = [point[0], point[1], road.coordinates[vertex][2] || 0];
+      else {
+        const a = road.coordinates[best.segment], b = road.coordinates[best.segment + 1];
+        const z = (a[2] || 0) + best.t * ((b[2] || 0) - (a[2] || 0));
+        const inserted = insertRoadVertex(road, best.segment + 1, [point[0], point[1], z]);
+        coordinates = inserted.coordinates; sections = inserted.sections;
+      }
+      const changes = { coordinates, ...(road.type === 'road' ? { sections: markGeometryEdited(sections), connectedJunctions: [...new Set([...road.connectedJunctions, junctionId])] } : {}) };
+      this.objectManager.update(id, changes);
+      diffs.push({ type: 'update', id, before: road, after: this.objectManager.getById(id)!, description: `Connect ${road.name} to junction` });
+    }
+    return diffs;
+  }
+
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
 
@@ -372,14 +415,18 @@ export class EditingEngine {
         updatedAt: createdAt
       };
     } else if (this.activeMode === 'draw_junction') {
+      const point = this.drawingPoints[0];
+      const layout = this.getJunctionLayout(point, scenarioId);
+      if (!layout.valid) throw new Error('Place the junction on at least two road approaches at the same level.');
+      splitDiffs = this.connectJunctionApproaches(point, layout.roadIds, id);
       newObj = {
         id,
         type: 'junction',
         name,
         layerId: 'junctions',
         scenarioId,
-        coordinates: this.drawingPoints[0],
-        connectedRoads: [],
+        coordinates: [point[0], point[1], layout.elevation],
+        connectedRoads: layout.roadIds,
         hasSignals: true,
         signalTiming: 90,
         hasPedestrianCrossing: true,
@@ -619,7 +666,7 @@ export class EditingEngine {
     if (this.drawingPoints.length < 3) {
       throw new Error("Boundary must have at least 3 points.");
     }
-    if (this.hasSelfIntersection(this.drawingPoints)) {
+    if (this.hasSelfIntersection([...this.drawingPoints, this.drawingPoints[0]])) {
       throw new Error("Self-intersecting polygon boundaries are invalid.");
     }
 
@@ -930,6 +977,8 @@ export class EditingEngine {
 
         osmProvenance: {
           osmId: el.id,
+          osmElementType: 'way',
+          osmSourceId: `way/${el.id}`,
           originalTags: tags,
           layer: parseInt(tags.layer) || 0,
           bridge: tags.bridge === 'yes',
@@ -944,30 +993,11 @@ export class EditingEngine {
     return roadObjs;
   }
 
-  public async importOSMRoadsInsideArea(area: Area, activeScenarioId: string): Promise<number> {
-    this.setIsImporting(true);
-    try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:50];way["highway"](poly:"${polyCoords}");out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return 0;
-
-      const roadObjs = this.osmWaysToRoads(data.elements, activeScenarioId);
-      if (roadObjs.length > 0) {
-        this.historyManager?.recordAdd?.(roadObjs, `Import ${roadObjs.length} OSM Roads`);
-        this.objectManager.addMultiple(roadObjs);
-      }
-      if (Object.keys(this.lastRoadImportSkipped).length > 0) {
-        console.info('[OSM import] Ways skipped as not vehicle roads:', this.lastRoadImportSkipped);
-      }
-      return roadObjs.length;
-    } catch (err) {
-      console.error("OSM Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
+  public async importOSMRoadsInsideArea(area: Area, scenarioId: string): Promise<number> {
+    const report = await this.importStudyArea(area, scenarioId, ['roads']);
+    if (report.categories[0]?.error) throw new Error(report.categories[0].error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    return report.categories[0]?.added ?? 0;
   }
 
   /**
@@ -1046,35 +1076,112 @@ export class EditingEngine {
     this.notify();
   }
 
-  public async importOSMBuildingsInsideArea(area: Area, activeScenarioId: string): Promise<number> {
+  public studyAreaImportProgress: StudyAreaImportProgress | null = null;
+  public studyAreaImportReport: StudyAreaImportReport | null = null;
+  private pendingImportSaves = new Map<string, CityObject>();
+
+  /** Reuse a demand zone's boundary without changing its demand or zone properties. */
+  public studyAreaFromZone(id: string): Area | null {
+    const zone = this.objectManager.getById(id);
+    return zone?.type === 'zone' ? areaFromBoundary(`zone-boundary:${zone.id}`, zone.name, zone.coordinates) : null;
+  }
+
+  public async importStudyArea(area: Area, scenarioId: string, categories: InfrastructureCategory[]): Promise<StudyAreaImportReport> {
+    if (this.locked) throw new Error('Import is available in Build mode.');
+    if (this.isImporting) throw new Error('An import is already running.');
+    if (!categories.length) throw new Error('Choose at least one infrastructure category.');
+    categories = [...new Set(categories)];
+    const report: StudyAreaImportReport = { areaId: area.id, areaName: area.name, categories: [], cancelled: false, completed: false };
+    this.studyAreaImportReport = report;
     this.setIsImporting(true);
+    const abort = this.importAbort!.signal;
+    const boxes = [{ minLng: area.minLon, minLat: area.minLat, maxLng: area.maxLon, maxLat: area.maxLat }];
     try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:90];(way["building"](poly:"${polyCoords}");relation["building"](poly:"${polyCoords}"););out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return 0;
-
-      let count = 0;
-      const buildingObjs: any[] = [];
-      for (const el of data.elements) {
-        let coordinates: [number, number, number][] = [];
-
-        if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
-          coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
-        } else if (el.type === 'relation' && el.members) {
-          const outerMember = el.members.find((m: any) => m.role === 'outer' && m.geometry && m.geometry.length >= 3);
-          if (outerMember) {
-            coordinates = outerMember.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
+      const deleted = await this.objectManager.deletedOsmIds();
+      for (const category of [...new Set(categories)]) {
+        if (abort.aborted) { report.cancelled = true; break; }
+        const result = { category, added: 0, preserved: 0, skipped: 0, source: undefined as 'local' | 'Overpass' | 'cache' | undefined, error: undefined as string | undefined };
+        report.categories.push(result);
+        this.studyAreaImportProgress = { category, phase: 'fetching', completed: report.categories.length - 1, total: categories.length }; this.notify();
+        try {
+          if (category === 'signals') {
+            const points = await new TrafficSignalSource(this.localOsm, this.overpass).signalsIn(boxes[0], abort);
+            if (abort.aborted) throw new OverpassCancelledError();
+            result.source = 'cache'; result.added = points.filter(([lng, lat]) => geometryTouchesArea([[lng, lat, 0]], area)).length;
+            continue;
           }
+          let elements: any[];
+          const localCategory = category === 'roads' ? 'roads' : category;
+          if (await this.localOsm.supports(localCategory, boxes)) {
+            try {
+              elements = category === 'roads' ? await this.localOsm.ways(boxes) : await this.localOsm.infrastructure(category, boxes);
+              result.source = 'local';
+            } catch {
+              elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass';
+            }
+          } else { elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass'; }
+          if (abort.aborted) throw new OverpassCancelledError();
+          const touching = elements.filter(el => {
+            const points = el.geometry?.map((p: any) => [p.lon, p.lat, 0]) ?? (el.type === 'node' ? [[el.lon, el.lat, 0]] : (el.members ?? []).flatMap((m: any) => (m.geometry ?? []).map((p: any) => [p.lon, p.lat, 0])));
+            return geometryTouchesArea(points, area);
+          });
+          const converted = category === 'roads' ? this.osmWaysToRoads(touching, scenarioId) : category === 'buildings' ? this.osmElementsToBuildings(touching, scenarioId) : this.osmElementsToMetro(touching, scenarioId);
+          result.skipped = touching.length - converted.length;
+          const seen = new Set<string>();
+          const additions: CityObject[] = [], pending: CityObject[] = [];
+          for (const obj of converted) {
+            if (seen.has(obj.id)) continue; seen.add(obj.id);
+            const legacy = category === 'buildings' ? `osm_b_${(obj as any).osmId}` : category === 'metro' ? `osm_m_${(obj as any).osmId}` : obj.id;
+            const legacyObject = this.objectManager.getById(legacy);
+            const sourceType = (obj as any).osmElementType;
+            const legacyType = (legacyObject as any)?.osmElementType;
+            // Historical numeric IDs were ambiguous. Never conflate a relation with a way.
+            const compatibleLegacy = legacyObject && (legacyType === sourceType || (!legacyType && sourceType !== 'relation' && legacyObject.type === obj.type));
+            const existing = this.objectManager.getById(obj.id) ?? (compatibleLegacy ? legacyObject : undefined);
+            if (existing) {
+              result.preserved++;
+              // Retry a failed save using the current object, preserving any intervening edits.
+              if (this.pendingImportSaves.has(existing.id)) pending.push(existing);
+              continue;
+            }
+            if (deleted.has(obj.id) || deleted.has(legacy)) { result.preserved++; continue; }
+            additions.push(obj);
+          }
+          this.studyAreaImportProgress = { category, phase: 'saving', completed: report.categories.length - 1, total: categories.length }; this.notify();
+          // Cancellation is honoured before saving; an in-flight save finishes so its status stays honest.
+          if (abort.aborted) throw new OverpassCancelledError();
+          for (const obj of additions) this.pendingImportSaves.set(obj.id, obj);
+          if (additions.length) this.historyManager?.recordAdd?.(additions, `Import ${category} into ${area.name}`);
+          await this.objectManager.addMultipleAndSave([...pending, ...additions]);
+          for (const obj of [...pending, ...additions]) this.pendingImportSaves.delete(obj.id);
+          result.added = additions.length;
+        } catch (err) {
+          if (abort.aborted || err instanceof OverpassCancelledError) { report.cancelled = true; break; }
+          result.error = err instanceof Error ? err.message : String(err);
         }
+        this.notify();
+      }
+      report.completed = !report.cancelled && report.categories.length === categories.length && report.categories.every(c => !c.error);
+      return report;
+    } finally { this.studyAreaImportProgress = null; this.setIsImporting(false); this.notify(); }
+  }
 
-        if (coordinates.length < 3) continue;
+  private async fetchAreaElements(area: Area, category: Exclude<InfrastructureCategory, 'signals'>, signal: AbortSignal): Promise<any[]> {
+    const box = `${area.minLat},${area.minLon},${area.maxLat},${area.maxLon}`;
+    // Keep full ways crossing the boundary as connecting network context; only polygon-overlapping features are imported.
+    const selector = category === 'roads' ? `way["highway"~"^(${STUDY_AREA_HIGHWAYS})$"](${box});` : category === 'buildings' ? `way["building"](${box});relation["building"](${box});` : `way["railway"="subway"](${box});way["railway"="construction"]["construction"="subway"](${box});node["railway"="station"]["station"="subway"](${box});way["railway"="station"]["station"="subway"](${box});`;
+    const data = await this.overpass.query(`[out:json][timeout:50];(${selector});out geom;`, signal);
+    if (typeof data?.remark === 'string') throw new Error(`OpenStreetMap returned an incomplete result: ${data.remark}`);
+    if (!Array.isArray(data?.elements)) throw new Error('OpenStreetMap returned an invalid result.');
+    return data.elements;
+  }
 
-        if (coordinates[0][0] !== coordinates[coordinates.length - 1][0] || coordinates[0][1] !== coordinates[coordinates.length - 1][1]) {
-          coordinates.push([coordinates[0][0], coordinates[0][1], coordinates[0][2]]);
-        }
-
-        const id = `osm_b_${el.id}`;
+  private osmElementsToBuildings(elements: any[], activeScenarioId: string): CityObject[] {
+      const buildingObjs: any[] = [];
+      for (const el of elements) {
+        const coordinates = buildingRing(el);
+        if (!coordinates) continue;
+        const id = `osm_b_${el.type}_${el.id}`;
         const tags = el.tags || {};
 
         const usageType: BuildingUsage = tags.amenity === 'school' || tags.building === 'school' ? 'educational' :
@@ -1187,6 +1294,8 @@ export class EditingEngine {
 
           // OSM Provenance
           osmId: el.id,
+          osmElementType: el.type,
+          osmSourceId: `${el.type}/${el.id}`,
           originalOsmTags: tags,
           source: 'OSM' as const,
           originalFootprint: coordinates,
@@ -1194,55 +1303,24 @@ export class EditingEngine {
         };
 
         buildingObjs.push(buildingObj);
-        count++;
       }
 
-      if (buildingObjs.length > 0) {
-        this.historyManager?.recordAdd?.(buildingObjs, `Import ${buildingObjs.length} OSM Buildings`);
-        this.objectManager.addMultiple(buildingObjs);
-      }
-      return count;
-    } catch (err) {
-      console.error("OSM Buildings Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
+      return buildingObjs;
   }
 
-  private getDistanceMeters(p1: [number, number], p2: [number, number]): number {
-    const R = 6371000;
-    const dLat = (p2[1] - p1[1]) * Math.PI / 180;
-    const dLon = (p2[0] - p1[0]) * Math.PI / 180;
-    const lat1 = p1[1] * Math.PI / 180;
-    const lat2 = p2[1] * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1) * Math.cos(lat2) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+  public async importOSMBuildingsInsideArea(area: Area, scenarioId: string): Promise<number> {
+    const report = await this.importStudyArea(area, scenarioId, ['buildings']);
+    const result = report.categories[0];
+    if (result?.error) throw new Error(result.error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    return result?.added ?? 0;
   }
 
-  public async importOSMMetroInsideArea(area: Area, activeScenarioId: string): Promise<{ lines: number; stations: number }> {
-    this.setIsImporting(true);
-    try {
-      const polyCoords = area.polygonCoordinates.map(pt => `${pt[1]} ${pt[0]}`).join(' ');
-      const query = `[out:json][timeout:90];(
-        way["railway"="subway"](poly:"${polyCoords}");
-        way["railway"="construction"]["construction"="subway"](poly:"${polyCoords}");
-        node["railway"="station"]["station"="subway"](poly:"${polyCoords}");
-        way["railway"="station"]["station"="subway"](poly:"${polyCoords}");
-      );out geom;`;
-      const data = await this.fetchFromOverpass(query);
-      if (!data || !data.elements) return { lines: 0, stations: 0 };
-
-      let linesCount = 0;
-      let stationsCount = 0;
+  private osmElementsToMetro(elements: any[], activeScenarioId: string): CityObject[] {
       const metroObjs: any[] = [];
 
-      for (const el of data.elements) {
-        const id = `osm_m_${el.id}`;
+      for (const el of elements) {
+        const id = `osm_m_${el.type}_${el.id}`;
         const tags = el.tags || {};
         const isStation = tags.railway === 'station';
 
@@ -1261,32 +1339,6 @@ export class EditingEngine {
             continue;
           }
 
-          // Deduplicate overlapping stations within 100 meters
-          let duplicateIdx = -1;
-          for (let i = 0; i < metroObjs.length; i++) {
-            const existing = metroObjs[i];
-            if (existing.type === 'metro_station') {
-              const dist = this.getDistanceMeters(
-                [coordinates[0], coordinates[1]],
-                [existing.coordinates[0], existing.coordinates[1]]
-              );
-              if (dist < 100) {
-                duplicateIdx = i;
-                break;
-              }
-            }
-          }
-
-          if (duplicateIdx !== -1) {
-            const existingObj = metroObjs[duplicateIdx];
-            const newName = tags.name;
-            if (newName && (!existingObj.name || existingObj.name.includes('Subway Station') || existingObj.name === 'N/A')) {
-              existingObj.name = newName;
-              existingObj.stationName = newName;
-            }
-            continue;
-          }
-
           const stationObj = {
             id,
             type: 'metro_station' as const,
@@ -1298,14 +1350,17 @@ export class EditingEngine {
             length: 140,
             width: 20,
             height: 8,
-            elevation: 12,
+            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
             capacity: 25000,
+            osmElementType: el.type,
+            osmId: el.id,
+            osmSourceId: `${el.type}/${el.id}`,
+            originalOsmTags: tags,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
 
           metroObjs.push(stationObj);
-          stationsCount++;
         } else {
           if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) continue;
 
@@ -1317,8 +1372,8 @@ export class EditingEngine {
 
           const status = isSubway ? 'operational' : 'under_construction';
 
-          // Elevated metro track default height = 12m (above ground)
-          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 12]);
+          // OSM level tags distinguish underground, elevated and surface tracks.
+          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0]);
 
           const lineObj = {
             id,
@@ -1330,36 +1385,32 @@ export class EditingEngine {
             trackCount: 2,
             trackGauge: 1.435,
             deckWidth: 8.0,
-            elevation: 12,
+            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
             pierSpacing: 30,
             status,
             tags: tags as Record<string, string>,
+            osmElementType: el.type,
+            osmId: el.id,
+            osmSourceId: `${el.type}/${el.id}`,
+            originalOsmTags: tags,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
 
           metroObjs.push(lineObj);
-          linesCount++;
         }
       }
 
-      if (metroObjs.length > 0) {
-        this.historyManager?.recordAdd?.(metroObjs, `Import ${metroObjs.length} OSM Metro objects`);
-        this.objectManager.addMultiple(metroObjs);
-      }
-      return { lines: linesCount, stations: stationsCount };
-    } catch (err) {
-      console.error("OSM Metro Import failed:", err);
-      throw err;
-    } finally {
-      this.setIsImporting(false);
-      this.notify();
-    }
+      return metroObjs;
   }
 
-  private async fetchFromOverpass(query: string): Promise<any> {
-    this.importAbort ??= new AbortController();
-    return this.overpass.query(query, this.importAbort.signal);
+  public async importOSMMetroInsideArea(area: Area, scenarioId: string): Promise<{ lines: number; stations: number }> {
+    const before = new Set(this.objectManager.getAll().map(o => o.id));
+    const report = await this.importStudyArea(area, scenarioId, ['metro']);
+    if (report.categories[0]?.error) throw new Error(report.categories[0].error);
+    if (report.cancelled) throw new OverpassCancelledError();
+    const added = this.objectManager.getAll().filter(o => !before.has(o.id));
+    return { lines: added.filter(o => o.type === 'metro_line').length, stations: added.filter(o => o.type === 'metro_station').length };
   }
 
   /** Cancels an in-flight OSM import (the Cancel button on the import overlay). */

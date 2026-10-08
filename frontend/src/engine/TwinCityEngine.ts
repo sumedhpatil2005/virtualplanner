@@ -23,13 +23,15 @@ import { ObjectManager } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
 import { renderManagerInstance } from './rendering/RenderManager';
 import { TrafficNetworkVisualizer } from './rendering/renderers/TrafficNetworkVisualizer';
+import { JunctionEditorOverlay } from './rendering/renderers/JunctionEditorOverlay';
 import { LODController } from './rendering/lod/LODController';
 import { SelectionEngine } from './selection/SelectionEngine';
 import { LayerManager, resolveLayerId } from './layers/LayerManager';
 import { filterObjectsForScenario } from './scenarios/scenarioFilter';
 import { ScenarioManager, BASE_SCENARIO_ID, type Scenario } from './scenarios/ScenarioManager';
 import { SimulationManager } from './simulation/SimulationManager';
-import { SimulationMode } from './simulation/SimulationMode';
+import { SimulationMode, type SimulationContext } from './simulation/SimulationMode';
+import type { TimePeriod } from './objects/demandTypes';
 import { TrafficSignalSource } from './simulation/trafficSignals';
 import { LocalOsmIndex } from './editing/LocalOsmIndex';
 import { isDrivable, boundsOf, type StudyProblem } from './simulation/StudyAreaExplorer';
@@ -59,6 +61,7 @@ export class TwinCityEngine {
   public trafficNetwork: any = null;
   public trafficDemandMatrix: any = null;
   private trafficVisualizer = new TrafficNetworkVisualizer();
+  private junctionOverlay = new JunctionEditorOverlay();
 
   private viewer: Viewer | null = null;
   private drawPreviewEntity: Entity | null = null;
@@ -117,7 +120,8 @@ export class TwinCityEngine {
         load: (boxes, signal) => this.editing.loadOsmRoadsForStudyArea(boxes, signal),
       },
       // Real traffic signals from OpenStreetMap, kept on this device
-      new TrafficSignalSource(localOsm)
+      new TrafficSignalSource(localOsm),
+      () => this.getSimulationContext()
     );
     this.history = new HistoryManager(this.objects);
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
@@ -137,6 +141,7 @@ export class TwinCityEngine {
         this.simMode.networkChanged();
       } else {
         this.queueTrafficDemandRebuildOnly();
+        if (['building', 'zone', 'gateway'].some(type => changedTypes.has(type))) this.simMode.networkChanged();
       }
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
@@ -196,6 +201,30 @@ export class TwinCityEngine {
     return scenarioFiltered.filter(obj => visibility.get(resolveLayerId(obj.layerId)) ?? true);
   }
 
+  private getSimulationContext(): SimulationContext {
+    const scenarioId = this.scenarios.getActiveScenarioId();
+    const objects = filterObjectsForScenario(this.objects.getAll(), scenarioId);
+    const flows = (values: Record<string, number>) => Object.fromEntries(
+      (['AM_Peak', 'PM_Peak', 'Midday', 'Night'] as TimePeriod[]).map(p => [p, Math.max(0, values?.[p] || 0)])
+    ) as Record<TimePeriod, number>;
+    return {
+      scenarioId,
+      junctions: objects.filter(o => o.type === 'junction'),
+      buildings: objects.filter(o => o.type === 'building'),
+      zones: objects.filter(o => o.type === 'zone').map(z => ({
+        id: z.id, name: z.name, boundaryPolygon: z.coordinates,
+        totalPopulation: z.totalPopulation || 0, totalEmployment: z.totalEmployment || 0,
+        landUseMix: z.landUseMix, gateways: z.gateways || [],
+        provenance: z.provenance || { source: 'estimated', confidence: 0, updatedAt: z.updatedAt },
+      })),
+      gateways: objects.filter(o => o.type === 'gateway').map(g => ({
+        id: g.id, name: g.name, coordinates: g.coordinates[0], connectedNodeId: g.connectedNodeId,
+        inboundFlows: flows(g.inboundFlows), outboundFlows: flows(g.outboundFlows), modeSplit: g.modeSplit,
+        provenance: g.provenance || { source: 'estimated', confidence: 0, updatedAt: g.updatedAt },
+      })),
+    };
+  }
+
   private startTrafficWorker() {
     if (this.trafficWorker) return;
     try {
@@ -231,6 +260,7 @@ export class TwinCityEngine {
    * refetching or leaking a second set of primitives and camera listeners.
    */
   public dispose() {
+    this.junctionOverlay.dispose();
     if (this.simulations.isRunning('traffic')) this.simulations.stopSimulation('traffic');
     this.interactionHandler?.destroy();
     this.interactionHandler = null;
@@ -277,6 +307,7 @@ export class TwinCityEngine {
     this.startTrafficWorker();
     this.startFpsMonitor();
     this.trafficVisualizer.setViewer(viewer);
+    this.junctionOverlay.setViewer(viewer);
     renderManagerInstance.initialize(viewer);
     this.simMode.setViewer(viewer);
 
@@ -510,7 +541,8 @@ export class TwinCityEngine {
 
       // Selection mode path
       if (defined(pickedObject) && pickedObject.id) {
-        const entityId = pickedObject.id.id || pickedObject.id;
+        const rawId = pickedObject.id.id || pickedObject.id;
+        const entityId = typeof rawId === 'string' && rawId.startsWith('junction_edit_') ? rawId.slice('junction_edit_'.length) : rawId;
 
         if (typeof entityId === 'string' && (entityId.startsWith('debug_node_') || entityId.startsWith('debug_edge_'))) {
           this.selection.selectSingle(entityId);
@@ -579,6 +611,17 @@ export class TwinCityEngine {
    */
   private handleSimulationClick(position: Cartesian2, additive: boolean) {
     if (!this.viewer) return;
+    if (!additive && this.simMode.getState().traffic.status !== 'idle') {
+      const ray = this.viewer.camera.getPickRay(position);
+      const at = this.viewer.scene.pickPositionSupported ? this.viewer.scene.pickPosition(position) : undefined;
+      const ground = at ?? (ray ? this.viewer.scene.globe.pick(ray, this.viewer.scene) : undefined);
+      if (ground) {
+        const c = Cartographic.fromCartesian(ground);
+        const tolerance = Math.min(10, Math.max(2, this.viewer.camera.positionCartographic.height * 0.004));
+        const vehicle = this.simMode.pickVehicleAt(CesiumMath.toDegrees(c.longitude), CesiumMath.toDegrees(c.latitude), tolerance);
+        if (vehicle) { this.simMode.selectVehicle(vehicle.id); return; }
+      }
+    }
     const picked = this.viewer.scene.pick(position);
     const pickedId = defined(picked) && picked.id ? (picked.id.id || picked.id) : null;
     const pickedObj = typeof pickedId === 'string' ? this.objects.getById(pickedId) : undefined;
@@ -815,6 +858,7 @@ export class TwinCityEngine {
 
   public clearSnapPreview() {
     if (!this.viewer) return;
+    this.junctionOverlay.clearPreview();
     if (this.snapReticleEntity) {
       this.viewer.entities.remove(this.snapReticleEntity);
       this.snapReticleEntity = null;
@@ -837,6 +881,12 @@ export class TwinCityEngine {
     this.editing.setActiveSnap(snap.type !== 'none' ? snap : null);
 
     const activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];
+
+    if (mode === 'draw_junction') {
+      this.junctionOverlay.preview(activePoint);
+      return;
+    }
+    this.junctionOverlay.clearPreview();
 
     // 1. Update Snap Reticle Entity
     if (snap.type !== 'none') {
@@ -1111,6 +1161,7 @@ export class TwinCityEngine {
     const selections = this.selection.getSelection();
     const selectedId = selections[0];
     const selectedObj = selectedId ? this.objects.getById(selectedId) : null;
+    this.junctionOverlay.sync(filtered, this.isPlanningMode && this.layers.isVisible('junctions'), selectedId);
 
     // 2. Render Zones if layer is visible
     if (this.layers.isVisible('demand_zones')) {

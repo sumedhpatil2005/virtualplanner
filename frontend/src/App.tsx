@@ -6,6 +6,7 @@ import { InfoPanel } from './components/InfoPanel';
 import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { SimulationPanel } from './components/SimulationPanel';
+import { SimulationHud } from './components/SimulationHud';
 import { ModeBar } from './components/ModeBar';
 import { ConnectionBadge } from './components/ui/ConnectionBadge';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
@@ -101,8 +102,8 @@ function App() {
       {/* Top centre: mode, and Build's tools */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
         <ModeBar />
-        {mode === 'build' && <Toolbar />}
       </div>
+      {mode === 'build' && <div className="build-toolbar absolute z-30 flex justify-center pointer-events-none"><Toolbar /></div>}
 
       {/* Right: the panel for the current mode */}
       <div className="absolute right-4 top-4 bottom-4 z-20 flex flex-col items-end pointer-events-none">
@@ -114,6 +115,7 @@ function App() {
       </div>
 
       {/* Bottom left: layers */}
+      {mode === 'simulate' && <SimulationHud />}
       <div className="absolute bottom-4 left-4 z-20 pointer-events-auto flex flex-col items-start gap-2">
         {isLayersOpen && (
           <div className="animate-fade-in mb-1">

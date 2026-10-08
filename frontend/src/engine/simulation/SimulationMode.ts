@@ -13,8 +13,10 @@ import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { OverpassCancelledError } from '../editing/OverpassClient';
 import { StudyAreaVisualizer } from '../rendering/renderers/StudyAreaVisualizer';
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
-import { TrafficMicroSim, STEP_S, type MicroSimMetrics } from './TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
+import { compileStudyDemand, snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
+export type { SimulationContext } from './StudyDemand';
 
 export type TrafficStatus = 'idle' | 'running' | 'paused';
 
@@ -29,6 +31,24 @@ export interface TrafficRunState {
   seed: number;
   metrics: MicroSimMetrics | null;
   error: string | null;
+  demand: DemandProvenance | null;
+}
+
+export interface TrafficRunSnapshot {
+  scenarioId: string;
+  durationS: number;
+  seed: number;
+  demandLevel: number;
+  focus: boolean;
+  demandKey: string;
+  networkKey: string;
+  metrics: MicroSimMetrics;
+}
+export interface TrafficComparisonState {
+  baseline: TrafficRunSnapshot | null;
+  current: TrafficRunSnapshot | null;
+  staleReason: string | null;
+  running: boolean;
 }
 
 export const TRAFFIC_SPEEDS = [1, 5, 20] as const;
@@ -38,7 +58,7 @@ export const TRAFFIC_LEVELS = [
   { label: 'Normal', value: 0.12 },
   { label: 'Heavy', value: 0.25 },
 ] as const;
-export const DEFAULT_DEMAND_LEVEL = 0.12;
+export const DEFAULT_DEMAND_LEVEL = OD_REFERENCE_LEVEL;
 /**
  * With focus on, the selected roads carry extra through traffic: this many
  * times the volume level, as a share of their capacity (Light 20%, Normal 48%,
@@ -86,6 +106,8 @@ export interface SimulationModeState {
   traffic: TrafficRunState;
   osmRoads: OsmRoadsState;
   signals: SignalsState;
+  comparison: TrafficComparisonState;
+  selectedVehicleId: number | null;
 }
 
 /** Wait after a road edit before re-mapping, so a burst of changes maps once. */
@@ -109,9 +131,11 @@ export class SimulationMode {
     direction: 'both',
     area: null,
     error: null,
-    traffic: { status: 'idle', speed: 1, demandLevel: DEFAULT_DEMAND_LEVEL, focus: true, seed: DEFAULT_TRAFFIC_SEED, metrics: null, error: null },
+    traffic: { status: 'idle', speed: 1, demandLevel: DEFAULT_DEMAND_LEVEL, focus: true, seed: DEFAULT_TRAFFIC_SEED, metrics: null, error: null, demand: null },
     osmRoads: { status: 'idle', added: null, error: null },
     signals: { status: 'off', count: null },
+    comparison: { baseline: null, current: null, staleReason: null, running: false },
+    selectedVehicleId: null,
   };
   private readonly signalSource: TrafficSignalSource | null;
   private signalLoad: AbortController | null = null;
@@ -142,11 +166,17 @@ export class SimulationMode {
 
   private readonly getRoads: () => DrivableObject[];
   private readonly osmSource: OsmRoadSource | null;
+  private readonly getContext: () => SimulationContext;
+  private baselinePlan: DemandPlan | null = null;
+  private baselineContextKey = '';
+  private baselineStudyKey = '';
+  private comparisonGeneration = 0;
 
-  constructor(getRoads: () => DrivableObject[], osmSource: OsmRoadSource | null = null, signalSource: TrafficSignalSource | null = null) {
+  constructor(getRoads: () => DrivableObject[], osmSource: OsmRoadSource | null = null, signalSource: TrafficSignalSource | null = null, getContext: () => SimulationContext = () => ({})) {
     this.getRoads = getRoads;
     this.osmSource = osmSource;
     this.signalSource = signalSource;
+    this.getContext = getContext;
   }
 
   /** For React's useSyncExternalStore. */
@@ -175,6 +205,7 @@ export class SimulationMode {
   }
 
   public dispose() {
+    this.comparisonGeneration++;
     this.osmLoad?.abort();
     this.signalLoad?.abort();
     this.cancelPendingRecompute();
@@ -211,6 +242,7 @@ export class SimulationMode {
    * removed from, the roads being studied.
    */
   public selectRoad(roadId: string, additive: boolean) {
+    this.invalidateComparison('The study roads changed. Capture a new baseline.');
     this.autoRun = true;
     if (!additive) {
       this.setState({ seedRoadIds: [roadId] });
@@ -230,6 +262,7 @@ export class SimulationMode {
   }
 
   public clearSeeds() {
+    this.invalidateComparison('The study roads changed. Capture a new baseline.');
     this.autoRun = false;
     this.cancelPendingRecompute();
     this.resetTraffic();
@@ -246,6 +279,7 @@ export class SimulationMode {
   public setRange(meters: number) {
     const rangeMeters = clampRangeM(meters);
     if (rangeMeters === this.state.rangeMeters) return;
+    this.invalidateComparison('The study range changed. Capture a new baseline.');
     this.setState({ rangeMeters });
     if (this.state.seedRoadIds.length > 0) {
       this.autoRun = true;
@@ -254,12 +288,14 @@ export class SimulationMode {
   }
 
   public setDirection(direction: StudyDirection) {
+    this.invalidateComparison('The study direction changed. Capture a new baseline.');
     this.setState({ direction });
     if (this.state.seedRoadIds.length > 0) this.recompute(false, false);
   }
 
   /** Roads changed or the scenario switched. Re-maps the current area shortly after. */
   public networkChanged() {
+    this.invalidateComparison('The network changed. Run the comparison again.');
     this.revision++;
     if (!this.state.active || this.state.seedRoadIds.length === 0) return;
     this.cancelPendingRecompute();
@@ -339,6 +375,7 @@ export class SimulationMode {
       .then(points => {
         if (load !== this.signalLoad) return;
         this.signalPoints = points;
+        this.invalidateComparison('Mapped signals changed. Run the comparison again.');
         this.setState({ signals: { status: 'ready', count: points.length } });
       })
       .catch(() => {
@@ -418,22 +455,33 @@ export class SimulationMode {
     this.setState({ traffic: { ...this.state.traffic, ...patch } });
   }
 
+  private demandBounds(area: StudyArea): Bounds {
+    const padLat = 250 / 111320;
+    const padLng = padLat / Math.cos((area.bounds.minLat + area.bounds.maxLat) / 2 * Math.PI / 180);
+    return { minLng: area.bounds.minLng - padLng, maxLng: area.bounds.maxLng + padLng, minLat: area.bounds.minLat - padLat, maxLat: area.bounds.maxLat + padLat };
+  }
+
   /** Starts traffic on the current study area. */
   public startTraffic() {
     const area = this.state.area;
     if (!area || this.state.traffic.status !== 'idle') return;
     const roads = new Map(this.getRoads().map(r => [r.id, r]));
+    const context = this.getContext();
+    const plan = compileStudyDemand(context, this.demandBounds(area));
     const sim = new TrafficMicroSim(area, roads, {
       demandLevel: this.state.traffic.demandLevel,
       seed: this.state.traffic.seed,
       watchRoadIds: area.seedRoadIds,
       focusLoad: focusLoadFor(this.state.traffic),
       signalPoints: this.signalPoints ?? undefined,
+      junctions: context.junctions,
+      demandTrips: plan ? snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))) : undefined,
     });
     const metrics = sim.getMetrics();
-    if (metrics.entries === 0 || metrics.exits < 2) {
+    this.setTraffic({ demand: plan?.provenance ?? { source: 'synthetic', label: 'Synthetic capacity-based arrivals; no project OD demand configured', period: context.period ?? 'AM_Peak', vehiclesPerHour: metrics.inflowVph, pairCount: sim.getDemandTrips().length } });
+    if (metrics.entries === 0 || metrics.exits < (plan ? 1 : 2)) {
       this.setTraffic({
-        error: metrics.entries === 0
+        error: plan ? 'No estimated OD trips can be routed in this study area. Include both trip origins and destinations.' : metrics.entries === 0
           ? 'No road leads into this area, so no traffic can enter. Increase the range.'
           : 'Traffic needs a way out other than the way in. Increase the range.',
       });
@@ -464,6 +512,7 @@ export class SimulationMode {
     const wasRunning = this.sim !== null;
     this.stopLoop();
     this.sim = null;
+    if (this.state.selectedVehicleId !== null) this.setState({ selectedVehicleId: null });
     this.trafficVisualizer.clear();
     this.visualizer.setMarkersVisible(true);
     if (wasRunning && this.state.area) this.visualizer.render(this.state.area, false);
@@ -485,6 +534,7 @@ export class SimulationMode {
 
   public setDemandLevel(level: number) {
     const demandLevel = Math.max(0, Math.min(1, level));
+    this.invalidateComparison('Demand settings changed. Restore the baseline settings or capture a new baseline.');
     this.sim?.setDemandLevel(demandLevel);
     this.sim?.setFocusLoad(focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
     this.setTraffic({ demandLevel, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
@@ -492,8 +542,149 @@ export class SimulationMode {
 
   /** Turns the extra through traffic on the selected roads on or off. */
   public setFocus(focus: boolean) {
+    this.invalidateComparison('Focus settings changed. Restore the baseline settings or capture a new baseline.');
     this.sim?.setFocusLoad(focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
     this.setTraffic({ focus, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
+  }
+
+  private studyKey() {
+    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction });
+  }
+
+  private demandContextKey() {
+    return demandContextKey(this.getContext());
+  }
+
+  private invalidateComparison(reason: string) {
+    this.comparisonGeneration++;
+    if (!this.state.comparison.baseline && !this.state.comparison.running) return;
+    this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: reason, running: false } });
+  }
+
+  /** Replays a fixed horizon from an empty network; live simulation speed never changes the result. */
+  private async snapshot(plan: DemandPlan, durationS: number, generation: number): Promise<TrafficRunSnapshot> {
+    const area = this.state.area;
+    if (!area) throw new Error('Select a study road before capturing a run.');
+    const roads = structuredClone(this.getRoads()), context = structuredClone(this.getContext());
+    const traffic = this.state.traffic;
+    const sim = new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), {
+      demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
+      junctions: context.junctions, signalPoints: this.signalPoints ?? undefined,
+      demandTrips: snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))),
+    });
+    const steps = Math.round(durationS / STEP_S);
+    let yieldedAt = performance.now();
+    for (let i = 0; i < steps; i++) {
+      sim.step();
+      if (performance.now() - yieldedAt > 20) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+        yieldedAt = performance.now();
+      }
+    }
+    return { scenarioId: context.scenarioId ?? 'current', durationS: steps * STEP_S,
+      seed: traffic.seed, demandLevel: traffic.demandLevel, focus: traffic.focus,
+      demandKey: contentKey(plan), networkKey: contentKey({ roads, junctions: context.junctions, signalPoints: this.signalPoints }), metrics: sim.getMetrics() };
+  }
+
+  /** A trial must run on the area mapped from the current roads, not one still waiting out its debounce. */
+  private flushPendingRecompute() {
+    if (!this.recomputeTimer) return;
+    this.cancelPendingRecompute();
+    this.recompute(false, false);
+  }
+
+  public async captureBaseline(durationS = 300): Promise<TrafficRunSnapshot | null> {
+    this.flushPendingRecompute();
+    const generation = ++this.comparisonGeneration;
+    this.setState({ comparison: { ...this.state.comparison, running: true, staleReason: null } });
+    try {
+      const area = this.state.area;
+      if (!area) throw new Error('Select a study road before capturing a baseline.');
+      let plan = compileStudyDemand(this.getContext(), this.demandBounds(area));
+      if (!plan) {
+        const traffic = this.state.traffic;
+        const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
+          demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
+          focusLoad: focusLoadFor(traffic), junctions: this.getContext().junctions, signalPoints: this.signalPoints ?? undefined,
+        });
+        const trips = sim.getDemandTrips().flatMap(t => {
+          const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
+          return from && to ? [{ from: [...from.coordinates] as [number, number, number], to: [...to.coordinates] as [number, number, number], vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId }] : [];
+        });
+        plan = { trips, provenance: { source: 'synthetic', label: 'Frozen synthetic capacity-based OD arrivals', period: this.getContext().period ?? 'AM_Peak', vehiclesPerHour: trips.reduce((n, t) => n + t.vehiclesPerHour, 0), pairCount: trips.length } };
+      }
+      if (!plan.trips.length) throw new Error('This study area has no OD demand to compare.');
+      const duration = Number.isFinite(durationS) ? Math.max(STEP_S, Math.min(3600, durationS)) : 300;
+      const contextKey = this.demandContextKey(), studyKey = this.studyKey();
+      const baseline = await this.snapshot(plan, duration, generation);
+      if (generation !== this.comparisonGeneration) return null;
+      this.baselinePlan = structuredClone(plan);
+      this.baselineContextKey = contextKey;
+      this.baselineStudyKey = studyKey;
+      this.setState({ comparison: { baseline, current: null, staleReason: null, running: false } });
+      return baseline;
+    } catch (err) {
+      if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: err instanceof Error ? err.message : String(err), running: false } });
+      return null;
+    }
+  }
+
+  public async runComparison(): Promise<TrafficRunSnapshot | null> {
+    this.flushPendingRecompute();
+    const baseline = this.state.comparison.baseline, plan = this.baselinePlan;
+    let reason: string | null = null;
+    if (!baseline || !plan) reason = 'Capture a baseline before comparing.';
+    else if (this.baselineContextKey !== this.demandContextKey()) reason = 'Project demand changed. Capture a new baseline to compare equal OD demand.';
+    else if (this.baselineStudyKey !== this.studyKey()) reason = 'The study area changed. Capture a new baseline.';
+    else if (baseline.seed !== this.state.traffic.seed || baseline.demandLevel !== this.state.traffic.demandLevel || baseline.focus !== this.state.traffic.focus) reason = 'Restore the baseline seed, volume and focus settings before comparing.';
+    if (reason) {
+      this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: reason, running: false } });
+      return null;
+    }
+    const generation = ++this.comparisonGeneration;
+    this.setState({ comparison: { ...this.state.comparison, running: true, staleReason: null } });
+    try {
+      const current = await this.snapshot(plan!, baseline!.durationS, generation);
+      if (generation !== this.comparisonGeneration) return null;
+      this.setState({ comparison: { baseline, current, staleReason: null, running: false } });
+      return current;
+    } catch (err) {
+      if (generation === this.comparisonGeneration) this.invalidateComparison(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
+  public clearBaseline() {
+    this.comparisonGeneration++;
+    this.baselinePlan = null;
+    this.setState({ comparison: { baseline: null, current: null, staleReason: null, running: false } });
+  }
+
+  public getVehicleViews(): VehicleView[] {
+    const vehicles: VehicleView[] = [];
+    this.sim?.forEachVehicle(v => vehicles.push({ ...v }), this.stepDebt);
+    return vehicles;
+  }
+
+  public inspectVehicle(id: number): VehicleView | null {
+    let result: VehicleView | null = null;
+    this.sim?.forEachVehicle(v => { if (v.id === id) result = { ...v }; }, this.stepDebt);
+    return result;
+  }
+
+  public selectVehicle(id: number | null) {
+    this.setState({ selectedVehicleId: id });
+  }
+
+  public pickVehicleAt(lng: number, lat: number, maxDistanceM = 8): VehicleView | null {
+    let selected: VehicleView | null = null, best = maxDistanceM;
+    const kx = 111320 * Math.cos(lat * Math.PI / 180);
+    this.sim?.forEachVehicle(v => {
+      const distance = Math.hypot((v.lng - lng) * kx, (v.lat - lat) * 111320);
+      if (v.opacity > .1 && distance < best) { best = distance; selected = { ...v }; }
+    }, this.stepDebt);
+    return selected;
   }
 
   private startLoop() {

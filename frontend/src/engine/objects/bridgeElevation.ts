@@ -1,5 +1,6 @@
 import type { CityObject, RoadObject } from './types';
 import { MinHeap } from '../simulation/Pathfinder';
+import { remapRoadSections, repairRoadSections } from './roadSections';
 
 /**
  * Heights for OpenStreetMap bridges and flyovers.
@@ -33,8 +34,9 @@ export function elevatedLayer(o: CityObject): number {
 }
 
 /** Inserts points so no piece is longer than MAX_VERTEX_SPACING_M. Original points are kept as they are. */
-function densify(coords: readonly [number, number, number][]): [number, number, number][] {
+function densify(coords: readonly [number, number, number][]): BridgeGeometry {
   const out: [number, number, number][] = [coords[0]];
+  const originalIndices = [0];
   for (let i = 1; i < coords.length; i++) {
     const a = coords[i - 1], b = coords[i];
     const n = Math.ceil(distM(a, b) / MAX_VERTEX_SPACING_M);
@@ -43,8 +45,15 @@ function densify(coords: readonly [number, number, number][]): [number, number, 
       out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), 0]);
     }
     out.push(b);
+    originalIndices.push(out.length - 1);
   }
-  return out;
+  return { coordinates: out, originalIndices };
+}
+
+export interface BridgeGeometry {
+  coordinates: [number, number, number][];
+  /** New index of each original vertex, so profiles follow the same segments. */
+  originalIndices: number[];
 }
 
 /**
@@ -55,22 +64,23 @@ function densify(coords: readonly [number, number, number][]): [number, number, 
  * its layer's height. A deck that meets the ground nowhere is level at full
  * height. Applying the result and running it again changes nothing.
  */
-export function bridgeHeights(objects: Iterable<CityObject>): Map<RoadObject, [number, number, number][]> {
+export function bridgeGeometry(objects: Iterable<CityObject>): Map<RoadObject, BridgeGeometry> {
   const elevated: RoadObject[] = [];
   const groundKeys = new Set<string>();
   for (const o of objects) {
     if (o.type !== 'road' && o.type !== 'flyover' && o.type !== 'metro_flyover') continue;
+    if (o.coordinates.length < 2) continue;
     if (elevatedLayer(o) > 0) {
       elevated.push(o as RoadObject);
     } else if (o.type === 'road') {
       for (const p of o.coordinates) if (Math.abs(p[2] || 0) < 1) groundKeys.add(key(p));
     }
   }
-  const changed = new Map<RoadObject, [number, number, number][]>();
+  const changed = new Map<RoadObject, BridgeGeometry>();
   if (elevated.length === 0) return changed;
 
   // Graph of deck points: neighbours along each road, and points shared between decks
-  const coords = new Map<RoadObject, [number, number, number][]>();
+  const coords = new Map<RoadObject, BridgeGeometry>();
   const height = new Map<string, number>();
   const links = new Map<string, { to: string; m: number }[]>();
   const link = (a: string, b: string, m: number) => {
@@ -78,8 +88,9 @@ export function bridgeHeights(objects: Iterable<CityObject>): Map<RoadObject, [n
     links.get(a)!.push({ to: b, m });
   };
   for (const r of elevated) {
-    const pts = densify(r.coordinates);
-    coords.set(r, pts);
+    const geometry = densify(r.coordinates);
+    const pts = geometry.coordinates;
+    coords.set(r, geometry);
     const h = elevatedLayer(r) * DECK_HEIGHT_PER_LAYER_M;
     for (let i = 0; i < pts.length; i++) {
       const k = key(pts[i]);
@@ -114,7 +125,8 @@ export function bridgeHeights(objects: Iterable<CityObject>): Map<RoadObject, [n
   }
 
   for (const r of elevated) {
-    const next = coords.get(r)!.map(p => {
+    const geometry = coords.get(r)!;
+    const next = geometry.coordinates.map(p => {
       const k = key(p);
       return [p[0], p[1], Math.min(height.get(k)!, (dist.get(k) ?? Infinity) * RAMP_GRADE)] as [number, number, number];
     });
@@ -122,14 +134,23 @@ export function bridgeHeights(objects: Iterable<CityObject>): Map<RoadObject, [n
       const q = r.coordinates[i];
       return p[0] === q[0] && p[1] === q[1] && Math.abs(p[2] - (q[2] || 0)) < 1e-9;
     });
-    if (!same) changed.set(r, next);
+    if (!same) changed.set(r, { coordinates: next, originalIndices: geometry.originalIndices });
   }
   return changed;
 }
 
+/** Compatibility API for callers that only need coordinates. */
+export function bridgeHeights(objects: Iterable<CityObject>): Map<RoadObject, [number, number, number][]> {
+  return new Map([...bridgeGeometry(objects)].map(([road, geometry]) => [road, geometry.coordinates]));
+}
+
 /** Applies bridgeHeights to the objects in place (for building scenes outside the ObjectManager, e.g. tests). */
 export function liftOsmBridges(objects: Iterable<CityObject>): RoadObject[] {
-  const changed = bridgeHeights(objects);
-  changed.forEach((coordinates, r) => (r.coordinates = coordinates));
+  const changed = bridgeGeometry(objects);
+  changed.forEach(({ coordinates, originalIndices }, r) => {
+    if (r.sections?.length) r.sections = remapRoadSections(repairRoadSections(r), r.coordinates, coordinates, originalIndices);
+    r.sourceCoordinates ??= r.coordinates.map(point => [...point] as [number, number, number]);
+    r.coordinates = coordinates;
+  });
   return [...changed.keys()];
 }

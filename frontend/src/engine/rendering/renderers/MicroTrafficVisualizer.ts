@@ -17,19 +17,10 @@ const MAX_MODELS = 600;
 const MODEL_RANGE_M = 6000;
 /** Tyres sit this far above the road surface, clear of the lane markings. */
 const ROAD_CLEARANCE_M = 0.04;
-/**
- * Drawn positions ease towards the simulated ones over about this much
- * simulated time, so a vehicle sweeps across a junction instead of jumping
- * from one approach to the next.
- */
-const SMOOTH_S = 0.35;
-/** Further than this from where it was drawn (e.g. a gridlock removal and reuse), a vehicle is moved straight there. */
-const SNAP_M = 40;
 /** Small on screen when zoomed out, but never so small it disappears. */
 const MIN_PIXEL_SIZE = 14;
 const MAX_ZOOM_OUT_SCALE = 5;
 
-const M_PER_DEG_LAT = 111320;
 const DEG = Math.PI / 180;
 
 /** A drawn vehicle: where it is shown, which may lag the simulation slightly. */
@@ -67,7 +58,6 @@ interface SignalHead {
   near: boolean;
 }
 
-const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /**
  * Model matrix (column-major, into `m`) placing a model at `position` (above
@@ -127,12 +117,11 @@ export class MicroTrafficVisualizer {
   /**
    * Brings the drawing in line with the simulation. `aheadS` is simulated
    * time since the last step (vehicles are carried on by it); `dtS` is
-   * simulated time since the previous draw (for easing).
+   * simulated time since the previous draw (retained for API compatibility).
    */
-  public draw(sim: TrafficMicroSim, aheadS = 0, dtS = 0) {
+  public draw(sim: TrafficMicroSim, aheadS = 0, _dtS = 0) {
     if (!this.ready()) return;
     const frame = ++this.frame;
-    const ease = dtS > 0 ? 1 - Math.exp(-dtS / SMOOTH_S) : 0;
     const camera = this.viewer!.camera.positionWC;
     const live = this.live;
     live.length = 0;
@@ -147,17 +136,9 @@ export class MicroTrafficVisualizer {
         };
         this.tracks.set(v.id, t);
       } else {
-        const dx = (v.lng - t.lng) * M_PER_DEG_LAT * Math.cos(v.lat * DEG);
-        const dy = (v.lat - t.lat) * M_PER_DEG_LAT;
-        if (dx * dx + dy * dy > SNAP_M * SNAP_M) {
-          t.lng = v.lng; t.lat = v.lat; t.z = v.z; t.heading = v.heading; t.pitch = v.pitch;
-        } else {
-          t.lng += (v.lng - t.lng) * ease;
-          t.lat += (v.lat - t.lat) * ease;
-          t.z += (v.z - t.z) * ease;
-          t.heading = wrapAngle(t.heading + wrapAngle(v.heading - t.heading) * ease);
-          t.pitch += (v.pitch - t.pitch) * ease;
-        }
+        // The simulation samples travelled distance on real lane connectors.
+        // Spatial easing would cut their corners and separate heading from motion.
+        t.lng = v.lng; t.lat = v.lat; t.z = v.z; t.heading = v.heading; t.pitch = v.pitch;
       }
       t.opacity = v.opacity;
       t.seenFrame = frame;

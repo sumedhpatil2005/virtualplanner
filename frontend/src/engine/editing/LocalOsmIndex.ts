@@ -15,6 +15,7 @@ export interface LocalOsmStatus {
   bbox?: [number, number, number, number];
   ways?: number;
   signals?: number;
+  capabilities?: string[];
 }
 
 type Box = { minLng: number; minLat: number; maxLng: number; maxLat: number };
@@ -42,6 +43,15 @@ export class LocalOsmIndex {
     if (!st.available || !st.bbox || boxes.length === 0) return false;
     const [x0, y0, x1, y1] = st.bbox;
     return boxes.every(b => b.minLng >= x0 && b.minLat >= y0 && b.maxLng <= x1 && b.maxLat <= y1);
+  }
+
+  public async supports(category: 'roads' | 'buildings' | 'metro', boxes: readonly Box[]): Promise<boolean> {
+    const status = await this.getStatus();
+    return (category === 'roads' || status.capabilities?.includes(category) === true) && await this.covers(boxes);
+  }
+
+  public async infrastructure(category: 'buildings' | 'metro', boxes: readonly Box[]): Promise<any[]> {
+    return (await apiGet<Elements>(`/api/osm/${category}?bbox=${encodeBoxes(boxes)}`)).elements;
   }
 
   /** Road ways overlapping the boxes, as Overpass `out geom` elements. */

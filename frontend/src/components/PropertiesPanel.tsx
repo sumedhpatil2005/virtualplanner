@@ -323,7 +323,7 @@ export const PropertiesPanel: React.FC = () => {
     } else if (selectedObj.type === 'junction') {
       const jUpdates = updates as Partial<JunctionObject>;
       if (field === 'signalTiming') {
-        jUpdates.signalTiming = Number(value);
+        jUpdates.signalTiming = Math.max(20, Math.min(300, Number(value) || 90));
       } else if (field === 'hasSignals') {
         jUpdates.hasSignals = Boolean(value);
       } else if (field === 'hasPedestrianCrossing') {
@@ -1902,6 +1902,7 @@ const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, va
           <span className="text-sm text-slate-400">Traffic Signal Lights</span>
           <input
             type="checkbox"
+            aria-label="Traffic signal lights"
             checked={j.hasSignals}
             onChange={(e) => onUpdate('hasSignals', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
@@ -1911,6 +1912,7 @@ const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, va
           <span className="text-sm text-slate-400">Crosswalks</span>
           <input
             type="checkbox"
+            aria-label="Pedestrian crosswalks"
             checked={j.hasPedestrianCrossing}
             onChange={(e) => onUpdate('hasPedestrianCrossing', e.target.checked)}
             className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
@@ -1920,13 +1922,17 @@ const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, va
 
       {j.hasSignals && (
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Signal Phase Timing (secs)</label>
+          <label htmlFor="junction-cycle" className="text-xs text-slate-400 uppercase font-semibold">Full signal cycle (seconds)</label>
           <input
+            id="junction-cycle"
             type="number"
+            min={20}
+            max={300}
             value={j.signalTiming}
             onChange={(e) => onUpdate('signalTiming', Number(e.target.value))}
             className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
           />
+          <p className="text-xs text-slate-500">Applied to this junction in Simulate. Green time is split between the crossing approaches.</p>
         </div>
       )}
     </div>
