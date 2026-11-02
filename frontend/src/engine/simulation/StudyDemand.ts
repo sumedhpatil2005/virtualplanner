@@ -2,7 +2,8 @@ import type { BuildingObject, JunctionObject } from '../objects/types';
 import type { DemandZone, ExternalGateway, ModeSplit, TimePeriod } from '../objects/demandTypes';
 import type { TrafficNetwork } from '../objects/trafficTypes';
 import type { MicroDemandTrip, VehicleKind } from './TrafficMicroSim';
-import { resolveBuildingTripEvents, PERIOD_SHARE } from './modeSplit';
+import { resolveBuildingTripEvents, hasTripOverrides } from './modeSplit';
+import { PUNE_TRIP_RATES, vehicleTripsByClass } from './tripRates';
 import type { Bounds } from './StudyAreaExplorer';
 
 export interface SimulationContext {
@@ -39,21 +40,53 @@ const inside = (p: [number, number, number], polygon: [number, number, number][]
 };
 const distance = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * 111320);
 
-/** Same activity and residual-zone model as DemandMatrixCompiler, without its mutable global snap cache. */
+/** Employees' daily motorised trips: the model's 1.5 trips per employee, at PCMC's motorised share of all trips (CMP 2018 Table 6). */
+const EMPLOYEE_MOTORISED_DAILY = 1.5 * PUNE_TRIP_RATES.motorisedTripsPerResident / PUNE_TRIP_RATES.allTripsPerResident;
+
+/** Vehicles per class for person trips under an explicit (user or gateway) mode split. */
+function vehiclesFromSplit(personTrips: number, split: ModeSplit): [VehicleKind, number][] {
+  const occ = PUNE_TRIP_RATES.occupancy;
+  return [['two_wheeler', personTrips * split.twoWheeler / occ.two_wheeler!], ['car', personTrips * split.car / occ.car!],
+    ['bus', personTrips * split.bus / occ.bus!], ['auto', personTrips * split.other / occ.auto!]];
+}
+
+/**
+ * Peak-hour vehicle OD demand for a study area from its buildings, residual
+ * zones and gateways (activity model as in DemandMatrixCompiler), using real
+ * Pune rates (tripRates.ts): motorised trips per resident, the peak-hour share
+ * of daily traffic, the PCMC motorised mode split and vehicle occupancy.
+ * Buildings with their own Activity Profile keep the user's trip numbers and
+ * split (as person trips, divided by occupancy). Gateway flows are vehicles.
+ */
 export function compileStudyDemand(context: SimulationContext, bounds?: Bounds): DemandPlan | null {
   const period = context.period ?? 'AM_Peak';
-  type Endpoint = { id: string; point: [number, number, number]; flow: number; split: ModeSplit };
+  type Endpoint = { id: string; point: [number, number, number]; flow: number; vehicles: [VehicleKind, number][] };
   const origins: Endpoint[] = [], destinations: Endpoint[] = [];
-  const add = (role: 'origin' | 'destination', id: string, point: [number, number, number], flow: number, split = DEFAULT_SPLIT) => {
-    if (flow > 0 && Number.isFinite(flow)) (role === 'origin' ? origins : destinations).push({ id, point, flow, split });
+  const add = (role: 'origin' | 'destination', id: string, point: [number, number, number], vehicles: [VehicleKind, number][]) => {
+    const flow = vehicles.reduce((n, [, v]) => n + v, 0);
+    if (flow > 0 && Number.isFinite(flow)) (role === 'origin' ? origins : destinations).push({ id, point, flow, vehicles });
+  };
+  const peak = period === 'AM_Peak' || period === 'PM_Peak';
+  const share = PUNE_TRIP_RATES.peakHourShare;
+  /** Residents leave in the AM peak and return in the PM peak; jobs the reverse. */
+  const addActivity = (id: string, point: [number, number, number], residents: number, employees: number) => {
+    if (!peak) return;
+    const home = vehicleTripsByClass(residents * PUNE_TRIP_RATES.motorisedTripsPerResident * share);
+    const work = vehicleTripsByClass(employees * EMPLOYEE_MOTORISED_DAILY * share);
+    add(period === 'AM_Peak' ? 'origin' : 'destination', id, point, home);
+    add(period === 'AM_Peak' ? 'destination' : 'origin', id, point, work);
   };
   const inBounds = (p: readonly number[]) => !bounds || (p[0] >= bounds.minLng && p[0] <= bounds.maxLng && p[1] >= bounds.minLat && p[1] <= bounds.maxLat);
   const buildings = (context.buildings ?? []).filter(b => b.coordinates.length && inBounds(centroid(b.coordinates)));
   for (const b of buildings) {
     if (!b.coordinates.length) continue;
     const point = b.accessPoints?.vehicleEntrance ?? b.accessPoints?.mainEntrance ?? centroid(b.coordinates);
+    if (!hasTripOverrides(b)) {
+      addActivity(b.id, point, Math.max(0, b.residents ?? 0), Math.max(0, b.employees ?? 0));
+      continue;
+    }
     for (const event of resolveBuildingTripEvents(b, DEFAULT_SPLIT)) {
-      if (event.period === period) add(event.role, b.id, point, event.trips, event.modeSplit);
+      if (event.period === period) add(event.role, b.id, point, vehiclesFromSplit(event.trips, event.modeSplit));
     }
   }
   for (const z of context.zones ?? []) {
@@ -65,16 +98,14 @@ export function compileStudyDemand(context: SimulationContext, bounds?: Bounds):
     const contained = (context.buildings ?? []).filter(b => b.coordinates.length && inside(centroid(b.coordinates), z.boundaryPolygon));
     const population = Math.max(0, z.totalPopulation - contained.reduce((n, b) => n + (b.residents ?? 0), 0)) * fraction;
     const employment = Math.max(0, z.totalEmployment - contained.reduce((n, b) => n + (b.employees ?? 0), 0)) * fraction;
-    const point = centroid(clipped);
-    if (period === 'AM_Peak' || period === 'PM_Peak') {
-      add(period === 'AM_Peak' ? 'origin' : 'destination', z.id, point, population * 1.8 * PERIOD_SHARE[period]);
-      add(period === 'AM_Peak' ? 'destination' : 'origin', z.id, point, employment * 1.2 * PERIOD_SHARE[period]);
-    }
+    addActivity(z.id, centroid(clipped), population, employment);
   }
   for (const g of context.gateways ?? []) {
     if (!inBounds(g.coordinates)) continue;
-    add('origin', g.id, g.coordinates, g.inboundFlows[period], g.modeSplit);
-    add('destination', g.id, g.coordinates, g.outboundFlows[period], g.modeSplit);
+    // Gateway flows are vehicles per hour; the split is read as a vehicle mix ("other" = autos)
+    const mix = (vph: number): [VehicleKind, number][] => [['two_wheeler', vph * g.modeSplit.twoWheeler], ['car', vph * g.modeSplit.car], ['bus', vph * g.modeSplit.bus], ['auto', vph * g.modeSplit.other]];
+    add('origin', g.id, g.coordinates, mix(g.inboundFlows[period]));
+    add('destination', g.id, g.coordinates, mix(g.outboundFlows[period]));
   }
   if (!origins.length && !destinations.length) return null;
   const trips: DemandPlan['trips'] = [];
@@ -84,14 +115,13 @@ export function compileStudyDemand(context: SimulationContext, bounds?: Bounds):
     const sum = options.reduce((n, d) => n + d.weight, 0);
     if (sum <= 0) continue;
     for (const { d, weight } of options) {
-      const modes: [VehicleKind, number][] = [['car', origin.split.car], ['two_wheeler', origin.split.twoWheeler], ['bus_auto', origin.split.bus + origin.split.other]];
-      for (const [kind, share] of modes) {
-        const vehiclesPerHour = origin.flow * weight / sum * share;
+      for (const [kind, vph] of origin.vehicles) {
+        const vehiclesPerHour = vph * weight / sum;
         if (vehiclesPerHour > 0) trips.push({ from: [...origin.point], to: [...d.point], vehiclesPerHour, kind });
       }
     }
   }
-  return { trips, provenance: { source: 'project-estimate', label: 'Local gravity estimate from study-area buildings, zones and gateways; up to 32 destinations per origin. Zone residuals use area overlap. Not measured traffic counts.',
+  return { trips, provenance: { source: 'project-estimate', label: 'Local gravity estimate from study-area buildings, zones and gateways, at real Pune rates (PCMC motorised trips per person, 7.8% peak-hour share, PCMC mode split and occupancy; CMP 2018/2008); up to 32 destinations per origin. Not measured traffic counts.',
     period, vehiclesPerHour: trips.reduce((n, t) => n + t.vehiclesPerHour, 0), pairCount: trips.length } };
 }
 

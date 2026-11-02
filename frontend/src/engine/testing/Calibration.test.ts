@@ -178,8 +178,16 @@ describe('calibrating a crossroads to counts', () => {
     ],
   };
 
-  it('fits trip factors to the counts and seeds the movement no trip used', () => {
+  it('count-driven by default: seeds every counted movement and still fits the counts', () => {
     const fit = fitPlan(setup, base, [counted]);
+    expect(new Set(fit.seeds.map(s => `${s.approach}:${s.turn}`))).toEqual(new Set(counted.movements.map(m => `${m.approach}:${m.turn}`)));
+    expect(fit.ipf.after.get('toy_x|N|straight')).toBeCloseTo(300, 0);
+    expect(fit.ipf.after.get('toy_x|N|left')).toBeCloseTo(120, 0);
+  });
+
+  it('fits trip factors to the counts and seeds the movement no trip used', () => {
+    // countDriven: false = seed only movements no estimated trip reaches (the count-driven default seeds all)
+    const fit = fitPlan(setup, base, [counted], { countDriven: false });
     expect(fit.layouts[0].problem).toBeNull();
     expect(fit.seeds.map(s => `${s.approach}:${s.turn}`)).toEqual(['N:left']);
     expect(fit.ipf.converged).toBe(true);

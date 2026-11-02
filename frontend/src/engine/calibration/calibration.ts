@@ -8,11 +8,13 @@
  *  3. The calibration step scales each OD trip by a factor fitted with
  *     bounded iterative proportional fitting (ipf.ts) so that the flows the
  *     trips route through each counted movement match the counts. A counted
- *     movement that no trip uses cannot be reached by scaling; for those, one
- *     "count-seeded" trip per vehicle class is added through that movement
- *     (upstream end of the approach to downstream end of the exit, starting
- *     at the observed class volume) and then fitted with the rest. Seeded
- *     trips are listed so the demand they add is visible.
+ *     movement's volume is driven by the counts: one "count-seeded" trip per
+ *     vehicle class is added through every counted movement (upstream end of
+ *     the approach to downstream end of the exit, starting at the observed
+ *     class volume) and fitted together with the estimated trips, so the
+ *     building heuristic only fills the rest of the network. (With
+ *     countDriven: false, only movements no estimated trip reaches are seeded.)
+ *     Seeded trips are listed so the demand they add is visible.
  *  4. The calibrated plan is measured again the same way, giving before/after
  *     GEH on simulated flows (not only on the fitted assignment).
  *
@@ -121,7 +123,8 @@ export async function measureFlows(setup: SimSetup, plan: DemandPlan, zones: rea
   return { flows, layouts, windowS, metrics: sim.getMetrics() };
 }
 
-const KIND_OF: Record<VehicleClass, VehicleKind> = { LV: 'car', HV: 'bus_auto', TW: 'two_wheeler' };
+/** Count classes to simulated classes: LV light vehicles as cars, HV heavy vehicles as buses, TW two-wheelers. */
+const KIND_OF: Record<VehicleClass, VehicleKind> = { LV: 'car', HV: 'bus', TW: 'two_wheeler' };
 
 export interface SeedTrip { junctionId: string; approach: Cardinal; turn: Turn; kind: VehicleKind; vehiclesPerHour: number }
 
@@ -169,7 +172,7 @@ export interface CalibrationFit {
  * any seeded trips. Plan flows are scaled so that, at the demand level in
  * `setup`, the routed flows equal the fitted ones.
  */
-export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly CountJunction[], options: IpfOptions = {}): CalibrationFit {
+export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly CountJunction[], options: IpfOptions & { countDriven?: boolean } = {}): CalibrationFit {
   const zones = junctions.map(zoneFor);
   const observed = observedFlows(junctions);
   let sim = buildSim(setup, base);
@@ -178,7 +181,10 @@ export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly C
   for (const key of [...observed.keys()]) if (!valid.has(key.split('|')[0])) observed.delete(key);
   const reach = (s: TrafficMicroSim) => new Set(s.demandRouteFlows().filter(f => f.vehiclesPerHour > 0).flatMap(f => routeMovements(f.route, layouts)));
   const levelFactor = setup.options.demandLevel / OD_REFERENCE_LEVEL;
-  const { trips: seedPlanTrips, seeds } = seedTrips(junctions, layouts, sim.linkEnds(), reach(sim));
+  // Count-driven OD: every counted movement gets trips at its observed class volume
+  // (not only those no estimated trip reaches), so the counts, not the building
+  // heuristic, set the volume through counted junctions; IPF then fits both together.
+  const { trips: seedPlanTrips, seeds } = seedTrips(junctions, layouts, sim.linkEnds(), options.countDriven === false ? reach(sim) : new Set());
   // Seeds start at the observed volume as the simulator will run them (it multiplies plan flows by levelFactor)
   const plan: DemandPlan = { ...base, trips: [...base.trips, ...seedPlanTrips.map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour / levelFactor }))] };
   if (seedPlanTrips.length) {

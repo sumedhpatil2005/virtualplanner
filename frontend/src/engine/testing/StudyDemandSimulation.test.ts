@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BuildingObject, RoadObject } from '../objects/types';
 import type { DemandZone } from '../objects/demandTypes';
+import { PUNE_TRIP_RATES, vehiclesPerMotorisedTrip } from '../simulation/tripRates';
 import { compileStudyDemand, demandContextKey, snapDemandPlan, type SimulationContext } from '../simulation/StudyDemand';
 import { SimulationMode } from '../simulation/SimulationMode';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
@@ -18,8 +19,9 @@ afterEach(() => vi.restoreAllMocks());
 describe('project demand scoped to a study', () => {
   it('excludes distant buildings and does not snap distant or raised endpoints onto ground roads', () => {
     const plan = compileStudyDemand({ buildings: [building('home', 300, 100), building('work', 900, 0, 100), building('far', 100000, 50000)] }, bounds)!;
-    expect(plan.provenance.vehiclesPerHour).toBeCloseTo(57.4);
-    expect(plan.trips).toHaveLength(3);
+    // 100 residents leaving in the AM peak hour at real Pune rates (tripRates.ts)
+    expect(plan.provenance.vehiclesPerHour).toBeCloseTo(100 * PUNE_TRIP_RATES.motorisedTripsPerResident * PUNE_TRIP_RATES.peakHourShare * vehiclesPerMotorisedTrip(), 6);
+    expect(plan.trips).toHaveLength(4);
     const graph = area().network;
     const remote = { ...plan, trips: [{ ...plan.trips[0], from: pt(100000) }, { ...plan.trips[0], from: pt(300, 0, 12) }] };
     expect(snapDemandPlan(remote, graph).every(t => t.fromNodeId === '')).toBe(true);
@@ -27,7 +29,7 @@ describe('project demand scoped to a study', () => {
   it('apportions residual zone demand by overlap and retains its clipped location', () => {
     const z = { id: 'zone', boundaryPolygon: [pt(0, -10), pt(2400, -10), pt(2400, 10), pt(0, 10)], totalPopulation: 1000, totalEmployment: 0 } as DemandZone;
     const plan = compileStudyDemand({ zones: [z], buildings: [building('work', 900, 0, 100)] }, bounds)!;
-    expect(plan.provenance.vehiclesPerHour).toBeCloseTo(1000 * .5 * 1.8 * .35 * .82, 2);
+    expect(plan.provenance.vehiclesPerHour).toBeCloseTo(1000 * .5 * PUNE_TRIP_RATES.motorisedTripsPerResident * PUNE_TRIP_RATES.peakHourShare * vehiclesPerMotorisedTrip(), 4);
     expect(plan.trips[0].from[0]).toBeCloseTo(pt(600)[0], 8);
     expect(compileStudyDemand({ zones: [{ ...z, boundaryPolygon: z.boundaryPolygon.map(p => pt(100000 + (p[0] - 73.8) * 111320)) }] }, bounds)).toBeNull();
   });
@@ -40,14 +42,15 @@ describe('project demand scoped to a study', () => {
 
 describe('repeatable scenario experiments', () => {
   it('replays equal frozen demand, guards changed inputs, and clears vehicle selection on reset', async () => {
-    let context: SimulationContext = { buildings: [building('home', 300, 100), building('work', 900, 0, 100)], scenarioId: 'base' };
+    // Large enough to produce trips within 180 s at real Pune peak-hour rates (~0.03 vehicles per resident)
+    let context: SimulationContext = { buildings: [building('home', 300, 6000), building('work', 900, 0, 6000)], scenarioId: 'base' };
     const mode = new SimulationMode(() => roads, null, null, () => context);
     vi.spyOn(mode as any, 'startLoop').mockImplementation(() => {});
     mode.enter(); mode.selectRoad('mid', false);
     const baseline = await mode.captureBaseline(180);
     expect(baseline?.metrics.completedTrips).toBeGreaterThan(0);
     expect((await mode.runComparison())?.metrics).toEqual(baseline?.metrics);
-    context = { ...context, buildings: [building('home', 300, 200), building('work', 900, 0, 100)] };
+    context = { ...context, buildings: [building('home', 300, 12000), building('work', 900, 0, 6000)] };
     expect(await mode.runComparison()).toBeNull();
     expect(mode.getState().comparison.staleReason).toMatch(/demand changed/i);
     mode.selectVehicle(42); expect(mode.getState().selectedVehicleId).toBe(42);
