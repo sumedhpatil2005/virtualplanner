@@ -17,6 +17,7 @@ import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, 
 import { SourceBadge } from './ui/SourceBadge';
 import { sourceOf } from './ui/dataSource';
 import { CalibrationPanel } from './CalibrationPanel';
+import { TimeOfDayPanel } from './TimeOfDayPanel';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -117,6 +118,7 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             </span>
           </div>
           <TrafficControls traffic={traffic} waiting={osmRoads.status === 'loading' ? 'Waiting for roads' : signals.status === 'loading' ? 'Loading signals' : null} />
+          <TimeOfDayPanel tod={sim.timeOfDay} />
           {traffic.demand && <DemandNote demand={traffic.demand} />}
           <CalibrationPanel sim={sim} />
           <SignalsNote signals={signals} />
@@ -343,7 +345,8 @@ const NetworkChecks: React.FC<{ problems: StudyProblem[]; provisional: boolean }
 };
 
 const Assumptions: React.FC<{ seed: number }> = ({ seed }) => {
-  const fleet = VEHICLE_TYPES.map(t => `${Math.round(t.share * 100)}% ${t.kind === 'two_wheeler' ? 'two-wheelers' : t.kind === 'car' ? 'cars' : 'buses and autos'}`).join(', ');
+  const NAMES: Record<string, string> = { two_wheeler: 'two-wheelers', car: 'cars', auto: 'autos', bus: 'buses', truck: 'goods vehicles' };
+  const fleet = VEHICLE_TYPES.filter(t => t.share > 0).map(t => `${Math.round(t.share * 100)}% ${NAMES[t.kind] ?? t.kind}`).join(', ');
   return (
     <details className="text-sm text-slate-400">
       <summary className="cursor-pointer text-slate-300 hover:text-white">How the traffic is modelled</summary>

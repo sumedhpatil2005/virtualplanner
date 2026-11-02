@@ -21,6 +21,7 @@ import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../
 import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, junctionChecks, observedFlows, type CalibrationRow, type JunctionCheck, type SimSetup } from '../calibration/calibration';
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
+import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
 
 export type TrafficStatus = 'idle' | 'running' | 'paused';
 
@@ -139,7 +140,26 @@ export interface SimulationModeState {
   comparison: TrafficComparisonState;
   selectedVehicleId: number | null;
   calibration: CalibrationState;
+  timeOfDay: TimeOfDayState;
 }
+
+/** Clock for the run: which hour's demand is simulated, from the real Pune hour-of-day profile. */
+export interface TimeOfDayState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  error: string | null;
+  profile: DiurnalProfile | null;
+  /** Clock hour simulated (0-23). */
+  hour: number;
+  day: DayType;
+  /** Which peak the observed counts (and calibrated demand) are taken to be: neither source says. */
+  countPeak: 'AM' | 'PM';
+  /** 24-hour playback: the clock advances one hour every PLAYBACK_S_PER_HOUR simulated seconds. */
+  playback: boolean;
+  /** Demand multiplier now applied: profile[hour] / profile[count hour]. */
+  factor: number;
+}
+/** Simulated seconds per clock hour during 24-hour playback (a full day in 24 minutes of simulation). */
+export const PLAYBACK_S_PER_HOUR = 60;
 
 const EMPTY_CALIBRATION: CalibrationState = {
   datasetStatus: 'idle', dataset: null, datasetError: null, junctions: [], rows: [], before: null, after: null, fit: null,
@@ -173,6 +193,7 @@ export class SimulationMode {
     comparison: { baseline: null, current: null, staleReason: null, running: false },
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
+    timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.PM, day: 'weekday', countPeak: 'PM', playback: false, factor: 1 },
   };
   private readonly signalSource: TrafficSignalSource | null;
   private signalLoad: AbortController | null = null;
@@ -521,6 +542,9 @@ export class SimulationMode {
       junctions: context.junctions,
       demandTrips: plan ? snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))) : undefined,
     });
+    sim.setHourFactor(this.state.timeOfDay.factor);
+    this.playbackHourStartT = 0;
+    void this.ensureTimeProfile();
     const metrics = sim.getMetrics();
     this.setTraffic({ demand: plan ? { ...plan.provenance } : { source: 'synthetic', label: 'Synthetic capacity-based arrivals; no project OD demand configured', period: context.period ?? 'AM_Peak', vehiclesPerHour: metrics.inflowVph, pairCount: sim.getDemandTrips().length } });
     if (metrics.entries === 0 || metrics.exits < (plan ? 1 : 2)) {
@@ -697,6 +721,56 @@ export class SimulationMode {
     } catch (err) {
       if (generation === this.comparisonGeneration) this.invalidateComparison(err instanceof Error ? err.message : String(err));
       return null;
+    }
+  }
+
+  // ── Time of day ──────────────────────────────────────────────────────────
+
+  private setTimeOfDay(patch: Partial<TimeOfDayState>) {
+    const next = { ...this.state.timeOfDay, ...patch };
+    next.factor = next.profile ? hourFactor(next.profile, next.hour, COUNT_HOURS[next.countPeak], next.day) : 1;
+    this.setState({ timeOfDay: next });
+    this.sim?.setHourFactor(next.factor);
+    if (this.sim) this.setTraffic({ metrics: this.sim.getMetrics() });
+  }
+
+  /** Loads the hour-of-day profile (once; again after an error). */
+  public ensureTimeProfile(): Promise<void> {
+    const t = this.state.timeOfDay;
+    if (t.status === 'ready' || t.status === 'loading') return Promise.resolve();
+    this.setTimeOfDay({ status: 'loading', error: null });
+    return fetchDiurnalProfile()
+      .then(profile => this.setTimeOfDay({ status: 'ready', profile }))
+      .catch(err => this.setTimeOfDay({ status: 'error', error: err instanceof Error ? err.message : String(err) }));
+  }
+
+  public setHour(hour: number) {
+    this.playbackHourStartT = this.sim?.timeS ?? 0;
+    this.setTimeOfDay({ hour: ((Math.round(hour) % 24) + 24) % 24 });
+  }
+
+  public setDayType(day: DayType) {
+    this.setTimeOfDay({ day });
+  }
+
+  /** Which peak hour the counts represent (AM 09:00 or PM 19:00); the calibrated demand is that hour's. */
+  public setCountPeak(countPeak: 'AM' | 'PM') {
+    this.setTimeOfDay({ countPeak });
+  }
+
+  public setPlayback(on: boolean) {
+    this.playbackHourStartT = this.sim?.timeS ?? 0;
+    this.setTimeOfDay({ playback: on });
+  }
+
+  private playbackHourStartT = 0;
+
+  private advancePlayback(sim: TrafficMicroSim) {
+    const t = this.state.timeOfDay;
+    if (!t.playback || !t.profile) return;
+    if (sim.timeS - this.playbackHourStartT >= PLAYBACK_S_PER_HOUR) {
+      this.playbackHourStartT = sim.timeS;
+      this.setTimeOfDay({ hour: (t.hour + 1) % 24 });
     }
   }
 
@@ -887,6 +961,7 @@ export class SimulationMode {
         this.stepDebt = 0;
       }
       for (let i = 0; i < steps; i++) sim.step();
+      this.advancePlayback(sim);
       // Drawn between steps too: vehicles carry on by the time since the last one
       this.trafficVisualizer.draw(sim, this.stepDebt, simDt);
       if (now - this.lastRecolourAt > RECOLOUR_EVERY_MS) {
