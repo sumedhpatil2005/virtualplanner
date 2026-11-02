@@ -14,7 +14,8 @@ export interface SimulationContext {
   period?: TimePeriod;
 }
 export interface DemandProvenance {
-  source: 'project-estimate' | 'synthetic';
+  /** project-estimate: heuristic gravity demand; synthetic: capacity-based; calibrated: either, scaled to observed counts. */
+  source: 'project-estimate' | 'synthetic' | 'calibrated';
   label: string;
   period: TimePeriod;
   vehiclesPerHour: number;

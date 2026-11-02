@@ -4,6 +4,8 @@ import { surfaceLiftM } from '../objects/roadSurface';
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { RouteTrees } from './routeTrees';
 import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector } from './LaneConnector';
+import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
+import type { Cardinal } from '../calibration/observedCounts';
 
 /**
  * Microscopic traffic simulation on a study area.
@@ -266,6 +268,8 @@ interface Vehicle {
   focus: boolean;
   /** Distance driven inside the area (m). */
   odo: number;
+  /** Per count zone, the approach this vehicle entered it by (see setCountZones). */
+  zoneEntry?: (Cardinal | null)[];
 }
 
 interface Control {
@@ -387,8 +391,12 @@ export class TrafficMicroSim {
   private focusNextT = Infinity;
   private readonly movements = new Map<string, LaneConnector>();
   private readonly reservations = new Set<Reservation>();
-  private readonly odArrivals: { trip: MicroDemandTrip; nextT: number; route: number[]; freeFlowS: number; rng: () => number }[] = [];
+  private readonly odArrivals: { index: number; trip: MicroDemandTrip; nextT: number; route: number[]; freeFlowS: number; rng: () => number }[] = [];
   private explicitDemand = false;
+  /** Counted junctions (observed-count calibration): their layouts and the movements counted since countFromT. */
+  private countLayouts: ZoneLayout[] = [];
+  private countFromT = 0;
+  private readonly movementCountMap = new Map<string, number>();
 
   constructor(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, options: MicroSimOptions) {
     this.rng = makeRng(options.seed);
@@ -466,7 +474,7 @@ export class TrafficMicroSim {
           });
           path = paths.sort((a, b) => a.freeFlowS - b.freeFlowS)[0] ?? null;
         }
-        this.odArrivals.push({ trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
+        this.odArrivals.push({ index, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
       }
     }
   }
@@ -1264,6 +1272,7 @@ export class TrafficMicroSim {
       return;
     }
     lane.shift();
+    if (this.countLayouts.length) this.countCrossing(veh, veh.link, nextIdx);
     veh.link = nextIdx;
     veh.lane = next.lanes.indexOf(target);
     veh.pos = pos;
@@ -1471,6 +1480,60 @@ export class TrafficMicroSim {
   }
 
   /** OD rates at Normal volume, frozen for repeatable comparisons independent of road capacity edits. */
+  // ── Observed-count calibration ───────────────────────────────────────────
+
+  /** Both ends of every link, for laying out count zones. */
+  public linkEnds(): LinkEnds[] {
+    return this.links.map(l => ({ index: l.index, from: l.pts[0], to: l.pts[l.pts.length - 1] }));
+  }
+
+  /** Starts counting turning movements at these junctions (replacing any earlier zones). */
+  public setCountZones(zones: readonly CountZone[]): ZoneLayout[] {
+    const ends = this.linkEnds();
+    this.countLayouts = zones.map(z => layoutZone(z, ends));
+    this.startCounting();
+    return this.countLayouts;
+  }
+
+  /** Counts from now on (e.g. after a warm-up). */
+  public startCounting() {
+    this.countFromT = this.t;
+    this.movementCountMap.clear();
+  }
+
+  /** Vehicles per movement since counting started, and how long that was (simulated s). */
+  public movementCounts(): { counts: Map<string, number>; windowS: number } {
+    return { counts: new Map(this.movementCountMap), windowS: this.t - this.countFromT };
+  }
+
+  private countCrossing(veh: Vehicle, fromLink: number, toLink: number) {
+    for (let z = 0; z < this.countLayouts.length; z++) {
+      const layout = this.countLayouts[z];
+      if (layout.problem) continue;
+      const approach = layout.approachOf.get(fromLink);
+      if (approach) (veh.zoneEntry ??= [])[z] = approach;
+      const exit = layout.exitOf.get(toLink);
+      const entry = veh.zoneEntry?.[z];
+      if (exit && entry) {
+        const turn = turnBetween(entry, exit);
+        if (turn !== 'u_turn') {
+          const key = movementKey(layout.zone.id, entry, turn);
+          this.movementCountMap.set(key, (this.movementCountMap.get(key) ?? 0) + 1);
+        }
+        veh.zoneEntry![z] = null;
+      }
+    }
+  }
+
+  /**
+   * Each routed explicit OD stream: its position in the demand trips given
+   * (`index`), its route (link indices) and its flow in veh/h at the current
+   * demand level. Intrazonal and zero-flow trips are not streams.
+   */
+  public demandRouteFlows(): { index: number; route: number[]; vehiclesPerHour: number; trip: MicroDemandTrip }[] {
+    return this.odArrivals.map(a => ({ index: a.index, route: [...a.route], vehiclesPerHour: a.trip.vehiclesPerHour * this.demandLevel / OD_REFERENCE_LEVEL, trip: { ...a.trip } }));
+  }
+
   public getDemandTrips(): MicroDemandTrip[] {
     if (this.explicitDemand) return this.odArrivals.map(a => ({ ...a.trip }));
     const trips: MicroDemandTrip[] = [];
