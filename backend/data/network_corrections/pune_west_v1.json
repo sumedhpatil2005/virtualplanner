@@ -1,0 +1,399 @@
+{
+ "schema": "twincity.network_corrections/v1",
+ "id": "pune_west_v1",
+ "version": "1.0.0",
+ "title": "Local corrections to OpenStreetMap for the six counted west-Pune junctions",
+ "osm_snapshot": "backend/data/osm/osm_index.db built from western-zone-latest.osm.pbf (OSM data timestamp 2026-11-01 21:21 UTC)",
+ "policy": [
+  "Corrections are applied by TwinCity on top of the imported OSM roads when the simulation network is built; OpenStreetMap itself is never edited.",
+  "A correction is made only where OSM is contradicted by the survey and by an independent check (left-hand-traffic side rule, OSM tagging rules, the study's own description).",
+  "Each correction can be turned off (enabled: false here, or the whole layer from the Simulate panel); docs/OSM_PROPOSED_EDITS.md lists the matching OSM edits for a mapper to review."
+ ],
+ "actions": {
+  "reverse": "Reverse the way's direction of travel (geometry order), keeping it one-way.",
+  "set_two_way": "Make the way two-way with params.lanes_forward / lanes_backward lanes.",
+  "set_oneway": "Make the way one-way; params.reverse reverses it first.",
+  "set_lanes": "Set the lane count of a one-way way (params.lanes).",
+  "set_roundabout": "Mark the way as part of a roundabout's circulating carriageway."
+ },
+ "corrections": [
+  {
+   "id": "kasturi-ne-1",
+   "junction_id": "kasturi_chowk",
+   "osm_way_id": 614201109,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "OSM: both carriageways of Dange Chowk Road north-east of the junction (ways 614201109 and 614201110, 16 m apart, lanes=2 each) are oneway=yes towards Kasturi Chowk, so the arm has no way out.",
+    "Left-hand-traffic side rule (Motor Vehicles Act / Rules of the Road Regulations 1989, keep left): on a dual carriageway each carriageway has its opposite carriageway on its RIGHT. Measured with backend/observed/oneway_audit.py: the partner carriageway lies on this way's LEFT, so this way is drawn against its real direction; its partner passes the same test the right way round. Partner: way 614201110.",
+    "Survey turning counts (pune_west_2026.json, kasturi_chowk; NICMAR Table 3) carry traffic both into and out of this arm: approach N 1414 veh/h in, 1403 veh/h out (E right + S straight + W left); approach E 1904 veh/h in, 1611 veh/h out."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse the direction of way 614201109 (Dange Chowk Road, north-west carriageway), keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "kasturi-ne-2",
+   "junction_id": "kasturi_chowk",
+   "osm_way_id": 1551258977,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "Continuation of way 614201109 on the same (north-west) carriageway between 357 m and 229 m from the junction; same oneway error.",
+    "Survey turning counts (pune_west_2026.json, kasturi_chowk; NICMAR Table 3) carry traffic both into and out of this arm: approach N 1414 veh/h in, 1403 veh/h out (E right + S straight + W left); approach E 1904 veh/h in, 1611 veh/h out."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse way 1551258977 (Dange Chowk Road), keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "kasturi-ne-3",
+   "junction_id": "kasturi_chowk",
+   "osm_way_id": 1533733546,
+   "action": "set_two_way",
+   "params": {
+    "lanes_forward": 2,
+    "lanes_backward": 2
+   },
+   "evidence": [
+    "Way 1533733546 (229 m to 143 m from the junction) is tagged oneway=yes, lanes=4: the two lanes=2 carriageways 614201110 and 1551258977 both join into it, so its 4 lanes are the 2 + 2 of the two directions drawn as one way.",
+    "Survey turning counts (pune_west_2026.json, kasturi_chowk; NICMAR Table 3) carry traffic both into and out of this arm: approach N 1414 veh/h in, 1403 veh/h out (E right + S straight + W left); approach E 1904 veh/h in, 1611 veh/h out."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set oneway=no, lanes=4, lanes:forward=2, lanes:backward=2 on way 1533733546 (or split it into two oneway carriageways if imagery shows a median).",
+   "enabled": true
+  },
+  {
+   "id": "kasturi-ne-4",
+   "junction_id": "kasturi_chowk",
+   "osm_way_id": 1533733544,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "Way 1533733544 (Dange Chowk Road, the branch from 143 m north-east to the junction's north corner) and way 1533733545 (to the east corner) are both oneway=yes towards the junction.",
+    "Left-hand-traffic side rule (Motor Vehicles Act / Rules of the Road Regulations 1989, keep left): on a dual carriageway each carriageway has its opposite carriageway on its RIGHT. Measured with backend/observed/oneway_audit.py: the partner carriageway lies on this way's LEFT, so this way is drawn against its real direction; its partner passes the same test the right way round. Partner: way 1533733545.",
+    "Survey turning counts (pune_west_2026.json, kasturi_chowk; NICMAR Table 3) carry traffic both into and out of this arm: approach N 1414 veh/h in, 1403 veh/h out (E right + S straight + W left); approach E 1904 veh/h in, 1611 veh/h out."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse way 1533733544, keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "kasturi-nw-1",
+   "junction_id": "kasturi_chowk",
+   "osm_way_id": 1209324408,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "OSM: both carriageways of the north-west arm (ways 838579438 and 1209324408, unnamed highway=secondary towards Laxmi Chowk) are oneway=yes away from the junction, so the arm has no way in.",
+    "Left-hand-traffic side rule (Motor Vehicles Act / Rules of the Road Regulations 1989, keep left): on a dual carriageway each carriageway has its opposite carriageway on its RIGHT. Measured with backend/observed/oneway_audit.py: the partner carriageway lies on this way's LEFT, so this way is drawn against its real direction; its partner passes the same test the right way round. Partner: way 838579438.",
+    "Survey turning counts (pune_west_2026.json, kasturi_chowk; NICMAR Table 3) carry traffic both into and out of this arm: approach N 1414 veh/h in, 1403 veh/h out (E right + S straight + W left); approach E 1904 veh/h in, 1611 veh/h out."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse way 1209324408 (north-east carriageway of the arm), keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "infosys-n-1",
+   "junction_id": "infosys_circle_phase_1",
+   "osm_way_id": 60975032,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "OSM: both carriageways of Rajiv Gandhi MIDC Road north of the roundabout (ways 60976073 and 60975032, 7.5 m apart, ~895 m long) are oneway=yes away from it, so the north arm has no way in.",
+    "Left-hand-traffic side rule (Motor Vehicles Act / Rules of the Road Regulations 1989, keep left): on a dual carriageway each carriageway has its opposite carriageway on its RIGHT. Measured with backend/observed/oneway_audit.py: the partner carriageway lies on this way's LEFT, so this way is drawn against its real direction; its partner passes the same test the right way round. Partner: way 60976073.",
+    "Survey turning counts (pune_west_2026.json, infosys_circle_phase_1; NICMAR Table 6) carry traffic both into and out of this arm: approach N 902 veh/h in; approach E 1208 veh/h in; every approach has right, straight and left flows, so every arm also has exiting traffic."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse way 60975032 (Rajiv Gandhi MIDC Road, east carriageway), keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "infosys-e-1",
+   "junction_id": "infosys_circle_phase_1",
+   "osm_way_id": 568110941,
+   "action": "reverse",
+   "params": {},
+   "evidence": [
+    "OSM: both carriageways of Hinjawadi Phase 1 Road north-east of the roundabout (way 568110941, and ways 239840575 + 60975324) are oneway=yes towards it, so the east arm has no way out.",
+    "Left-hand-traffic side rule (Motor Vehicles Act / Rules of the Road Regulations 1989, keep left): on a dual carriageway each carriageway has its opposite carriageway on its RIGHT. Measured with backend/observed/oneway_audit.py: the partner carriageway lies on this way's LEFT, so this way is drawn against its real direction; its partner passes the same test the right way round. Partner: way 239840575.",
+    "Survey turning counts (pune_west_2026.json, infosys_circle_phase_1; NICMAR Table 6) carry traffic both into and out of this arm: approach N 902 veh/h in; approach E 1208 veh/h in; every approach has right, straight and left flows, so every arm also has exiting traffic."
+   ],
+   "confidence": "high",
+   "proposed_osm_edit": "Reverse way 568110941 (Hinjawadi Phase 1 Road, north carriageway), keeping oneway=yes.",
+   "enabled": true
+  },
+  {
+   "id": "infosys-ring-1",
+   "junction_id": "infosys_circle_phase_1",
+   "osm_way_id": 761395844,
+   "action": "set_oneway",
+   "params": {
+    "reverse": true
+   },
+   "evidence": [
+    "Way 761395844 is a two-node piece of the roundabout (junction=roundabout) tagged oneway=no; junction=roundabout implies one-way circulation (OSM wiki Tag:junction=roundabout).",
+    "The neighbouring ring pieces 1484133388 (ends at the 32 degree node) and 1484133387 (starts at the 42 degree node) circulate clockwise, as roundabouts do in left-hand traffic; this piece is drawn from 42 to 32 degrees, i.e. against them, so the clockwise direction is its reverse."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Remove oneway=no from way 761395844 and reverse it so it runs clockwise with the rest of the ring.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-253976061",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 253976061,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 253976061 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1174487504",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1174487504,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1174487504 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1174487507",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1174487507,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1174487507 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1219666726",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1219666726,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1219666726 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1219666727",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1219666727,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1219666727 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1523458525",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1523458525,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1523458525 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1523458523",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1523458523,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1523458523 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1523458524",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1523458524,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1523458524 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1523458522",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1523458522,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1523458522 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1356392030",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1356392030,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1356392030 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1563742487",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1563742487,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1563742487 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1563742488",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1563742488,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1563742488 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1563742489",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1563742489,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1563742489 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1563742490",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1563742490,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1563742490 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1534819002",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1534819002,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1534819002 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  },
+  {
+   "id": "sakharam-lanes-1534819004",
+   "junction_id": "sakharam_waghmare_chowk",
+   "osm_way_id": 1534819004,
+   "action": "set_lanes",
+   "params": {
+    "lanes": 2
+   },
+   "evidence": [
+    "Every oneway=yes carriageway of Shankar Kalate Nagar Road within 1.2 km of the junction is tagged lanes=4. On a one-way way OSM lanes counts the lanes in that direction (OSM wiki Key:lanes), which makes this an 8-lane road.",
+    "Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together."
+   ],
+   "confidence": "medium",
+   "proposed_osm_edit": "Set lanes=2 on way 1534819004 (Shankar Kalate Nagar Road), after checking the lane count on imagery.",
+   "enabled": true
+  }
+ ]
+}

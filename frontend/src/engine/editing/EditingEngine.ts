@@ -842,7 +842,9 @@ export class EditingEngine {
         roadClass = 'collector';
       }
 
-      const isOneWay = tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || highwayType === 'motorway' || highwayType === 'motorway_link';
+      // junction=roundabout (and circular) implies oneway=yes unless the way says otherwise (OSM wiki Tag:junction=roundabout)
+      const isOneWay = tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || highwayType === 'motorway' || highwayType === 'motorway_link'
+        || ((tags.junction === 'roundabout' || tags.junction === 'circular') && tags.oneway !== 'no');
 
       let lanesA = 1;
       let lanesB = 0;
@@ -923,8 +925,10 @@ export class EditingEngine {
       const footpathWidth = hasFootpath ? 1.5 : 0.0;
       const speedLimit = parseInt(tags.maxspeed) || (roadClass === 'highway' ? 100 : roadClass === 'arterial' ? 60 : 50);
 
-      const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
-      const sourceCoordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, 0]);
+      // oneway=-1: one-way against the drawn direction, so the road runs the other way round
+      const ordered = tags.oneway === '-1' ? [...el.geometry].reverse() : el.geometry;
+      const coordinates = ordered.map((pt: any) => [pt.lon, pt.lat, 0]);
+      const sourceCoordinates = ordered.map((pt: any) => [pt.lon, pt.lat, 0]);
 
       const leftRoadside = {
         footpathWidth: hasFootpath ? footpathWidth : 0,
@@ -1019,7 +1023,7 @@ export class EditingEngine {
           bridge: !!tags.bridge && tags.bridge !== 'no',
           tunnel: !!tags.tunnel && tags.tunnel !== 'no' && tags.tunnel !== 'building_passage',
           roundabout: tags.junction === 'roundabout',
-          ...(clip && { clip })
+          ...(clip && { clip: tags.oneway === '-1' ? { ...clip, startCut: clip.endCut, endCut: clip.startCut } : clip })
         }
       };
 

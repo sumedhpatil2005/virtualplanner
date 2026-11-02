@@ -72,3 +72,5 @@ backend/data/*
 !backend/data/observed_counts/
 # Diurnal (hour-of-day) profile: curated, cited source data
 !backend/data/diurnal/
+# Local OSM network corrections: curated, evidenced overlay (OSM itself is never edited)
+!backend/data/network_corrections/

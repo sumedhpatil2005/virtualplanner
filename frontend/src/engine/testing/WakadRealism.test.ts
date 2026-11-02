@@ -29,7 +29,7 @@ describe.skipIf(!DUMP)('Wakad real-network realism (opt-in)', () => {
     const context: SimulationContext = d.context;
     const padLat = 250 / 111320, padLng = padLat / Math.cos((area.bounds.minLat + area.bounds.maxLat) / 2 * Math.PI / 180);
     const bounds = { minLng: area.bounds.minLng - padLng, maxLng: area.bounds.maxLng + padLng, minLat: area.bounds.minLat - padLat, maxLat: area.bounds.maxLat + padLat };
-    const plan = compileStudyDemand(context, bounds)!;
+    const plan = compileStudyDemand(context, bounds) ?? { trips: [], provenance: { source: 'synthetic' as const, label: 'no project demand in this area', period: 'AM_Peak' as const, vehiclesPerHour: 0, pairCount: 0 } };
     const setup: SimSetup = { area, roads: new Map(roads.map(r => [r.id, r])), options: { demandLevel: 0.12, seed: 7, watchRoadIds: area.seedRoadIds, junctions: context.junctions, signalPoints: d.signalPoints } };
     const junctions = junctionsIn(ds, area.bounds);
     const zones = junctions.map(zoneFor);

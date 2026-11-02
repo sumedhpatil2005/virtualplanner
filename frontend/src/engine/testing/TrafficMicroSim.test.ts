@@ -52,6 +52,13 @@ const assertNoOverlaps = (sim: TrafficMicroSim) => {
   sim.debugLanes().forEach(lanes => {
     for (const lane of lanes) {
       for (let i = 1; i < lane.length; i++) {
+        // A two-wheeler riding abreast of its partner overlaps it lengthwise by design;
+        // it keeps its gap to the vehicle ahead of both and never passes the partner.
+        if (lane[i].abreast) {
+          if (lane[i].pos > lane[i - 1].pos + 1e-6) throw new Error(`vehicle ${lane[i].id} passed its partner ${lane[i - 1].id}`);
+          if (i >= 2 && lane[i - 2].pos - lane[i - 2].length - lane[i].pos < -1e-6) throw new Error(`abreast vehicle ${lane[i].id} overlaps ${lane[i - 2].id}`);
+          continue;
+        }
         const gap = lane[i - 1].pos - lane[i - 1].length - lane[i].pos;
         if (gap < -1e-6) throw new Error(`overlap of ${gap.toFixed(3)} m between vehicles ${lane[i - 1].id} and ${lane[i].id}`);
       }

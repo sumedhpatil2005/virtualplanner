@@ -1,5 +1,6 @@
 import type { TrafficNetwork, TrafficEdge, TrafficNode } from '../objects/trafficTypes';
 import type { RoadObject, JunctionObject } from '../objects/types';
+import { websterTiming, indoHcmSaturationFlow, type WebsterResult } from './signalTiming';
 import { surfaceLiftM } from '../objects/roadSurface';
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { RouteTrees } from './routeTrees';
@@ -78,6 +79,12 @@ export const DEADLOCK_S = 60;
 
 /** Simulation time step (s). */
 export const STEP_S = 0.25;
+/**
+ * Lateral offset from the lane centre of each rider of a two-wheeler pair riding
+ * abreast: 0.55 m puts the two 1.1 m apart, so two riders about 0.75 m wide fit
+ * in a 3.0-3.5 m lane with room to spare.
+ */
+export const ABREAST_OFFSET_M = 0.55;
 const DEFAULT_LANE_WIDTH_M = 3.5;
 /** Vehicles fade in over this distance after entering the area and fade out before leaving it. */
 export const EDGE_FADE_M = 60;
@@ -170,6 +177,20 @@ export interface MicroSimOptions {
   junctions?: readonly JunctionObject[];
   /** Explicit estimated OD arrivals replace the capacity-based synthetic fallback. */
   demandTrips?: readonly MicroDemandTrip[];
+  /**
+   * Fixed-time signal plans: 'webster' (default) times each signalised junction
+   * from its critical flows (Webster's optimum cycle, Indo-HCM width-based
+   * saturation flow, IRC:93 lost times; signalTiming.ts); 'equal' gives every
+   * phase SIGNAL_GREEN_S (the earlier plan, kept for comparison).
+   */
+  signalTiming?: 'webster' | 'equal';
+  /** Two-wheelers ride two abreast in a lane (lateral filtering). Default true. */
+  twoWheelersAbreast?: boolean;
+  /**
+   * Route costs (s) per link id, replacing free-flow times: congested travel
+   * times fed back from an earlier run (assignment.ts).
+   */
+  linkCostsS?: ReadonlyMap<string, number>;
 }
 
 export interface MicroDemandTrip { fromNodeId: string; toNodeId: string; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string }
@@ -233,7 +254,7 @@ export interface VehicleView {
   focus: boolean;
 }
 
-export interface DebugVehicle { id: number; pos: number; v: number; length: number; kind: VehicleKind; stopLine: number; crossing: boolean }
+export interface DebugVehicle { id: number; pos: number; v: number; length: number; kind: VehicleKind; stopLine: number; crossing: boolean; abreast: boolean }
 
 /** A movement through a controlled junction that conflicting movements must wait for. */
 interface Reservation {
@@ -315,6 +336,12 @@ interface Vehicle {
   /** When and where (m along the link) the vehicle came onto its current link, for control delay. */
   linkEnterT?: number;
   linkEnterPos?: number;
+  /**
+   * Riding alongside the two-wheeler ahead (lateral filtering): Indian
+   * two-wheelers queue and move two abreast in one lane. Such a vehicle follows
+   * the vehicle ahead of its partner and never passes the partner.
+   */
+  abreast?: boolean;
 }
 
 interface Control {
@@ -329,6 +356,12 @@ interface Control {
   busyUntil: number;
   busyFrom: number;
   cycleS?: number;
+  /** Displayed green per phase (s), when phases differ (Webster split); else equal slots. */
+  greens?: number[];
+  /** Timing set by the project (a placed junction's own cycle): never retimed. */
+  fixed?: boolean;
+  /** Last Webster design for this junction, for reporting. */
+  design?: WebsterResult;
 }
 
 interface Source {
@@ -425,6 +458,10 @@ export class TrafficMicroSim {
   private signalLinks: number[] = [];
   private readonly rng: () => number;
   private demandLevel: number;
+  private readonly signalTimingMode: 'webster' | 'equal';
+  private readonly abreastEnabled: boolean;
+  /** Design flows (PCU/h) per inbound link index set from observed counts; others come from assigned demand. */
+  private designFlows = new Map<number, number>();
   /** Time-of-day multiplier on all arrivals: demand at the chosen hour / demand at the hour the plan represents. */
   private hourFactor = 1;
   private nextId = 1;
@@ -465,6 +502,8 @@ export class TrafficMicroSim {
   constructor(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, options: MicroSimOptions) {
     this.rng = makeRng(options.seed);
     this.demandLevel = Math.max(0, Math.min(1, options.demandLevel));
+    this.signalTimingMode = options.signalTiming ?? 'webster';
+    this.abreastEnabled = options.twoWheelersAbreast ?? true;
     this.focusLoad = Math.max(0, options.focusLoad ?? 0);
     const net = area.network;
     this.areaNodes = net.nodes;
@@ -502,7 +541,8 @@ export class TrafficMicroSim {
     const cost = new Float64Array(this.links.length);
     this.links.forEach((l, i) => {
       const e = edges.get(l.id)!;
-      cost[i] = e.length / ((e.speedLimit || 50) / 3.6);
+      const fed = options.linkCostsS?.get(l.id);
+      cost[i] = fed !== undefined && Number.isFinite(fed) && fed > 0 ? fed : e.length / ((e.speedLimit || 50) / 3.6);
     });
     this.trees = new RouteTrees(
       this.nodeIndex.size,
@@ -541,6 +581,7 @@ export class TrafficMicroSim {
         this.odArrivals.push({ index, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
       }
     }
+    this.retimeSignals();
   }
 
   /** Explicit project controls override mapped/estimated signals only at the same elevation. */
@@ -563,7 +604,8 @@ export class TrafficMicroSim {
       }));
       this.controls.set(closest, { kind: junction.hasSignals ? 'signal' : 'priority', groups,
         majorRank: null, offset: 0, busyUntil: 0, busyFrom: -1,
-        cycleS: Math.max(MIN_SIGNAL_CYCLE_S, Number.isFinite(junction.signalTiming) ? junction.signalTiming : SIGNAL_CYCLE_S) });
+        cycleS: Math.max(MIN_SIGNAL_CYCLE_S, Number.isFinite(junction.signalTiming) ? junction.signalTiming : SIGNAL_CYCLE_S),
+        fixed: Number.isFinite(junction.signalTiming) });
     }
   }
 
@@ -697,21 +739,40 @@ export class TrafficMicroSim {
    * principles of traffic signal", NPTEL 571, four-phase option 1;
    * https://www.civil.iitb.ac.in/tvm/nptel/571_TrSignal.pdf). The model has no
    * turn bays, so every approach shares lanes; the Pune counts show turning
-   * flows of the same order as through flows. Parallel carriageways arriving
-   * within 30 degrees of each other are one approach. Each phase: SIGNAL_GREEN_S
+   * flows of the same order as through flows. Carriageways arriving from within
+   * 35 degrees of each other are one approach. Each phase: SIGNAL_GREEN_S
    * green, SIGNAL_AMBER_S amber, SIGNAL_ALL_RED_S all-red (120 s for four arms).
    * Returns null for fewer than three approaches.
    */
   private approachWisePlan(inLinks: number[]): Control | null {
     const reps: number[] = [];
     const groups = new Map<number, number>();
-    for (const i of inLinks) {
-      const h = this.links[i].headingEnd;
-      let g = reps.findIndex(r => angleBetweenDeg(r, h) < 30);
+    // Collector-class and bigger approaches get phases; a lane or service road joining
+    // the junction runs with the phase of the approach nearest its direction.
+    const major = inLinks.filter(i => this.links[i].rank >= 2);
+    // An approach's direction is where it comes from: the bearing from the junction
+    // to a point 40 m back along the link. (The carriageways of one divided road
+    // can end at different corners of a joined junction with quite different final headings.)
+    const from = (i: number) => {
+      const l = this.links[i];
+      const end = l.pts[l.pts.length - 1];
+      const back = this.place(l, 0, Math.max(0, l.length - 40), { lng: 0, lat: 0, z: 0, heading: 0, pitch: 0 });
+      return headingOf(end, [back.lng, back.lat]);
+    };
+    for (const i of major.length >= 3 ? major : inLinks) {
+      const h = from(i);
+      let g = reps.findIndex(r => angleBetweenDeg(r, h) < 35);
       if (g < 0) { g = reps.length; reps.push(h); }
       groups.set(i, g);
     }
     if (reps.length < 3) return null;
+    for (const i of inLinks) {
+      if (groups.has(i)) continue;
+      const h = from(i);
+      let best = 0;
+      reps.forEach((r, g) => { if (angleBetweenDeg(r, h) < angleBetweenDeg(reps[best], h)) best = g; });
+      groups.set(i, best);
+    }
     const cycleS = reps.length * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
     return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.rng() * cycleS, busyUntil: 0, busyFrom: -1 };
   }
@@ -889,6 +950,7 @@ export class TrafficMicroSim {
     this.demandLevel = Math.max(0, Math.min(1, level));
     for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
     for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
+    this.retimeSignals();
   }
 
   /**
@@ -900,6 +962,7 @@ export class TrafficMicroSim {
     for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
     for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
     this.focusNextT = this.nextFocusArrival(this.t);
+    this.retimeSignals();
   }
 
   public get currentHourFactor(): number {
@@ -1060,16 +1123,104 @@ export class TrafficMicroSim {
     }
   }
 
+  /**
+   * Design flows for Webster timing from observed counts: PCU/h arriving on each
+   * inbound link (by link id). Links not given keep their assigned-demand flow.
+   * Retimes the signals at once.
+   */
+  public setSignalDesignFlows(flows: ReadonlyMap<string, number> | null) {
+    this.designFlows = new Map();
+    if (flows) flows.forEach((q, id) => { const i = this.linkById.get(id); if (i !== undefined) this.designFlows.set(i, q); });
+    this.retimeSignals();
+  }
+
+  /** PCU/h the assigned OD demand sends along each link at the current demand level and hour. */
+  private assignedLinkPcu(): Float64Array {
+    const q = new Float64Array(this.links.length);
+    const meanPcu = VEHICLE_TYPES.reduce((n, t) => n + t.share * t.pcu, 0);
+    const scale = this.demandLevel * this.hourFactor / OD_REFERENCE_LEVEL;
+    for (const a of this.odArrivals) {
+      if (!a.route.length) continue;
+      const pcu = VEHICLE_TYPES.find(t => t.kind === a.trip.kind)?.pcu ?? meanPcu;
+      const v = a.trip.vehiclesPerHour * scale * pcu;
+      for (const i of a.route) q[i] += v;
+    }
+    return q;
+  }
+
+  /**
+   * Webster timing for every signalised junction (signalTiming.ts): each phase's
+   * critical flow ratio is the largest q/s among the approaches it serves, q the
+   * design flow (observed counts where given, else assigned demand) and s the
+   * Indo-HCM saturation flow of the approach width (lanes x lane width). With no
+   * flow known, or signalTiming 'equal', phases keep equal greens.
+   */
+  private retimeSignals() {
+    if (this.signalTimingMode !== 'webster' || !this.controls) return;
+    const assigned = this.assignedLinkPcu();
+    this.controls.forEach(c => {
+      if (c.kind !== 'signal' || c.fixed) return;
+      const phases = c.phases ?? 2;
+      const flow = new Array(phases).fill(0);
+      const ratio = new Array(phases).fill(0);
+      // Approaches of a phase: inbound links grouped into it; carriageways of one approach add up
+      const byPhase = new Map<number, number[]>();
+      c.groups.forEach((g, i) => { if (!byPhase.has(g)) byPhase.set(g, []); byPhase.get(g)!.push(i); });
+      byPhase.forEach((links, g) => {
+        if (g >= phases) return;
+        // Approaches within the phase: carriageways arriving from within 35 degrees of each other
+        const reps: number[] = [], qa: number[] = [], wa: number[] = [];
+        for (const i of links) {
+          const l = this.links[i];
+          let a = reps.findIndex(h => angleBetweenDeg(h, l.headingEnd) < 35);
+          if (a < 0) { a = reps.length; reps.push(l.headingEnd); qa.push(0); wa.push(0); }
+          qa[a] += this.designFlows.get(i) ?? assigned[i];
+          wa[a] += l.lanes.length * l.laneWidth;
+        }
+        qa.forEach((q, a) => {
+          flow[g] += q;
+          if (wa[a] > 0) ratio[g] = Math.max(ratio[g], q / indoHcmSaturationFlow(wa[a]));
+        });
+      });
+      if (!flow.some(q => q > 0)) { delete c.greens; delete c.design; return; }
+      const design = websterTiming(ratio.map(y => ({ flow: y, saturationFlow: 1 })), { amberS: SIGNAL_AMBER_S, allRedS: SIGNAL_ALL_RED_S });
+      c.cycleS = design.cycleS;
+      c.greens = design.greensS;
+      c.design = design;
+      if (c.offset >= c.cycleS) c.offset %= c.cycleS;
+    });
+  }
+
+  /** Webster designs in force, per signalised junction (for reports and tests). */
+  public signalPlans(): { nodeId: string; cycleS: number; greensS: number[]; flowRatioSum: number | null; oversaturated: boolean }[] {
+    const out: { nodeId: string; cycleS: number; greensS: number[]; flowRatioSum: number | null; oversaturated: boolean }[] = [];
+    this.controls.forEach((c, nodeId) => {
+      if (c.kind !== 'signal') return;
+      const phases = c.phases ?? 2, cycle = c.cycleS ?? SIGNAL_CYCLE_S;
+      out.push({ nodeId, cycleS: cycle, greensS: c.greens ?? new Array(phases).fill(cycle / phases - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S),
+        flowRatioSum: c.design?.flowRatioSum ?? null, oversaturated: c.design?.oversaturated ?? false });
+    });
+    return out;
+  }
+
   public signalState(linkIndex: number): SignalState | null {
     const link = this.links[linkIndex];
     const c = this.controls.get(link.to);
     if (!c || c.kind !== 'signal') return null;
     const group = c.groups.get(linkIndex) ?? 0;
     const cycle = c.cycleS ?? SIGNAL_CYCLE_S;
-    const slot = cycle / (c.phases ?? 2);
-    const green = slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
+    let start: number, green: number;
+    if (c.greens && c.greens.length === (c.phases ?? 2)) {
+      start = 0;
+      for (let g = 0; g < group; g++) start += c.greens[g] + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S;
+      green = c.greens[group];
+    } else {
+      const slot = cycle / (c.phases ?? 2);
+      start = group * slot;
+      green = slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
+    }
     const tc = (this.t + c.offset) % cycle;
-    const local = (tc - group * slot + cycle) % cycle;
+    const local = (tc - start + cycle) % cycle;
     if (local < green) return 'green';
     if (local < green + SIGNAL_AMBER_S) return 'amber';
     return 'red';
@@ -1078,7 +1229,12 @@ export class TrafficMicroSim {
   /** Whether the front vehicle of a lane may cross into its next link; reserves the junction if so. */
   private tryGrant(veh: Vehicle, link: Link, dist: number) {
     const next = this.links[veh.route[veh.routeIdx + 1]];
-    const lane = link.lanes.length === next.lanes.length ? veh.lane : this.bestLane(next);
+    // Lanes map across the junction in order (kerb lane to kerb lane), so vehicles
+    // from parallel lanes discharge side by side; a blocked target lane falls back
+    // to the emptiest one. (Sending every lane to the emptiest lane made parallel
+    // movements converge and cross one at a time.)
+    let lane = this.mappedLane(link, veh.lane, next);
+    if (this.backSpace(next.lanes[lane]) < veh.type.lengthM + veh.type.minGapM + 2) lane = this.bestLane(next);
     const connector = this.connectorFor(link, veh.lane, next, lane);
     dist = connector.start - veh.pos;
     // Keep the junction box clear: enter only with room on the far side for this
@@ -1253,7 +1409,30 @@ export class TrafficMicroSim {
   private stopLine(veh: Vehicle, link: Link): number {
     if (veh.routeIdx >= veh.route.length - 1) return link.length;
     const next = this.links[veh.route[veh.routeIdx + 1]];
-    return this.connectorFor(link, veh.lane, next, Math.min(veh.lane, next.lanes.length - 1)).start;
+    return this.connectorFor(link, veh.lane, next, this.mappedLanes(link, veh.lane, next)[0]).start;
+  }
+
+  /**
+   * The lanes of `next` that lane `lane` of `link` leads to, keeping the order of
+   * lanes (kerb lane to kerb lane): the lanes of `next` its share of the
+   * carriageway spans. Where a road gains lanes one lane leads to several, where
+   * it loses lanes several lead to one (the lane connections of a junction or
+   * widening, as SUMO builds them).
+   */
+  private mappedLanes(link: Link, lane: number, next: Link): [number, number] {
+    const m = link.lanes.length, n = next.lanes.length;
+    if (m === n) return [lane, lane];
+    const lo = Math.min(n - 1, Math.floor((lane * n) / m));
+    const hi = Math.max(lo, Math.min(n - 1, Math.ceil(((lane + 1) * n) / m) - 1));
+    return [lo, hi];
+  }
+
+  /** The emptiest of the lanes `lane` leads to (the lowest index on a tie, so it is repeatable). */
+  private mappedLane(link: Link, lane: number, next: Link): number {
+    const [lo, hi] = this.mappedLanes(link, lane, next);
+    let best = lo;
+    for (let k = lo + 1; k <= hi; k++) if (this.backSpace(next.lanes[k]) > this.backSpace(next.lanes[best])) best = k;
+    return best;
   }
 
   /** How far along `link` a vehicle may be drawn: onto its granted movement, if it has one. */
@@ -1313,11 +1492,29 @@ export class TrafficMicroSim {
       for (const lane of link.lanes) {
         for (let i = 0; i < lane.length; i++) {
           const veh = lane[i];
+          // Lateral filtering: a two-wheeler close behind a lone two-wheeler rides beside
+          // it, at most two abreast. Pairs are kept from step to step (not re-derived from
+          // the order in the lane, which flips every pair behind when the front one
+          // leaves and would put a rider that was alongside its partner on top of it).
+          // A pair forms only behind a rider that has no partner and when no one rides
+          // beside this vehicle, so a rider never leaves a pair while ahead of the
+          // vehicle it must then follow.
+          const ahead = i > 0 ? lane[i - 1] : null;
+          if (!ahead) veh.abreast = false;
+          else if (veh.abreast) { if (ahead.type.kind !== 'two_wheeler' || ahead.abreast) veh.abreast = false; }
+          else if (this.abreastEnabled && veh.type.kind === 'two_wheeler' && ahead.type.kind === 'two_wheeler' && !ahead.abreast && !lane[i + 1]?.abreast) veh.abreast = true;
+          const abreast = !!veh.abreast;
+          const li = abreast ? i - 2 : i - 1;
           const dist = this.stopLine(veh, link) - veh.pos;
           let gap: number;
           let vLead: number;
-          if (i > 0) {
-            const lead = lane[i - 1];
+          if (i > 0 && li < 0) {
+            // Alongside the front vehicle: it stops at the line until cleared itself
+            const exiting = veh.routeIdx >= veh.route.length - 1;
+            gap = exiting ? 1e6 : dist - 0.3;
+            vLead = exiting ? veh.v : 0;
+          } else if (i > 0) {
+            const lead = lane[li];
             gap = lead.pos - lead.type.lengthM - veh.pos;
             vLead = lead.v;
             // The leader stays on this link until it finishes its turn, so it can be
@@ -1354,9 +1551,12 @@ export class TrafficMicroSim {
           let pos = veh.pos + Math.max(0, ((veh.v + v) / 2) * dt);
           let limit = Infinity;
           if (i > 0) {
-            const lead = lane[i - 1];
-            limit = lead.pos - lead.type.lengthM - 0.2;
-            if (pos > limit) v = Math.min(v, lead.v);
+            const li = veh.abreast ? i - 2 : i - 1;
+            const lead = li >= 0 ? lane[li] : null;
+            limit = lead ? lead.pos - lead.type.lengthM - 0.2 : Infinity;
+            // Never pass the partner it rides beside
+            if (veh.abreast) limit = Math.min(limit, lane[i - 1].pos - 0.05);
+            if (pos > limit) v = Math.min(v, lead ? lead.v : lane[i - 1].v);
             if (veh.routeIdx < veh.route.length - 1) {
               const line = this.stopLine(veh, link) - 0.1;
               if (line < limit) {
@@ -1676,8 +1876,9 @@ export class TrafficMicroSim {
         for (let k = 0; k < lane.length; k++) {
           const v = lane[k];
           const exiting = v.routeIdx >= v.route.length - 1;
+          const ahead = k > 0 ? (v.abreast ? lane[k - 2] : lane[k - 1]) : undefined;
           const limit = k > 0
-            ? Math.min(lane[k - 1].pos - lane[k - 1].type.lengthM - 0.2, exiting ? Infinity : this.stopLine(v, l) - 0.1)
+            ? Math.min(ahead ? ahead.pos - ahead.type.lengthM - 0.2 : Infinity, v.abreast ? lane[k - 1].pos - 0.05 : Infinity, exiting ? Infinity : this.stopLine(v, l) - 0.1)
             : !exiting && v.grantLane === null ? this.stopLine(v, l) - 0.1 : this.movementEnd(v, l);
           const extra = Math.max(0, Math.min(v.v * aheadS, limit - v.pos));
           const pos = v.pos + extra;
@@ -1695,6 +1896,14 @@ export class TrafficMicroSim {
               view.lat += (Math.sin(view.heading) * along) / M_PER_DEG_LAT;
             }
           } else this.place(l, li, Math.max(0, centre), view);
+          // A pair riding abreast shares the lane: the rider alongside on the kerb side
+          // (the driver's left), its partner on the median side, ABREAST_OFFSET_M either
+          // side of the lane centre
+          const side = v.abreast ? ABREAST_OFFSET_M : lane[k + 1]?.abreast ? -ABREAST_OFFSET_M : 0;
+          if (side !== 0) {
+            view.lng -= (Math.sin(view.heading) * side) / mPerDegLng(view.lat);
+            view.lat += (Math.cos(view.heading) * side) / M_PER_DEG_LAT;
+          }
           view.id = v.id;
           view.kind = v.type.kind;
           view.speedRatio = Math.min(1, v.v / l.speed);
@@ -1735,7 +1944,7 @@ export class TrafficMicroSim {
     const out = new Map<string, DebugVehicle[][]>();
     for (const l of this.links) {
       out.set(l.id, l.lanes.map(lane => lane.map(v => ({ id: v.id, pos: v.pos, v: v.v, length: v.type.lengthM, kind: v.type.kind,
-        stopLine: this.stopLine(v, l), crossing: v.arriving !== null }))));
+        stopLine: this.stopLine(v, l), crossing: v.arriving !== null, abreast: !!v.abreast }))));
     }
     return out;
   }

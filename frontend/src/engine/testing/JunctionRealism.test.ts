@@ -86,7 +86,7 @@ describe('signal discharge', () => {
     expect(satFlowVph).toBeLessThan(1.25 * indoHcm);
     // Start-up lost time: the first four take longer than four saturation headways
     expect(crossTimes[3]).toBeGreaterThan(4 * headway);
-    (globalThis as Record<string, unknown>).__discharge = { satFlowVph, indoHcm, firstFour: crossTimes[3], headway };
+    console.log(JSON.stringify({ discharge: { satFlowVph, indoHcm, firstFourS: crossTimes[3], headway, crossed: crossTimes.length } }));
   });
 });
 

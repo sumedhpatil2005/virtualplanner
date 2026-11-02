@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RoadObject } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
-import { TrafficMicroSim, STEP_S, EDGE_FADE_M, type VehicleView } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, EDGE_FADE_M, ABREAST_OFFSET_M, type VehicleView } from '../simulation/TrafficMicroSim';
 import { toGlb, VEHICLE_VARIANTS, variantFor } from '../rendering/vehicles/vehicleModels';
 
 /**
@@ -102,16 +102,34 @@ describe('Vehicle positions for drawing', () => {
     return out;
   };
 
+  /**
+   * Expected distance of each drawn vehicle from its lane centre, towards the kerb:
+   * 0 for a vehicle on its own; a two-wheeler pair riding abreast shares the lane,
+   * the rider alongside ABREAST_OFFSET_M towards the kerb and its partner as far
+   * towards the median.
+   */
+  const lateralOffsets = (sim: TrafficMicroSim) => {
+    const out = new Map<number, number>();
+    sim.debugLanes().forEach(lanes => lanes.forEach(lane => lane.forEach((v, k) => {
+      out.set(v.id, v.abreast ? ABREAST_OFFSET_M : lane[k + 1]?.abreast ? -ABREAST_OFFSET_M : 0);
+    })));
+    return out;
+  };
+
   it('keeps vehicles in their lane: left of the centre line by half the road lane width', () => {
     const sim = simFor(corridor(), 'mid', 500, 0.3);
     run(sim, 120);
     const all = [...snapshot(sim).values()];
+    const offsets = lateralOffsets(sim);
     expect(all.length).toBeGreaterThan(5);
     for (const v of all) {
       const [, y] = toXY(v.lng, v.lat);
       const eastbound = Math.cos(v.heading) > 0;
-      // One lane each way: lane centre is 1.75 m from the centre line, on the driver's left
-      expect(Math.abs(Math.abs(y) - 1.75)).toBeLessThan(0.05);
+      // One lane each way: lane centre is 1.75 m from the centre line, on the driver's left;
+      // a pair riding abreast sits either side of it, both inside the 3.5 m lane
+      const expected = 1.75 + offsets.get(v.id)!;
+      expect(Math.abs(Math.abs(y) - expected)).toBeLessThan(0.05);
+      expect(Math.abs(Math.abs(y) - 1.75)).toBeLessThanOrEqual(ABREAST_OFFSET_M + 0.05);
       expect(Math.sign(y)).toBe(eastbound ? 1 : -1);
     }
   });
@@ -119,9 +137,10 @@ describe('Vehicle positions for drawing', () => {
   it('sets lanes beyond the median of a divided road', () => {
     const sim = simFor(corridor({ hasDivider: true, dividerWidth: 2, laneCount: 2 }), 'mid', 500, 0.3);
     run(sim, 120);
+    const offsets = lateralOffsets(sim);
     for (const v of snapshot(sim).values()) {
       const [, y] = toXY(v.lng, v.lat);
-      expect(Math.abs(Math.abs(y) - (1 + 1.75))).toBeLessThan(0.05);
+      expect(Math.abs(Math.abs(y) - (1 + 1.75 + offsets.get(v.id)!))).toBeLessThan(0.05);
     }
   });
 
