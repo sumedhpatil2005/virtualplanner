@@ -70,3 +70,5 @@ npm-debug.log*
 backend/data/*
 # Observed count files are curated source data, not generated: keep them
 !backend/data/observed_counts/
+# Diurnal (hour-of-day) profile: curated, cited source data
+!backend/data/diurnal/

@@ -6,8 +6,18 @@ simulator against real junction counts.
 from fastapi import APIRouter, HTTPException
 
 from observed import counts
+from observed.diurnal import profile as diurnal
 
 router = APIRouter(prefix="/observed-counts", tags=["observed counts"])
+diurnal_router = APIRouter(prefix="/diurnal-profile", tags=["observed counts"])
+
+
+@diurnal_router.get("/{profile_id}")
+def get_diurnal_profile(profile_id: str):
+    try:
+        return diurnal.load(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No diurnal profile {profile_id!r}")
 
 
 @router.get("")

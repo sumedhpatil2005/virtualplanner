@@ -1,0 +1,590 @@
+{
+ "id": "pune_hourly_profile",
+ "version": 1,
+ "created": "2026-11-02",
+ "description": "Share of daily motor-vehicle traffic per hour of day for Pune, weekday and weekend.",
+ "units": "share of 24-hour vehicles (sums to 1 per day type)",
+ "period_thresholds": {
+  "Peak": ">= 80% of the busiest hour",
+  "Moderate": "between",
+  "Low": "< 40% of the busiest hour"
+ },
+ "weekday": {
+  "hours": [
+   {
+    "hour": 0,
+    "share": 0.00703,
+    "relative_to_peak": 0.0901,
+    "period": "Low",
+    "tomtom_congestion": 0.1174,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 1,
+    "share": 0.00336,
+    "relative_to_peak": 0.0431,
+    "period": "Low",
+    "tomtom_congestion": 0.0605,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 2,
+    "share": 0.00522,
+    "relative_to_peak": 0.0669,
+    "period": "Low",
+    "tomtom_congestion": 0.0142,
+    "measured": false,
+    "source": "interpolated: no congestion signal (TomTom within 3% of night minimum)"
+   },
+   {
+    "hour": 3,
+    "share": 0.00708,
+    "relative_to_peak": 0.0907,
+    "period": "Low",
+    "tomtom_congestion": 0.0,
+    "measured": false,
+    "source": "interpolated: no congestion signal (TomTom within 3% of night minimum)"
+   },
+   {
+    "hour": 4,
+    "share": 0.00893,
+    "relative_to_peak": 0.1145,
+    "period": "Low",
+    "tomtom_congestion": 0.0107,
+    "measured": false,
+    "source": "interpolated: no congestion signal (TomTom within 3% of night minimum)"
+   },
+   {
+    "hour": 5,
+    "share": 0.01079,
+    "relative_to_peak": 0.1382,
+    "period": "Low",
+    "tomtom_congestion": 0.1139,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 6,
+    "share": 0.02514,
+    "relative_to_peak": 0.322,
+    "period": "Low",
+    "tomtom_congestion": 0.2438,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 7,
+    "share": 0.04254,
+    "relative_to_peak": 0.5451,
+    "period": "Moderate",
+    "tomtom_congestion": 0.3915,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 8,
+    "share": 0.06721,
+    "relative_to_peak": 0.8611,
+    "period": "Peak",
+    "tomtom_congestion": 0.5907,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 9,
+    "share": 0.07463,
+    "relative_to_peak": 0.9563,
+    "period": "Peak",
+    "tomtom_congestion": 0.8577,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017 + Mendeley Pune CCTV 2023 (mean)"
+   },
+   {
+    "hour": 10,
+    "share": 0.06068,
+    "relative_to_peak": 0.7775,
+    "period": "Moderate",
+    "tomtom_congestion": 0.9751,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017 + Mendeley Pune CCTV 2023 (mean)"
+   },
+   {
+    "hour": 11,
+    "share": 0.06227,
+    "relative_to_peak": 0.7978,
+    "period": "Moderate",
+    "tomtom_congestion": 1.0338,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017 + Mendeley Pune CCTV 2023 (mean)"
+   },
+   {
+    "hour": 12,
+    "share": 0.05219,
+    "relative_to_peak": 0.6687,
+    "period": "Moderate",
+    "tomtom_congestion": 1.0053,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 13,
+    "share": 0.04736,
+    "relative_to_peak": 0.6068,
+    "period": "Moderate",
+    "tomtom_congestion": 0.9181,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 14,
+    "share": 0.05429,
+    "relative_to_peak": 0.6957,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8737,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 15,
+    "share": 0.05255,
+    "relative_to_peak": 0.6734,
+    "period": "Moderate",
+    "tomtom_congestion": 0.911,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 16,
+    "share": 0.06079,
+    "relative_to_peak": 0.7789,
+    "period": "Moderate",
+    "tomtom_congestion": 1.0089,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 17,
+    "share": 0.06966,
+    "relative_to_peak": 0.8925,
+    "period": "Peak",
+    "tomtom_congestion": 1.1352,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 18,
+    "share": 0.07433,
+    "relative_to_peak": 0.9524,
+    "period": "Peak",
+    "tomtom_congestion": 1.2117,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 19,
+    "share": 0.07805,
+    "relative_to_peak": 1.0,
+    "period": "Peak",
+    "tomtom_congestion": 1.0249,
+    "measured": true,
+    "source": "measured: Gunjan Chowk 2017"
+   },
+   {
+    "hour": 20,
+    "share": 0.05597,
+    "relative_to_peak": 0.7171,
+    "period": "Moderate",
+    "tomtom_congestion": 0.7598,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 21,
+    "share": 0.0402,
+    "relative_to_peak": 0.515,
+    "period": "Moderate",
+    "tomtom_congestion": 0.5641,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 22,
+    "share": 0.02544,
+    "relative_to_peak": 0.3259,
+    "period": "Low",
+    "tomtom_congestion": 0.3737,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   },
+   {
+    "hour": 23,
+    "share": 0.01429,
+    "relative_to_peak": 0.1831,
+    "period": "Low",
+    "tomtom_congestion": 0.2224,
+    "measured": false,
+    "source": "filled: TomTom 2025 congestion, BPR-type inversion anchored at the nearest measured hour"
+   }
+  ],
+  "peak_hour": 19,
+  "am_peak_hour": 9,
+  "pm_peak_hour": 19,
+  "peak_hour_share": 0.07805,
+  "measured_hours": [
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19
+  ]
+ },
+ "weekend": {
+  "hours": [
+   {
+    "hour": 0,
+    "share": 0.00911,
+    "relative_to_peak": 0.1132,
+    "period": "Low",
+    "tomtom_congestion": 0.1261,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 1,
+    "share": 0.0031,
+    "relative_to_peak": 0.0386,
+    "period": "Low",
+    "tomtom_congestion": 0.0478,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 2,
+    "share": 0.00625,
+    "relative_to_peak": 0.0777,
+    "period": "Low",
+    "tomtom_congestion": 0.0087,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 3,
+    "share": 0.00848,
+    "relative_to_peak": 0.1053,
+    "period": "Low",
+    "tomtom_congestion": 0.0,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 4,
+    "share": 0.0107,
+    "relative_to_peak": 0.133,
+    "period": "Low",
+    "tomtom_congestion": 0.0,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 5,
+    "share": 0.01119,
+    "relative_to_peak": 0.139,
+    "period": "Low",
+    "tomtom_congestion": 0.1,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 6,
+    "share": 0.02242,
+    "relative_to_peak": 0.2786,
+    "period": "Low",
+    "tomtom_congestion": 0.187,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 7,
+    "share": 0.03914,
+    "relative_to_peak": 0.4863,
+    "period": "Moderate",
+    "tomtom_congestion": 0.3087,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 8,
+    "share": 0.05918,
+    "relative_to_peak": 0.7353,
+    "period": "Moderate",
+    "tomtom_congestion": 0.4478,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 9,
+    "share": 0.05866,
+    "relative_to_peak": 0.7288,
+    "period": "Moderate",
+    "tomtom_congestion": 0.587,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 10,
+    "share": 0.05029,
+    "relative_to_peak": 0.6249,
+    "period": "Moderate",
+    "tomtom_congestion": 0.7,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 11,
+    "share": 0.05745,
+    "relative_to_peak": 0.7139,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8174,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 12,
+    "share": 0.0535,
+    "relative_to_peak": 0.6648,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8739,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 13,
+    "share": 0.05133,
+    "relative_to_peak": 0.6377,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8391,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 14,
+    "share": 0.05968,
+    "relative_to_peak": 0.7416,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8087,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 15,
+    "share": 0.0558,
+    "relative_to_peak": 0.6934,
+    "period": "Moderate",
+    "tomtom_congestion": 0.8174,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 16,
+    "share": 0.0631,
+    "relative_to_peak": 0.7841,
+    "period": "Moderate",
+    "tomtom_congestion": 0.887,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 17,
+    "share": 0.06863,
+    "relative_to_peak": 0.8527,
+    "period": "Peak",
+    "tomtom_congestion": 0.9522,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 18,
+    "share": 0.06985,
+    "relative_to_peak": 0.8679,
+    "period": "Peak",
+    "tomtom_congestion": 0.9739,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 19,
+    "share": 0.08048,
+    "relative_to_peak": 1.0,
+    "period": "Peak",
+    "tomtom_congestion": 0.8957,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 20,
+    "share": 0.06374,
+    "relative_to_peak": 0.792,
+    "period": "Moderate",
+    "tomtom_congestion": 0.7261,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 21,
+    "share": 0.04991,
+    "relative_to_peak": 0.6201,
+    "period": "Moderate",
+    "tomtom_congestion": 0.5826,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 22,
+    "share": 0.03168,
+    "relative_to_peak": 0.3936,
+    "period": "Low",
+    "tomtom_congestion": 0.387,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   },
+   {
+    "hour": 23,
+    "share": 0.01632,
+    "relative_to_peak": 0.2028,
+    "period": "Low",
+    "tomtom_congestion": 0.213,
+    "measured": false,
+    "source": "derived: weekday profile x TomTom 2025 weekend/weekday congestion ratio"
+   }
+  ],
+  "peak_hour": 19,
+  "am_peak_hour": 8,
+  "pm_peak_hour": 19,
+  "peak_hour_share": 0.08048,
+  "measured_hours": []
+ },
+ "fill": {
+  "form": "V(h) = V(anchor) * (c(h)/c(anchor))^(1/beta); anchor = 19:00 for evening/night, 08:00 for early morning",
+  "beta": 0.9,
+  "beta_chosen_to_match": "weekday peak-hour share = CMP 2018 inner-cordon average 0.078",
+  "no_signal_congestion": 0.03
+ },
+ "weekend_daily_vs_weekday": 0.8241,
+ "validation": {
+  "cmp2018_peak_hour_share": {
+   "inner_cordon_avg": 0.078,
+   "inner_cordon_range": [
+    0.061,
+    0.095
+   ],
+   "outer_cordon_avg": 0.0706,
+   "screen_line_avg": 0.097
+  },
+  "cmp2018_junction_counts": {
+   "Wakad Chowk": {
+    "am_peak_pcu": 16405,
+    "pm_peak_pcu": 15701,
+    "daily_pcu_16h": 193777
+   },
+   "Hinjawadi - Pirangut Road": {
+    "am_peak_pcu": 4684,
+    "pm_peak_pcu": 4998,
+    "daily_pcu_16h": 62170
+   },
+   "Bhumkar Chowk": {
+    "am_peak_pcu": 11155,
+    "pm_peak_pcu": 10885,
+    "daily_pcu_16h": 128572
+   },
+   "Kaspate Chowk": {
+    "am_peak_pcu": 16061,
+    "pm_peak_pcu": 16470,
+    "daily_pcu_16h": 190005
+   }
+  },
+  "profile_weekday_peak_share": 0.07805
+ },
+ "mendeley_coverage": {
+  "note": "All 8 cameras recorded only ~09:00-12:00 each day (11-18 Jan 2023). Hours outside 09-11 have no footage. Counters in the CSVs are cumulative per recording session, logged every second at ~25 frames.",
+  "by_hour": {
+   "weekday": {
+    "9": {
+     "cameras": 8,
+     "camera_days": 48,
+     "index": 1.0095
+    },
+    "10": {
+     "cameras": 8,
+     "camera_days": 48,
+     "index": 1.0116
+    },
+    "11": {
+     "cameras": 8,
+     "camera_days": 48,
+     "index": 0.9789
+    }
+   },
+   "weekend": {
+    "9": {
+     "cameras": 8,
+     "camera_days": 16,
+     "index": 1.0125
+    },
+    "10": {
+     "cameras": 8,
+     "camera_days": 16,
+     "index": 1.0007
+    },
+    "11": {
+     "cameras": 8,
+     "camera_days": 16,
+     "index": 0.9869
+    }
+   }
+  }
+ },
+ "method": [
+  "Gunjan Chowk (Pune) hourly counts 08-20, both directions summed, all classes, give measured weekday volumes for hours 8-19.",
+  "Mendeley Pune CCTV (Alankar, Jehangir, RTO Chowk; 2023) gives hours 9-11 only; each camera is normalised to its own 09-11 mean, scaled to Gunjan's 09-11 mean, and averaged with Gunjan for those hours.",
+  "Hours 20-07 have no measured hourly volume in any source found. They are filled from TomTom 2025 hourly congestion c (travel time / night minimum - 1) by a BPR-type inversion V = V(anchor)*(c/c_anchor)^(1/beta), anchored at 19:00 (evening/night) or 08:00 (early morning). A linear volume-congestion fit over 08-19 was tried and rejected (R^2 = 0.04).",
+  "beta is not assumed: it is the single value that makes the weekday peak-hour share equal the Pune CMP 2018 inner-cordon average of 7.8% (real 24-hour cordon counts). Hours where TomTom is within 3% of the night minimum have no signal and are linearly interpolated between neighbours.",
+  "Weekend has no measured hourly volume outside 09-11 (Mendeley, flat); weekend hours are the weekday profile scaled by the weekend/weekday TomTom congestion ratio through the same inversion. All weekend hours are derived.",
+  "Shares are normalised to sum to 1. Peak/Moderate/Low are thresholds on volume relative to the busiest hour.",
+  "Validation: the weekday peak-hour share is compared with Pune CMP 2018 cordon/screen-line peak shares (6.1-9.5%, avg 7.8%)."
+ ],
+ "sources": [
+  {
+   "id": "gunjan2017",
+   "citation": "Thakur K.B., Lunkad S.P., Shinde C.R., Ram N.C., Purohit V.I. (2017). Congestion of Traffic at Gunjan Chowk Junction, Pune. IJETT 47(2):91-97.",
+   "url": "http://www.ijettjournal.org/assets/year/2017/volume-47/number-2/IJETT-V47P215.pdf",
+   "used_for": "measured hourly volumes 08-20"
+  },
+  {
+   "id": "mendeley2026",
+   "citation": "Matange A., Abraham J. (2026). Heterogeneous Traffic Count Dataset, Pune (Jan 2023). Mendeley Data V1, doi:10.17632/xnf2k6n288.1, CC BY 4.0.",
+   "url": "https://data.mendeley.com/datasets/xnf2k6n288/1",
+   "used_for": "measured 09-11 shape, weekday vs weekend"
+  },
+  {
+   "id": "tomtom2025",
+   "citation": "TomTom Traffic Index 2025, Pune (city, 10 km travel time by hour and weekday).",
+   "url": "https://www.tomtom.com/traffic-index/pune-traffic/",
+   "used_for": "filling 20-07 and weekend shape (congestion, not volume)"
+  },
+  {
+   "id": "cmp2018",
+   "citation": "Updation/Revision of Comprehensive Mobility Plan (CMP) 2018 for Pune Metropolitan Region, Final Report (PMRDA/Maha-Metro), Exec. Summary p.E-5 and Table 2-47.",
+   "url": "https://www.punemetrorail.org/download/Updation%20of%20CMP%20for%20PMR.pdf",
+   "used_for": "validation of peak-hour share; AM vs PM at west Pune junctions"
+  }
+ ]
+}

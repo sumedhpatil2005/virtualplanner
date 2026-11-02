@@ -1,0 +1,3516 @@
+{
+"source": "Matange & Abraham (2026) Mendeley Data doi:10.17632/xnf2k6n288.1 (CC BY 4.0); aggregated per camera/day/hour by backend/observed/diurnal/parse_mendeley_pune.py",
+"sha256_traffic_zip": "648e9c33dfa8feeb48c8f3d25abff7625c8c69e117324cdf20254c566ccd03c4",
+"records": [
+{
+"camera": "a2",
+"junction": "a",
+"day": 11,
+"hour": 9,
+"cover_s": 3566,
+"veh": {
+"car": 204,
+"motorbike": 232,
+"bus": 34,
+"truck": 61
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 203,
+"motorbike": 237,
+"bus": 44,
+"truck": 60
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 11,
+"hour": 11,
+"cover_s": 3582,
+"veh": {
+"car": 263,
+"motorbike": 330,
+"bus": 51,
+"truck": 81
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 11,
+"hour": 12,
+"cover_s": 31,
+"veh": {
+"car": 2,
+"motorbike": 4,
+"bus": 1,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 12,
+"hour": 9,
+"cover_s": 3566,
+"veh": {
+"car": 267,
+"motorbike": 578,
+"bus": 58,
+"truck": 58
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 321,
+"motorbike": 634,
+"bus": 73,
+"truck": 59
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 12,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 316,
+"motorbike": 580,
+"bus": 59,
+"truck": 64
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 12,
+"hour": 12,
+"cover_s": 15,
+"veh": {
+"car": 1,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 13,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 103,
+"motorbike": 339,
+"bus": 3,
+"truck": 12
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 164,
+"motorbike": 125,
+"bus": 3,
+"truck": 13
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 13,
+"hour": 11,
+"cover_s": 3582,
+"veh": {
+"car": 202,
+"motorbike": 241,
+"bus": 7,
+"truck": 15
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 14,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 302,
+"motorbike": 601,
+"bus": 42,
+"truck": 49
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 332,
+"motorbike": 530,
+"bus": 44,
+"truck": 78
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 14,
+"hour": 11,
+"cover_s": 3580,
+"veh": {
+"car": 387,
+"motorbike": 625,
+"bus": 50,
+"truck": 80
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 15,
+"hour": 8,
+"cover_s": 1,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 277,
+"motorbike": 464,
+"bus": 46,
+"truck": 64
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 347,
+"motorbike": 530,
+"bus": 64,
+"truck": 93
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 15,
+"hour": 11,
+"cover_s": 3583,
+"veh": {
+"car": 339,
+"motorbike": 503,
+"bus": 40,
+"truck": 109
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 16,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 1,
+"motorbike": 2,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 250,
+"motorbike": 471,
+"bus": 40,
+"truck": 71
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 406,
+"motorbike": 438,
+"bus": 49,
+"truck": 100
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 16,
+"hour": 11,
+"cover_s": 3565,
+"veh": {
+"car": 435,
+"motorbike": 522,
+"bus": 61,
+"truck": 101
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 17,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 1,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 277,
+"motorbike": 457,
+"bus": 42,
+"truck": 89
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 345,
+"motorbike": 447,
+"bus": 53,
+"truck": 99
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 17,
+"hour": 11,
+"cover_s": 3579,
+"veh": {
+"car": 304,
+"motorbike": 442,
+"bus": 47,
+"truck": 76
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 18,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 107,
+"motorbike": 96,
+"bus": 5,
+"truck": 4
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 141,
+"motorbike": 126,
+"bus": 4,
+"truck": 7
+}
+},
+{
+"camera": "a2",
+"junction": "a",
+"day": 18,
+"hour": 11,
+"cover_s": 3498,
+"veh": {
+"car": 191,
+"motorbike": 176,
+"bus": 5,
+"truck": 14
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 11,
+"hour": 9,
+"cover_s": 3561,
+"veh": {
+"car": 953,
+"motorbike": 803,
+"bus": 274,
+"truck": 611
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1119,
+"motorbike": 896,
+"bus": 228,
+"truck": 681
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 11,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 1134,
+"motorbike": 1178,
+"bus": 225,
+"truck": 646
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 11,
+"hour": 12,
+"cover_s": 31,
+"veh": {
+"car": 11,
+"motorbike": 20,
+"bus": 5,
+"truck": 11
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 12,
+"hour": 8,
+"cover_s": 2,
+"veh": {
+"car": 1,
+"motorbike": 0,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 5699,
+"motorbike": 1656,
+"bus": 352,
+"truck": 212
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 3117,
+"motorbike": 1516,
+"bus": 297,
+"truck": 210
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 12,
+"hour": 11,
+"cover_s": 3483,
+"veh": {
+"car": 3728,
+"motorbike": 1471,
+"bus": 329,
+"truck": 220
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 13,
+"hour": 8,
+"cover_s": 8,
+"veh": {
+"car": 6,
+"motorbike": 1,
+"bus": 0,
+"truck": 3
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 4185,
+"motorbike": 989,
+"bus": 428,
+"truck": 355
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 6582,
+"motorbike": 806,
+"bus": 502,
+"truck": 479
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 13,
+"hour": 11,
+"cover_s": 3546,
+"veh": {
+"car": 3645,
+"motorbike": 812,
+"bus": 389,
+"truck": 432
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 14,
+"hour": 8,
+"cover_s": 2,
+"veh": {
+"car": 0,
+"motorbike": 3,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 3362,
+"motorbike": 1459,
+"bus": 383,
+"truck": 370
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 2626,
+"motorbike": 1149,
+"bus": 357,
+"truck": 454
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 14,
+"hour": 11,
+"cover_s": 3583,
+"veh": {
+"car": 3415,
+"motorbike": 1157,
+"bus": 555,
+"truck": 510
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 15,
+"hour": 8,
+"cover_s": 2,
+"veh": {
+"car": 1,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 4380,
+"motorbike": 1466,
+"bus": 385,
+"truck": 493
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 8368,
+"motorbike": 1274,
+"bus": 364,
+"truck": 453
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 15,
+"hour": 11,
+"cover_s": 3574,
+"veh": {
+"car": 6397,
+"motorbike": 1444,
+"bus": 401,
+"truck": 670
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 16,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 3,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 3713,
+"motorbike": 1143,
+"bus": 406,
+"truck": 376
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 5630,
+"motorbike": 1156,
+"bus": 512,
+"truck": 495
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 16,
+"hour": 11,
+"cover_s": 3499,
+"veh": {
+"car": 5312,
+"motorbike": 1042,
+"bus": 321,
+"truck": 503
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 17,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 0,
+"motorbike": 4,
+"bus": 1,
+"truck": 1
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 6379,
+"motorbike": 1337,
+"bus": 432,
+"truck": 408
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 6335,
+"motorbike": 1560,
+"bus": 362,
+"truck": 416
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 17,
+"hour": 11,
+"cover_s": 3536,
+"veh": {
+"car": 3763,
+"motorbike": 1523,
+"bus": 366,
+"truck": 501
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 18,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 2,
+"motorbike": 2,
+"bus": 4,
+"truck": 0
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 4858,
+"motorbike": 988,
+"bus": 362,
+"truck": 451
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 5460,
+"motorbike": 1355,
+"bus": 343,
+"truck": 400
+}
+},
+{
+"camera": "a3",
+"junction": "a",
+"day": 18,
+"hour": 11,
+"cover_s": 3492,
+"veh": {
+"car": 3381,
+"motorbike": 1302,
+"bus": 280,
+"truck": 416
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 11,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 11,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 614,
+"motorbike": 351,
+"bus": 65,
+"truck": 162
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 593,
+"motorbike": 344,
+"bus": 34,
+"truck": 165
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 11,
+"hour": 11,
+"cover_s": 3677,
+"veh": {
+"car": 1078,
+"motorbike": 714,
+"bus": 44,
+"truck": 276
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 12,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 2,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1800,
+"motorbike": 1903,
+"bus": 54,
+"truck": 192
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1700,
+"motorbike": 1797,
+"bus": 30,
+"truck": 115
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 12,
+"hour": 11,
+"cover_s": 3580,
+"veh": {
+"car": 1430,
+"motorbike": 1541,
+"bus": 39,
+"truck": 122
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 13,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1438,
+"motorbike": 1996,
+"bus": 45,
+"truck": 96
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1435,
+"motorbike": 1704,
+"bus": 39,
+"truck": 114
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 13,
+"hour": 11,
+"cover_s": 3548,
+"veh": {
+"car": 1191,
+"motorbike": 1464,
+"bus": 27,
+"truck": 104
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 14,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 1,
+"motorbike": 3,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1399,
+"motorbike": 1566,
+"bus": 74,
+"truck": 262
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1279,
+"motorbike": 1316,
+"bus": 63,
+"truck": 253
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 14,
+"hour": 11,
+"cover_s": 3945,
+"veh": {
+"car": 1679,
+"motorbike": 1327,
+"bus": 81,
+"truck": 300
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 15,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1381,
+"motorbike": 1359,
+"bus": 91,
+"truck": 286
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1329,
+"motorbike": 1364,
+"bus": 74,
+"truck": 307
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 15,
+"hour": 11,
+"cover_s": 3584,
+"veh": {
+"car": 1570,
+"motorbike": 1400,
+"bus": 84,
+"truck": 326
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 16,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 1,
+"motorbike": 2,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1172,
+"motorbike": 1331,
+"bus": 71,
+"truck": 243
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1140,
+"motorbike": 1075,
+"bus": 91,
+"truck": 305
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 16,
+"hour": 11,
+"cover_s": 3574,
+"veh": {
+"car": 1384,
+"motorbike": 957,
+"bus": 138,
+"truck": 255
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 17,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 2,
+"motorbike": 7,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1269,
+"motorbike": 1338,
+"bus": 77,
+"truck": 358
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1458,
+"motorbike": 1311,
+"bus": 53,
+"truck": 324
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 17,
+"hour": 11,
+"cover_s": 3575,
+"veh": {
+"car": 1461,
+"motorbike": 1204,
+"bus": 60,
+"truck": 305
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 18,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 3,
+"motorbike": 3,
+"bus": 0,
+"truck": 4
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 907,
+"motorbike": 654,
+"bus": 60,
+"truck": 277
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1014,
+"motorbike": 749,
+"bus": 51,
+"truck": 260
+}
+},
+{
+"camera": "j1",
+"junction": "j",
+"day": 18,
+"hour": 11,
+"cover_s": 3409,
+"veh": {
+"car": 1075,
+"motorbike": 762,
+"bus": 44,
+"truck": 282
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 11,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 11,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 525,
+"motorbike": 362,
+"bus": 34,
+"truck": 101
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 622,
+"motorbike": 398,
+"bus": 31,
+"truck": 108
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 11,
+"hour": 11,
+"cover_s": 3549,
+"veh": {
+"car": 694,
+"motorbike": 536,
+"bus": 44,
+"truck": 127
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 12,
+"hour": 8,
+"cover_s": 41,
+"veh": {
+"car": 3,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 836,
+"motorbike": 1154,
+"bus": 23,
+"truck": 69
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 799,
+"motorbike": 1080,
+"bus": 20,
+"truck": 57
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 12,
+"hour": 11,
+"cover_s": 3531,
+"veh": {
+"car": 826,
+"motorbike": 990,
+"bus": 9,
+"truck": 58
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 13,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 674,
+"motorbike": 969,
+"bus": 12,
+"truck": 31
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 669,
+"motorbike": 959,
+"bus": 7,
+"truck": 43
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 13,
+"hour": 11,
+"cover_s": 3550,
+"veh": {
+"car": 515,
+"motorbike": 1244,
+"bus": 9,
+"truck": 31
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 14,
+"hour": 8,
+"cover_s": 41,
+"veh": {
+"car": 2,
+"motorbike": 19,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 869,
+"motorbike": 1034,
+"bus": 37,
+"truck": 88
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 861,
+"motorbike": 939,
+"bus": 49,
+"truck": 81
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 14,
+"hour": 11,
+"cover_s": 3542,
+"veh": {
+"car": 731,
+"motorbike": 737,
+"bus": 44,
+"truck": 76
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 15,
+"hour": 8,
+"cover_s": 40,
+"veh": {
+"car": 5,
+"motorbike": 3,
+"bus": 2,
+"truck": 3
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 876,
+"motorbike": 1022,
+"bus": 48,
+"truck": 81
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 893,
+"motorbike": 835,
+"bus": 67,
+"truck": 105
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 15,
+"hour": 11,
+"cover_s": 3545,
+"veh": {
+"car": 748,
+"motorbike": 767,
+"bus": 68,
+"truck": 131
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 16,
+"hour": 8,
+"cover_s": 38,
+"veh": {
+"car": 3,
+"motorbike": 3,
+"bus": 0,
+"truck": 3
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 782,
+"motorbike": 805,
+"bus": 58,
+"truck": 97
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 831,
+"motorbike": 762,
+"bus": 48,
+"truck": 74
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 16,
+"hour": 11,
+"cover_s": 3517,
+"veh": {
+"car": 668,
+"motorbike": 558,
+"bus": 65,
+"truck": 94
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 17,
+"hour": 8,
+"cover_s": 37,
+"veh": {
+"car": 18,
+"motorbike": 21,
+"bus": 1,
+"truck": 7
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 818,
+"motorbike": 824,
+"bus": 68,
+"truck": 200
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 865,
+"motorbike": 743,
+"bus": 65,
+"truck": 121
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 17,
+"hour": 11,
+"cover_s": 3511,
+"veh": {
+"car": 725,
+"motorbike": 758,
+"bus": 72,
+"truck": 134
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 18,
+"hour": 8,
+"cover_s": 37,
+"veh": {
+"car": 5,
+"motorbike": 5,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 574,
+"motorbike": 429,
+"bus": 43,
+"truck": 146
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 707,
+"motorbike": 419,
+"bus": 50,
+"truck": 156
+}
+},
+{
+"camera": "j2",
+"junction": "j",
+"day": 18,
+"hour": 11,
+"cover_s": 3470,
+"veh": {
+"car": 622,
+"motorbike": 562,
+"bus": 50,
+"truck": 109
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 11,
+"hour": 9,
+"cover_s": 3554,
+"veh": {
+"car": 463,
+"motorbike": 467,
+"bus": 152,
+"truck": 161
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 516,
+"motorbike": 605,
+"bus": 118,
+"truck": 199
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 11,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 646,
+"motorbike": 695,
+"bus": 113,
+"truck": 208
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 11,
+"hour": 12,
+"cover_s": 168,
+"veh": {
+"car": 35,
+"motorbike": 35,
+"bus": 3,
+"truck": 16
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 12,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 4,
+"motorbike": 2,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 740,
+"motorbike": 1255,
+"bus": 131,
+"truck": 160
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 877,
+"motorbike": 1105,
+"bus": 150,
+"truck": 131
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 12,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 794,
+"motorbike": 1111,
+"bus": 132,
+"truck": 161
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 12,
+"hour": 12,
+"cover_s": 117,
+"veh": {
+"car": 27,
+"motorbike": 22,
+"bus": 2,
+"truck": 7
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 13,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 1,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 679,
+"motorbike": 1104,
+"bus": 115,
+"truck": 101
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 659,
+"motorbike": 1059,
+"bus": 104,
+"truck": 112
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 13,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 746,
+"motorbike": 998,
+"bus": 87,
+"truck": 112
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 13,
+"hour": 12,
+"cover_s": 118,
+"veh": {
+"car": 15,
+"motorbike": 19,
+"bus": 3,
+"truck": 3
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 14,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 725,
+"motorbike": 1069,
+"bus": 137,
+"truck": 173
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 760,
+"motorbike": 1050,
+"bus": 151,
+"truck": 218
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 14,
+"hour": 11,
+"cover_s": 3567,
+"veh": {
+"car": 776,
+"motorbike": 854,
+"bus": 123,
+"truck": 183
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 15,
+"hour": 8,
+"cover_s": 2,
+"veh": {
+"car": 1,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 783,
+"motorbike": 1045,
+"bus": 156,
+"truck": 211
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 817,
+"motorbike": 1075,
+"bus": 163,
+"truck": 223
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 15,
+"hour": 11,
+"cover_s": 3569,
+"veh": {
+"car": 851,
+"motorbike": 997,
+"bus": 153,
+"truck": 232
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 16,
+"hour": 8,
+"cover_s": 1,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 715,
+"motorbike": 1098,
+"bus": 169,
+"truck": 212
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 759,
+"motorbike": 909,
+"bus": 142,
+"truck": 234
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 16,
+"hour": 11,
+"cover_s": 3554,
+"veh": {
+"car": 769,
+"motorbike": 849,
+"bus": 154,
+"truck": 224
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 17,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 657,
+"motorbike": 954,
+"bus": 143,
+"truck": 212
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 828,
+"motorbike": 967,
+"bus": 136,
+"truck": 214
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 17,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 791,
+"motorbike": 905,
+"bus": 124,
+"truck": 240
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 17,
+"hour": 12,
+"cover_s": 117,
+"veh": {
+"car": 32,
+"motorbike": 35,
+"bus": 3,
+"truck": 11
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 18,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 390,
+"motorbike": 673,
+"bus": 142,
+"truck": 199
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 550,
+"motorbike": 571,
+"bus": 109,
+"truck": 228
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 18,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 639,
+"motorbike": 802,
+"bus": 104,
+"truck": 206
+}
+},
+{
+"camera": "j3",
+"junction": "j",
+"day": 18,
+"hour": 12,
+"cover_s": 118,
+"veh": {
+"car": 36,
+"motorbike": 33,
+"bus": 5,
+"truck": 11
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 11,
+"hour": 9,
+"cover_s": 3594,
+"veh": {
+"car": 302,
+"motorbike": 289,
+"bus": 76,
+"truck": 180
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 391,
+"motorbike": 294,
+"bus": 88,
+"truck": 164
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 11,
+"hour": 11,
+"cover_s": 3471,
+"veh": {
+"car": 498,
+"motorbike": 290,
+"bus": 65,
+"truck": 172
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 12,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 4,
+"motorbike": 1,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1014,
+"motorbike": 1217,
+"bus": 117,
+"truck": 213
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1021,
+"motorbike": 1091,
+"bus": 134,
+"truck": 157
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 12,
+"hour": 11,
+"cover_s": 3542,
+"veh": {
+"car": 642,
+"motorbike": 532,
+"bus": 93,
+"truck": 91
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 13,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 874,
+"motorbike": 1241,
+"bus": 110,
+"truck": 114
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 844,
+"motorbike": 992,
+"bus": 105,
+"truck": 135
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 13,
+"hour": 11,
+"cover_s": 3504,
+"veh": {
+"car": 657,
+"motorbike": 812,
+"bus": 82,
+"truck": 115
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 14,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 0,
+"motorbike": 3,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 730,
+"motorbike": 845,
+"bus": 148,
+"truck": 244
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 815,
+"motorbike": 679,
+"bus": 114,
+"truck": 241
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 14,
+"hour": 11,
+"cover_s": 3504,
+"veh": {
+"car": 815,
+"motorbike": 477,
+"bus": 78,
+"truck": 221
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 15,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 4
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 642,
+"motorbike": 704,
+"bus": 170,
+"truck": 211
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 730,
+"motorbike": 588,
+"bus": 146,
+"truck": 248
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 15,
+"hour": 11,
+"cover_s": 3511,
+"veh": {
+"car": 743,
+"motorbike": 585,
+"bus": 120,
+"truck": 288
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 16,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 546,
+"motorbike": 531,
+"bus": 124,
+"truck": 202
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 501,
+"motorbike": 304,
+"bus": 100,
+"truck": 151
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 16,
+"hour": 11,
+"cover_s": 3549,
+"veh": {
+"car": 475,
+"motorbike": 303,
+"bus": 85,
+"truck": 166
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 17,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 537,
+"motorbike": 567,
+"bus": 171,
+"truck": 269
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 593,
+"motorbike": 539,
+"bus": 147,
+"truck": 254
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 17,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 595,
+"motorbike": 492,
+"bus": 85,
+"truck": 318
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 17,
+"hour": 12,
+"cover_s": 101,
+"veh": {
+"car": 12,
+"motorbike": 11,
+"bus": 2,
+"truck": 7
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 18,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 323,
+"motorbike": 231,
+"bus": 93,
+"truck": 186
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 330,
+"motorbike": 277,
+"bus": 93,
+"truck": 207
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 18,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 409,
+"motorbike": 291,
+"bus": 72,
+"truck": 216
+}
+},
+{
+"camera": "r1",
+"junction": "r",
+"day": 18,
+"hour": 12,
+"cover_s": 43,
+"veh": {
+"car": 10,
+"motorbike": 5,
+"bus": 2,
+"truck": 3
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 11,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 3,
+"motorbike": 1,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 11,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 684,
+"motorbike": 922,
+"bus": 86,
+"truck": 326
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 906,
+"motorbike": 900,
+"bus": 75,
+"truck": 301
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 11,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 1021,
+"motorbike": 878,
+"bus": 74,
+"truck": 331
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 11,
+"hour": 12,
+"cover_s": 34,
+"veh": {
+"car": 5,
+"motorbike": 6,
+"bus": 0,
+"truck": 3
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 12,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 2,
+"motorbike": 2,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1414,
+"motorbike": 1900,
+"bus": 60,
+"truck": 170
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1397,
+"motorbike": 1733,
+"bus": 69,
+"truck": 186
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 12,
+"hour": 11,
+"cover_s": 3571,
+"veh": {
+"car": 1066,
+"motorbike": 1113,
+"bus": 58,
+"truck": 99
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 13,
+"hour": 8,
+"cover_s": 4,
+"veh": {
+"car": 0,
+"motorbike": 8,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1169,
+"motorbike": 2050,
+"bus": 47,
+"truck": 118
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1078,
+"motorbike": 1865,
+"bus": 48,
+"truck": 135
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 13,
+"hour": 11,
+"cover_s": 3497,
+"veh": {
+"car": 976,
+"motorbike": 1621,
+"bus": 42,
+"truck": 162
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 14,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 0,
+"bus": 1,
+"truck": 1
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1559,
+"motorbike": 1734,
+"bus": 115,
+"truck": 226
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1502,
+"motorbike": 1408,
+"bus": 99,
+"truck": 245
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 14,
+"hour": 11,
+"cover_s": 3550,
+"veh": {
+"car": 1343,
+"motorbike": 1050,
+"bus": 115,
+"truck": 249
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 15,
+"hour": 8,
+"cover_s": 3,
+"veh": {
+"car": 0,
+"motorbike": 2,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1522,
+"motorbike": 1641,
+"bus": 121,
+"truck": 258
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1397,
+"motorbike": 1234,
+"bus": 108,
+"truck": 244
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 15,
+"hour": 11,
+"cover_s": 3578,
+"veh": {
+"car": 1315,
+"motorbike": 1307,
+"bus": 128,
+"truck": 301
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 16,
+"hour": 8,
+"cover_s": 7,
+"veh": {
+"car": 3,
+"motorbike": 6,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1303,
+"motorbike": 1625,
+"bus": 99,
+"truck": 272
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1493,
+"motorbike": 1320,
+"bus": 126,
+"truck": 263
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 16,
+"hour": 11,
+"cover_s": 3552,
+"veh": {
+"car": 1305,
+"motorbike": 885,
+"bus": 123,
+"truck": 290
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 17,
+"hour": 8,
+"cover_s": 6,
+"veh": {
+"car": 2,
+"motorbike": 10,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 1240,
+"motorbike": 1599,
+"bus": 99,
+"truck": 275
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 1322,
+"motorbike": 1485,
+"bus": 100,
+"truck": 334
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 17,
+"hour": 11,
+"cover_s": 3518,
+"veh": {
+"car": 1252,
+"motorbike": 1186,
+"bus": 89,
+"truck": 385
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 18,
+"hour": 8,
+"cover_s": 5,
+"veh": {
+"car": 1,
+"motorbike": 1,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 716,
+"motorbike": 935,
+"bus": 78,
+"truck": 365
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 929,
+"motorbike": 1021,
+"bus": 70,
+"truck": 318
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 18,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 1074,
+"motorbike": 960,
+"bus": 80,
+"truck": 317
+}
+},
+{
+"camera": "r2",
+"junction": "r",
+"day": 18,
+"hour": 12,
+"cover_s": 87,
+"veh": {
+"car": 30,
+"motorbike": 17,
+"bus": 3,
+"truck": 3
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 11,
+"hour": 8,
+"cover_s": 34,
+"veh": {
+"car": 0,
+"motorbike": 2,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 11,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 421,
+"motorbike": 524,
+"bus": 4,
+"truck": 120
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 11,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 436,
+"motorbike": 516,
+"bus": 3,
+"truck": 145
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 11,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 547,
+"motorbike": 605,
+"bus": 4,
+"truck": 166
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 11,
+"hour": 12,
+"cover_s": 132,
+"veh": {
+"car": 12,
+"motorbike": 32,
+"bus": 0,
+"truck": 11
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 12,
+"hour": 8,
+"cover_s": 40,
+"veh": {
+"car": 10,
+"motorbike": 23,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 12,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 575,
+"motorbike": 1329,
+"bus": 7,
+"truck": 97
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 12,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 619,
+"motorbike": 1204,
+"bus": 6,
+"truck": 62
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 12,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 547,
+"motorbike": 1002,
+"bus": 6,
+"truck": 48
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 12,
+"hour": 12,
+"cover_s": 82,
+"veh": {
+"car": 2,
+"motorbike": 4,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 13,
+"hour": 8,
+"cover_s": 37,
+"veh": {
+"car": 15,
+"motorbike": 21,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 13,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 551,
+"motorbike": 1171,
+"bus": 14,
+"truck": 69
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 13,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 562,
+"motorbike": 1065,
+"bus": 5,
+"truck": 102
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 13,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 494,
+"motorbike": 1022,
+"bus": 5,
+"truck": 58
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 13,
+"hour": 12,
+"cover_s": 85,
+"veh": {
+"car": 23,
+"motorbike": 32,
+"bus": 0,
+"truck": 1
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 14,
+"hour": 8,
+"cover_s": 28,
+"veh": {
+"car": 6,
+"motorbike": 10,
+"bus": 0,
+"truck": 2
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 14,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 569,
+"motorbike": 1071,
+"bus": 11,
+"truck": 145
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 14,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 504,
+"motorbike": 926,
+"bus": 5,
+"truck": 156
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 14,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 608,
+"motorbike": 845,
+"bus": 4,
+"truck": 150
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 14,
+"hour": 12,
+"cover_s": 94,
+"veh": {
+"car": 13,
+"motorbike": 21,
+"bus": 0,
+"truck": 3
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 15,
+"hour": 8,
+"cover_s": 38,
+"veh": {
+"car": 2,
+"motorbike": 6,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 15,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 514,
+"motorbike": 990,
+"bus": 12,
+"truck": 166
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 15,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 530,
+"motorbike": 851,
+"bus": 10,
+"truck": 160
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 15,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 551,
+"motorbike": 991,
+"bus": 4,
+"truck": 187
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 15,
+"hour": 12,
+"cover_s": 84,
+"veh": {
+"car": 11,
+"motorbike": 4,
+"bus": 2,
+"truck": 2
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 16,
+"hour": 8,
+"cover_s": 18,
+"veh": {
+"car": 0,
+"motorbike": 1,
+"bus": 0,
+"truck": 2
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 16,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 516,
+"motorbike": 1037,
+"bus": 8,
+"truck": 160
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 16,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 522,
+"motorbike": 677,
+"bus": 16,
+"truck": 175
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 16,
+"hour": 11,
+"cover_s": 3419,
+"veh": {
+"car": 563,
+"motorbike": 750,
+"bus": 6,
+"truck": 147
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 17,
+"hour": 8,
+"cover_s": 40,
+"veh": {
+"car": 0,
+"motorbike": 3,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 17,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 508,
+"motorbike": 1024,
+"bus": 13,
+"truck": 183
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 17,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 574,
+"motorbike": 952,
+"bus": 8,
+"truck": 207
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 17,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 696,
+"motorbike": 983,
+"bus": 9,
+"truck": 204
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 17,
+"hour": 12,
+"cover_s": 82,
+"veh": {
+"car": 6,
+"motorbike": 14,
+"bus": 1,
+"truck": 2
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 18,
+"hour": 8,
+"cover_s": 31,
+"veh": {
+"car": 5,
+"motorbike": 6,
+"bus": 0,
+"truck": 0
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 18,
+"hour": 9,
+"cover_s": 3600,
+"veh": {
+"car": 388,
+"motorbike": 538,
+"bus": 8,
+"truck": 178
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 18,
+"hour": 10,
+"cover_s": 3600,
+"veh": {
+"car": 448,
+"motorbike": 629,
+"bus": 7,
+"truck": 172
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 18,
+"hour": 11,
+"cover_s": 3600,
+"veh": {
+"car": 501,
+"motorbike": 610,
+"bus": 3,
+"truck": 156
+}
+},
+{
+"camera": "r3",
+"junction": "r",
+"day": 18,
+"hour": 12,
+"cover_s": 93,
+"veh": {
+"car": 20,
+"motorbike": 19,
+"bus": 0,
+"truck": 2
+}
+}
+]
+}
