@@ -1,0 +1,1019 @@
+{
+  "schema": "twincity.observed_counts/v1",
+  "dataset_id": "pune_west_2026",
+  "version": "1.0.0",
+  "title": "Peak-hour classified turning counts at six intersections in west Pune",
+  "data_source_type": "observed",
+  "sources": [
+    {
+      "id": "nicmar2025",
+      "role": "Per-approach, per-turn hourly counts by vehicle class (Tables 1-6). All movement values in this file are transcribed from it.",
+      "citation": "Khandekar, P. M., Bagwan, A. F., Karande, A. D., & Pilaka, N. (2025). Study of Traffic Management at Road Intersection in Pune. In Converging Horizons in Construction and the Built Environment: Digital, Sustainable, and Strategic Perspectives (Chapter 129, pp. 1462-1472). NICMAR University / Journal Press India. ISBN 978-93-49790-54-4.",
+      "doi": "10.17492/jpi/nicmar/2507129",
+      "url": "https://www.journalpressindia.com/siteadmin/upload_paper/1752236291_Chapter129_Study%20of%20Traffic%20Management.pdf",
+      "sha256": "d291d2cea6ea87588ae0872115231016b7a5aa4621bf0384f35811b38edc720b"
+    },
+    {
+      "id": "kureshi2026",
+      "role": "Same six intersections and the same peak-hour totals (Table I); survey method (manual classified counts, 15-minute intervals, peak hour = highest four consecutive intervals; PHF 0.82-0.94). Published under CC BY 4.0.",
+      "citation": "Kureshi, A. G., Kumar, C., Singh, A., Verma, P., Chauhan, M., & Rana, A. (2026). Study of Traffic Management at Selected Roadway Intersections in Pune. International Journal of Innovations in Research, 2(10), 33-39. Zenodo.",
+      "doi": "10.5281/zenodo.21712996",
+      "url": "https://zenodo.org/records/21712996",
+      "sha256": "c161e76321c7474551fd6e26b26757c90e28aac067e989db939fb57e72b638de"
+    }
+  ],
+  "survey": {
+    "method": "Manual classified counts by four observers per junction, LV/HV/TW separately for right, straight and left at each approach, in 15-minute intervals; peak hour = the four consecutive 15-minute intervals with the highest combined volume (kureshi2026, section III.B).",
+    "date": null,
+    "date_note": "Neither source states the survey date. The NICMAR chapter was published in July 2025, so the counts were taken on or before then.",
+    "period": "peak_hour",
+    "peak_hour_clock": null,
+    "peak_hour_note": "Neither source states the clock time of the peak hour or whether it is the morning or evening peak.",
+    "phf_range": [
+      0.82,
+      0.94
+    ],
+    "phf_note": "Range across the six sites; per-site PHF not published."
+  },
+  "units": {
+    "count": "veh/h",
+    "classes": {
+      "LV": "light vehicles",
+      "HV": "heavy vehicles",
+      "TW": "two-wheelers"
+    },
+    "class_note": "The sources do not define LV further (e.g. whether auto-rickshaws are LV)."
+  },
+  "pcu": {
+    "standard": "IRC:106-1990, Guidelines for Capacity of Urban Roads in Plain Areas, Table 1",
+    "url": "https://archive.org/stream/gov.in.irc.106.1990/irc.gov.in.106.1990_djvu.txt",
+    "factors": {
+      "LV": 1.0,
+      "HV": 2.2,
+      "TW": 0.75
+    },
+    "rationale": "Table 1 gives factors at 5% and at 10%+ share of the stream. Two-wheelers are about 45% of volume here, so the 10%+ value 0.75 is used. Heavy vehicles are under 5% at every site, so the 5% value for truck/bus, 2.2, is used. LV is taken as passenger car (1.0) because the source does not separate auto-rickshaws (IRC 1.2/2.0). IRC:106 is written for mid-block sections, so these PCU values are indicative only at junctions."
+  },
+  "approach_convention": "approach = the side traffic arrives from ('Traffic from approach road' N/S/E/W). Turns are as the driver sees them; India drives on the left, so from approach N: left = to E, straight = to S, right = to W.",
+  "junctions": [
+    {
+      "id": "kokane_chowk",
+      "name": "Kokane Chowk",
+      "area": "Pimple Saudagar / Wakad",
+      "control": "unsignalized",
+      "lanes": 6,
+      "source_table": "Table 1, p. 1465 (NICMAR chapter)",
+      "published_total_veh": 4426,
+      "published_total_row": {
+        "right": {
+          "LV": 685,
+          "HV": 60,
+          "TW": 835
+        },
+        "straight": {
+          "LV": 680,
+          "HV": 62,
+          "TW": 600
+        },
+        "left": {
+          "LV": 750,
+          "HV": 84,
+          "TW": 670
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 115,
+          "HV": 10,
+          "TW": 200
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 150,
+          "HV": 25,
+          "TW": 190
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 220,
+          "HV": 30,
+          "TW": 190
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 280,
+          "HV": 25,
+          "TW": 195
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 130,
+          "HV": 15,
+          "TW": 100
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 180,
+          "HV": 14,
+          "TW": 150
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 150,
+          "HV": 15,
+          "TW": 230
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 240,
+          "HV": 5,
+          "TW": 180
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 100,
+          "HV": 15,
+          "TW": 160
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 140,
+          "HV": 10,
+          "TW": 210
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 160,
+          "HV": 17,
+          "TW": 130
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 250,
+          "HV": 25,
+          "TW": 170
+        }
+      ],
+      "notes": [],
+      "location": {
+        "lon": 73.7903729,
+        "lat": 18.5972474,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7903721,
+          "lat": 18.5972537,
+          "source": "OSM way 262388699 (highway=primary, junction=roundabout, name=\"Kokane Chowk\"), found with Nominatim search \"Kokane Chowk\" (bounded to west Pune)",
+          "url": "https://www.openstreetmap.org/way/262388699"
+        },
+        "search_radius_m": 60,
+        "require_major_road": true,
+        "confidence": "high",
+        "matched": {
+          "lon": 73.7903729,
+          "lat": 18.5972474,
+          "kind": "roundabout",
+          "arms": 7,
+          "distance_from_anchor_m": 0.7,
+          "way_ids": [
+            250957607,
+            250957617,
+            262388699,
+            315093240,
+            315093241,
+            315093244,
+            567739206,
+            825174997
+          ],
+          "road_names": [
+            "Kokane Chowk",
+            "Rahatani Road",
+            "Wakad - Nashik Phata BRTS Road | Wakad - Bhosari BRTS Road | Nashik Phata Road"
+          ],
+          "highways": [
+            "primary",
+            "tertiary"
+          ],
+          "vertices": 1
+        }
+      }
+    },
+    {
+      "id": "panchratna_chowk",
+      "name": "Panchratna Chowk",
+      "area": "Hinjawadi",
+      "control": "signalized",
+      "lanes": 4,
+      "source_table": "Table 2, p. 1467 (NICMAR chapter)",
+      "published_total_veh": 6315,
+      "published_total_row": {
+        "right": {
+          "LV": 862,
+          "HV": 47,
+          "TW": 1178
+        },
+        "straight": {
+          "LV": 1049,
+          "HV": 64,
+          "TW": 1099
+        },
+        "left": {
+          "LV": 988,
+          "HV": 79,
+          "TW": 949
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 300,
+          "HV": 19,
+          "TW": 350
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 209,
+          "HV": 10,
+          "TW": 310
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 268,
+          "HV": 25,
+          "TW": 295
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 197,
+          "HV": 10,
+          "TW": 267
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 240,
+          "HV": 15,
+          "TW": 188
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 350,
+          "HV": 18,
+          "TW": 235
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 150,
+          "HV": 5,
+          "TW": 249
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 390,
+          "HV": 25,
+          "TW": 321
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 180,
+          "HV": 12,
+          "TW": 239
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 215,
+          "HV": 13,
+          "TW": 312
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 210,
+          "HV": 14,
+          "TW": 280
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 190,
+          "HV": 24,
+          "TW": 180
+        }
+      ],
+      "notes": [],
+      "location": {
+        "lon": 73.7403312,
+        "lat": 18.591075,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7402127,
+          "lat": 18.5911357,
+          "source": "East end of OSM way 475607455 \"Panchratna Chowk Road\", where it meets Hinjawadi Road opposite Sakhare Vasti Road (a four-arm junction; the road's west end at Dange Chowk Road is a three-arm T). The source tables give four approaches. Not named on any OSM node, so which end is the chowk is inferred.",
+          "url": "https://www.openstreetmap.org/way/475607455"
+        },
+        "search_radius_m": 60,
+        "require_major_road": true,
+        "confidence": "medium (inferred)",
+        "matched": {
+          "lon": 73.7403312,
+          "lat": 18.591075,
+          "kind": "intersection",
+          "arms": 3,
+          "distance_from_anchor_m": 14.2,
+          "way_ids": [
+            53199257,
+            239840580,
+            475607455,
+            518992282,
+            1116872267,
+            1209259317,
+            1237995656,
+            1237995657
+          ],
+          "road_names": [
+            "Hinjawadi Road",
+            "Panchratna Chowk Road",
+            "Sakhare Vasti Road"
+          ],
+          "highways": [
+            "primary",
+            "residential",
+            "tertiary"
+          ],
+          "vertices": 4
+        }
+      }
+    },
+    {
+      "id": "kasturi_chowk",
+      "name": "Kasturi Chowk",
+      "area": "Wakad / Hinjawadi",
+      "control": "signalized",
+      "lanes": 4,
+      "source_table": "Table 3, p. 1468 (NICMAR chapter)",
+      "published_total_veh": 6190,
+      "published_total_row": {
+        "right": {
+          "LV": 793,
+          "HV": 73,
+          "TW": 1026
+        },
+        "straight": {
+          "LV": 989,
+          "HV": 71,
+          "TW": 1086
+        },
+        "left": {
+          "LV": 986,
+          "HV": 71,
+          "TW": 1092
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 200,
+          "HV": 25,
+          "TW": 250
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 180,
+          "HV": 11,
+          "TW": 236
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 205,
+          "HV": 19,
+          "TW": 288
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 197,
+          "HV": 16,
+          "TW": 316
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 209,
+          "HV": 15,
+          "TW": 281
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 319,
+          "HV": 18,
+          "TW": 349
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 216,
+          "HV": 21,
+          "TW": 250
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 309,
+          "HV": 26,
+          "TW": 319
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 251,
+          "HV": 25,
+          "TW": 267
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 180,
+          "HV": 11,
+          "TW": 210
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 291,
+          "HV": 29,
+          "TW": 250
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 211,
+          "HV": 12,
+          "TW": 188
+        }
+      ],
+      "notes": [
+        "Published table is internally inconsistent: Straight HV: printed 71, rows sum to 81; Left HV: printed 71, rows sum to 74. The per-approach rows sum to 6200 veh/h, the printed Total row to 6187 and the printed grand total is 6190. The per-approach values are kept as printed; no value was altered."
+      ],
+      "location": {
+        "lon": 73.7447086,
+        "lat": 18.5997477,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7451875,
+          "lat": 18.5994375,
+          "source": "No OSM element carries the name. Anchor: plus code HPXW+Q3V of Sant Tukaram Garden Mangal Karyalay, Dange Chowk Rd (exa.ai place listing), with addresses placing Kasturi Chowk on the Wakad-Hinjewadi Road opposite Draupada Lawns (aakritiarchitects.in) and on Dange Chowk Rd, Bhatewara Nagar (wanderboat.ai). Matched to Dange Chowk Road x New Wakad - Hinjawadi Link Road.",
+          "url": "https://exa.ai/library/place/tgqlx7vlzh6"
+        },
+        "search_radius_m": 150,
+        "require_major_road": true,
+        "confidence": "medium",
+        "matched": {
+          "lon": 73.7447086,
+          "lat": 18.5997477,
+          "kind": "intersection",
+          "arms": 4,
+          "distance_from_anchor_m": 61.2,
+          "way_ids": [
+            567724270,
+            613849580,
+            613849581,
+            838579431,
+            838579438,
+            1209324405,
+            1209324406,
+            1209324408,
+            1255451479,
+            1255451480,
+            1533733544,
+            1533733545
+          ],
+          "road_names": [
+            "Dange Chowk Road",
+            "New Wakad - Hinjawadi Link Road"
+          ],
+          "highways": [
+            "primary",
+            "secondary"
+          ],
+          "vertices": 4
+        }
+      }
+    },
+    {
+      "id": "ganraj_chowk",
+      "name": "Ganraj Chowk",
+      "area": "Baner",
+      "control": "signalized",
+      "lanes": 4,
+      "source_table": "Table 4, p. 1469 (NICMAR chapter)",
+      "published_total_veh": 8296,
+      "published_total_row": {
+        "right": {
+          "LV": 1514,
+          "HV": 61,
+          "TW": 1311
+        },
+        "straight": {
+          "LV": 1317,
+          "HV": 95,
+          "TW": 1489
+        },
+        "left": {
+          "LV": 1250,
+          "HV": 30,
+          "TW": 1229
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 349,
+          "HV": 17,
+          "TW": 291
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 180,
+          "HV": 30,
+          "TW": 200
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 230,
+          "HV": 4,
+          "TW": 257
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 276,
+          "HV": 5,
+          "TW": 310
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 197,
+          "HV": 10,
+          "TW": 225
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 246,
+          "HV": 6,
+          "TW": 261
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 480,
+          "HV": 29,
+          "TW": 370
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 450,
+          "HV": 40,
+          "TW": 550
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 324,
+          "HV": 10,
+          "TW": 270
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 409,
+          "HV": 10,
+          "TW": 340
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 490,
+          "HV": 15,
+          "TW": 514
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 450,
+          "HV": 10,
+          "TW": 441
+        }
+      ],
+      "notes": [],
+      "location": {
+        "lon": 73.776901,
+        "lat": 18.5642371,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7768125,
+          "lat": 18.5641875,
+          "source": "No OSM element carries the name. Anchor: plus code HQ7G+MPX listed for \"Ganraj Chowk, Baner\" (indiabiz.info; justdial). Matched to Baner - Balewadi Road x Balewadi High Street / Gopal Hari Deshmukh Marg.",
+          "url": "https://www.indiabiz.info/en/ganraj-chowk-baner_1J"
+        },
+        "search_radius_m": 60,
+        "require_major_road": true,
+        "confidence": "medium",
+        "matched": {
+          "lon": 73.776901,
+          "lat": 18.5642371,
+          "kind": "intersection",
+          "arms": 4,
+          "distance_from_anchor_m": 10.8,
+          "way_ids": [
+            239844585,
+            250162145,
+            250162173,
+            250171794,
+            327073033,
+            345742762,
+            345742763
+          ],
+          "road_names": [
+            "Balewadi High Street",
+            "Baner - Balewadi Road",
+            "Gopal Hari Deshmukh Marg"
+          ],
+          "highways": [
+            "primary",
+            "residential",
+            "tertiary"
+          ],
+          "vertices": 5
+        }
+      }
+    },
+    {
+      "id": "sakharam_waghmare_chowk",
+      "name": "Sakharam Waghmare Chowk",
+      "area": "Wakad",
+      "control": "unsignalized",
+      "lanes": 4,
+      "source_table": "Table 5, p. 1469 (NICMAR chapter)",
+      "published_total_veh": 3974,
+      "published_total_row": {
+        "right": {
+          "LV": 875,
+          "HV": 42,
+          "TW": 425
+        },
+        "straight": {
+          "LV": 725,
+          "HV": 25,
+          "TW": 455
+        },
+        "left": {
+          "LV": 695,
+          "HV": 37,
+          "TW": 695
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 187,
+          "HV": 10,
+          "TW": 165
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 120,
+          "HV": 7,
+          "TW": 135
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 145,
+          "HV": 15,
+          "TW": 160
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 198,
+          "HV": 17,
+          "TW": 170
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 105,
+          "HV": 3,
+          "TW": 120
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 160,
+          "HV": 7,
+          "TW": 75
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 230,
+          "HV": 5,
+          "TW": 30
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 240,
+          "HV": 5,
+          "TW": 100
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 210,
+          "HV": 10,
+          "TW": 240
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 260,
+          "HV": 10,
+          "TW": 60
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 260,
+          "HV": 10,
+          "TW": 100
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 180,
+          "HV": 5,
+          "TW": 220
+        }
+      ],
+      "notes": [],
+      "location": {
+        "lon": 73.7592537,
+        "lat": 18.5950279,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7592543,
+          "lat": 18.5950215,
+          "source": "OSM way 1219666725 (closed one-way ring, name=\"Sakharam Waghmare Chowk\") on Shankar Kalate Nagar Road, found with Nominatim",
+          "url": "https://www.openstreetmap.org/way/1219666725"
+        },
+        "search_radius_m": 60,
+        "require_major_road": false,
+        "confidence": "high (location); OSM tags the roads residential although the source calls it four-lane",
+        "matched": {
+          "lon": 73.7592537,
+          "lat": 18.5950279,
+          "kind": "roundabout",
+          "arms": 6,
+          "distance_from_anchor_m": 0.7,
+          "way_ids": [
+            703144439,
+            1174487504,
+            1174487507,
+            1219666725,
+            1219666726,
+            1219666727,
+            1219666728
+          ],
+          "road_names": [
+            "Sakharam Waghmare Chowk",
+            "Shankar Kalate Nagar Road"
+          ],
+          "highways": [
+            "residential"
+          ],
+          "vertices": 1
+        }
+      }
+    },
+    {
+      "id": "infosys_circle_phase_1",
+      "name": "Infosys Circle Phase 1",
+      "area": "Hinjawadi Phase 1",
+      "control": "unsignalized",
+      "lanes": 4,
+      "source_table": "Table 6, p. 1470 (NICMAR chapter)",
+      "published_total_veh": 4243,
+      "published_total_row": {
+        "right": {
+          "LV": 766,
+          "HV": 52,
+          "TW": 774
+        },
+        "straight": {
+          "LV": 677,
+          "HV": 42,
+          "TW": 750
+        },
+        "left": {
+          "LV": 626,
+          "HV": 21,
+          "TW": 535
+        }
+      },
+      "movements": [
+        {
+          "approach": "N",
+          "turn": "right",
+          "LV": 196,
+          "HV": 19,
+          "TW": 174
+        },
+        {
+          "approach": "N",
+          "turn": "straight",
+          "LV": 167,
+          "HV": 15,
+          "TW": 190
+        },
+        {
+          "approach": "N",
+          "turn": "left",
+          "LV": 96,
+          "HV": 5,
+          "TW": 40
+        },
+        {
+          "approach": "S",
+          "turn": "right",
+          "LV": 160,
+          "HV": 10,
+          "TW": 140
+        },
+        {
+          "approach": "S",
+          "turn": "straight",
+          "LV": 180,
+          "HV": 8,
+          "TW": 210
+        },
+        {
+          "approach": "S",
+          "turn": "left",
+          "LV": 110,
+          "HV": 4,
+          "TW": 45
+        },
+        {
+          "approach": "E",
+          "turn": "right",
+          "LV": 200,
+          "HV": 18,
+          "TW": 220
+        },
+        {
+          "approach": "E",
+          "turn": "straight",
+          "LV": 140,
+          "HV": 5,
+          "TW": 180
+        },
+        {
+          "approach": "E",
+          "turn": "left",
+          "LV": 200,
+          "HV": 5,
+          "TW": 240
+        },
+        {
+          "approach": "W",
+          "turn": "right",
+          "LV": 210,
+          "HV": 5,
+          "TW": 240
+        },
+        {
+          "approach": "W",
+          "turn": "straight",
+          "LV": 190,
+          "HV": 14,
+          "TW": 170
+        },
+        {
+          "approach": "W",
+          "turn": "left",
+          "LV": 220,
+          "HV": 7,
+          "TW": 210
+        }
+      ],
+      "notes": [],
+      "location": {
+        "lon": 73.733691,
+        "lat": 18.5860213,
+        "method": "Anchor matched to a junction of the local OSM index (backend/data/osm/osm_index.db, western-zone-latest.osm.pbf, OSM data timestamp 2026-11-01 21:21 UTC) by backend/observed/junction_match.py",
+        "anchor": {
+          "lon": 73.7336875,
+          "lat": 18.5860625,
+          "source": "OSM way 239840636 (leisure=garden, name=\"Infosys Circle Phase 1 Hinjawadi\"), the roundabout island; its centroid (18.58603, 73.73370, OSM API) agrees with plus code HPPM+CF8 listed for the same place. Not the \"Infosys Circle\" roundabout in Phase 2 (OSM way 239840599).",
+          "url": "https://www.openstreetmap.org/way/239840636"
+        },
+        "search_radius_m": 60,
+        "require_major_road": true,
+        "confidence": "high",
+        "matched": {
+          "lon": 73.733691,
+          "lat": 18.5860213,
+          "kind": "roundabout",
+          "arms": 8,
+          "distance_from_anchor_m": 4.6,
+          "way_ids": [
+            60975032,
+            60975324,
+            60975326,
+            60975329,
+            60976071,
+            60976073,
+            60976075,
+            60976077,
+            568110941,
+            761395844,
+            1484133387,
+            1484133388
+          ],
+          "road_names": [
+            "Blue Ridge Road, Phase 1",
+            "Hinjawadi Phase 1 road",
+            "Maan road",
+            "Rajiv Gandhi MIDC Road"
+          ],
+          "highways": [
+            "primary",
+            "tertiary"
+          ],
+          "vertices": 1
+        }
+      }
+    }
+  ],
+  "missing": [
+    {
+      "field": "survey.date",
+      "reason": "not stated in either source"
+    },
+    {
+      "field": "survey.peak_hour_clock",
+      "reason": "not stated; AM or PM peak unknown"
+    },
+    {
+      "field": "per-site PHF",
+      "reason": "only the range 0.82-0.94 is published"
+    },
+    {
+      "field": "15-minute counts",
+      "reason": "not published; only the peak hour"
+    },
+    {
+      "field": "U-turns, pedestrians, cyclists",
+      "reason": "not counted"
+    },
+    {
+      "field": "kasturi_chowk totals",
+      "reason": "the published table does not add up; see the junction's notes"
+    }
+  ],
+  "transcription": "Values extracted with pdftotext -layout from the NICMAR PDF (sha256 above) and cross-checked: each approach row sums to the published grand total at five junctions, and the Ganraj east approach (2,523 veh/h) matches kureshi2026 section IV.A."
+}

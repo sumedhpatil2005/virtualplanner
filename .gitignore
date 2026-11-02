@@ -67,4 +67,6 @@ npm-debug.log*
 *.tsbuildinfo
 
 # ─── OpenStreetMap extracts and the road index built from them ───────────────
-backend/data/
+backend/data/*
+# Observed count files are curated source data, not generated: keep them
+!backend/data/observed_counts/

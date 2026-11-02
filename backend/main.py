@@ -4,6 +4,7 @@ from database.connection import engine, Base
 from api.router import router
 from api.sim_router import router as sim_router
 from api.osm_router import router as osm_router
+from api.observed_router import router as observed_router
 from seed import ensure_base_scenario
 
 # Initialize database tables and the mandatory base scenario
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(sim_router, prefix="/api")
 app.include_router(osm_router, prefix="/api")
+app.include_router(observed_router, prefix="/api")
 
 @app.get("/")
 def read_root():
