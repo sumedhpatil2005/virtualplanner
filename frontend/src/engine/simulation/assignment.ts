@@ -10,7 +10,7 @@
  * loops; Sheffi 1985, Urban Transportation Networks, on MSA).
  */
 import type { DemandPlan } from './StudyDemand';
-import { STEP_S } from './TrafficMicroSim';
+import { STEP_S, type TrafficMicroSim } from './TrafficMicroSim';
 import { buildSim, type SimSetup } from '../calibration/calibration';
 
 export interface AssignmentIteration {
@@ -28,7 +28,9 @@ export interface AssignmentResult { linkCostFactors: Map<string, number>; histor
 /** Cap on a link's cost factor: a link that is jammed in one run is not made unusable. */
 export const MAX_COST_FACTOR = 10;
 
-export async function assignWithFeedback(setup: SimSetup, plan: DemandPlan, o: { iterations: number; warmupS: number; measureS: number }): Promise<AssignmentResult> {
+export async function assignWithFeedback(setup: SimSetup, plan: DemandPlan, o: { iterations: number; warmupS: number; measureS: number;
+  /** Called after each iteration's run with the measured congestion ratios (for tests and reports). */
+  onIteration?: (k: number, measured: ReadonlyMap<string, number>, sim: TrafficMicroSim) => void }): Promise<AssignmentResult> {
   const factors = new Map<string, number>();
   const history: AssignmentIteration[] = [];
   let lastRoutes: Map<number, string> | null = null;
@@ -45,14 +47,20 @@ export async function assignWithFeedback(setup: SimSetup, plan: DemandPlan, o: {
       if (i % 2000 === 1999) await new Promise<void>(r => setTimeout(r, 0));
     }
     const times = sim.linkTravelTimes();
-    let sum = 0, n = 0;
-    times.forEach((t, id) => {
-      const ratio = Math.min(MAX_COST_FACTOR, Math.max(1, t.meanS / Math.max(t.freeFlowS, 0.1)));
+    const measured = new Map<string, number>();
+    times.forEach((t, id) => measured.set(id, Math.min(MAX_COST_FACTOR, Math.max(1, t.meanS / Math.max(t.freeFlowS, 0.1)))));
+    // MSA: each factor is the running mean of the ratios measured so far. A link
+    // nobody used in this iteration ran at free flow (ratio 1), so links used
+    // earlier relax back towards 1 instead of keeping their last congested value.
+    new Set([...factors.keys(), ...measured.keys()]).forEach(id => {
+      const ratio = measured.get(id) ?? 1;
       const prev = factors.get(id) ?? 1;
-      // MSA: running mean of the measured ratios (iteration 1 replaces the free-flow factor 1)
       factors.set(id, prev + (ratio - prev) / k);
-      sum += ratio; n++;
     });
+    o.onIteration?.(k, measured, sim);
+    let sum = 0;
+    measured.forEach(r => { sum += r; });
+    const n = measured.size;
     const m = sim.getMetrics();
     history.push({ iteration: k, meanCongestion: n ? sum / n : 1, rerouted: total ? changed / total : 0, completedTrips: m.completedTrips, meanSpeedKmh: m.meanSpeedKmh });
   }

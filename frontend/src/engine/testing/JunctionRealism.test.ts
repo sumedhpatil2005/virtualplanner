@@ -195,6 +195,34 @@ describe('no deadlock', () => {
     expect('ABCDEF').toContain(stats[0].los);
   }, 60_000);
 
+  it('a platoon cut off by red gives back its grants: nobody waiting at a red line blocks the next phase', () => {
+    // Mixed straight and turning vehicles queue on every approach; a turn starts
+    // further back than the straight-on line, so a turning follower can stand past
+    // its own start behind a straight leader stopped by red. Neither may keep a
+    // claim on the junction while its approach is red. (The fault was found at
+    // Kasturi Chowk on the real OSM geometry, where such claims cut stop-line
+    // discharge to 10-25% of the Indo-HCM saturation flow; this toy guards the
+    // invariant but did not reproduce the fault itself before the fix.)
+    const { area, map, j } = crossroads(3, 60);
+    const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 5, junctions: [j], signalTiming: 'equal' });
+    const ends = [nodeAt(area, -400, 0), nodeAt(area, 400, 0), nodeAt(area, 0, -400), nodeAt(area, 0, 400)];
+    sim.traceGrants();
+    let k = 0;
+    run(sim, 600, () => {
+      if (k++ % 3 === 0) {
+        const a = ends[k % 4], b = ends[(k * 3 + 1) % 4];
+        if (a !== b) sim.spawnVehicle(a, b, VEHICLE_TYPES[k % 2].kind);
+      }
+    });
+    let blockedByRed = 0, granted = 0;
+    sim.grantOutcomes().forEach(m => m.forEach((n, reason) => {
+      if (/approaching standing red/.test(reason)) blockedByRed += n;
+      if (reason === 'granted') granted += n;
+    }));
+    expect(granted).toBeGreaterThan(100);
+    expect(blockedByRed).toBe(0);
+  }, 60_000);
+
   it('LOS bands follow HCM 2000 control-delay thresholds', () => {
     expect(losFor(5, true)).toBe('A');
     expect(losFor(30, true)).toBe('C');

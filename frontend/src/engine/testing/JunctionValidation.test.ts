@@ -23,7 +23,7 @@ import { StudyAreaExplorer, type DrivableObject } from '../simulation/StudyAreaE
 import { compileStudyDemand, type SimulationContext, type DemandPlan } from '../simulation/StudyDemand';
 import { fitPlan, junctionsIn, zoneFor, compareRows, buildSim, timeSignalsFromCounts, WARMUP_S, MEASURE_S, type SimSetup } from '../calibration/calibration';
 import type { CountDataset } from '../calibration/observedCounts';
-import { STEP_S } from '../simulation/TrafficMicroSim';
+import { STEP_S, VEHICLE_TYPES } from '../simulation/TrafficMicroSim';
 import { applyNetworkCorrections, validateCorrectionLayer } from '../simulation/networkCorrections';
 import { assignWithFeedback } from '../simulation/assignment';
 import { distanceM } from '../calibration/junctionMovements';
@@ -75,7 +75,63 @@ describe.skipIf(!DUMP)('junction before/after validation (opt-in)', () => {
       const layouts = sim.setCountZones(zones);
       if (setup.signalDesignCounts) timeSignalsFromCounts(sim, junctions, layouts);
       const total = Math.round((WARMUP_S + MEASURE_S) / STEP_S), warm = Math.round(WARMUP_S / STEP_S);
-      for (let i = 0; i < total; i++) { if (i === warm) sim.startCounting(); sim.step(); }
+      // Optional diagnostics (VAL_DIAG=1): occupancy and speed of every link within
+      // 400 m of the junction, sampled every 30 s of the measured window
+      const diagOn = process.env.VAL_DIAG === '1';
+      // debugLanes lists links in index order, as linkEnds does
+      const le = diagOn ? sim.linkEnds() : [];
+      const endsById = new Map(diagOn ? [...sim.debugLanes().keys()].map((id, k) => [id, le[k]] as const) : []);
+      const near = (p: number[]) => distanceM(p[0], p[1], junction.location.lon, junction.location.lat);
+      const diag = new Map<string, { len: number; lanes: number; dFrom: number; dTo: number; occ: number; spd: number; veh: number; n: number }>();
+      const every = Math.round(30 / STEP_S);
+      // Discharge at the stop line of each signalised approach to this junction:
+      // vehicles leaving the link per second of green with a queue standing at the line
+      const approaches = diagOn ? [...endsById].filter(([id, e]) => near(e.to as number[]) < 30 && near(e.from as number[]) > 30 && sim.signalStateOf(id) !== null).map(([id]) => id) : [];
+      const dis = new Map(approaches.map(id => [id, { greenS: 0, queuedGreenS: 0, out: 0, outPcu: 0, outQueued: 0, outQueuedPcu: 0, outNotGreen: 0, prev: new Map<number, string>() }]));
+      const pcuOf = new Map(VEHICLE_TYPES.map(t => [t.kind as string, t.pcu]));
+      for (let i = 0; i < total; i++) {
+        if (i === warm) { sim.startCounting(); if (diagOn) sim.traceGrants(); }
+        let queued: Map<string, boolean> | null = null;
+        if (diagOn && i >= warm) {
+          const dl = sim.debugLanes();
+          queued = new Map(approaches.map(id => {
+            const front = dl.get(id)!.map(l => l[0]).filter(Boolean);
+            return [id, front.some(v => v.stopLine - v.pos < 8 && v.v < 2)];
+          }));
+        }
+        sim.step();
+        if (queued) {
+          const dl = sim.debugLanes();
+          for (const id of approaches) {
+            const r = dis.get(id)!;
+            const now = new Map(dl.get(id)!.flat().map(v => [v.id, v.kind as string]));
+            const st = sim.signalStateOf(id);
+            const green = st === 'green';
+            if (green) { r.greenS += STEP_S; if (queued.get(id)) r.queuedGreenS += STEP_S; }
+            r.prev.forEach((kind, vid) => {
+              if (now.has(vid)) return;
+              const pc = pcuOf.get(kind) ?? 1;
+              if (green) { r.out++; r.outPcu += pc; if (queued.get(id)) { r.outQueued++; r.outQueuedPcu += pc; } } else r.outNotGreen++;
+            });
+            r.prev = now;
+          }
+        }
+        if (diagOn && i >= warm && (i - warm) % every === 0) {
+          sim.debugLanes().forEach((lanes, id) => {
+            const len = sim.linkLength(id) ?? 0;
+            const e = endsById.get(id);
+            if (!e) return;
+            const dFrom = near(e.from as number[]), dTo = near(e.to as number[]);
+            if (Math.min(dFrom, dTo) > 400) return;
+            const vs = lanes.flat();
+            const occ = vs.reduce((a, v) => a + v.length + 2, 0) / Math.max(1, len * lanes.length);
+            const spd = vs.length ? vs.reduce((a, v) => a + v.v, 0) / vs.length : NaN;
+            const r = diag.get(id) ?? { len, lanes: lanes.length, dFrom, dTo, occ: 0, spd: 0, veh: 0, n: 0 };
+            r.occ += occ; r.spd += vs.length ? spd : 0; r.veh += vs.length; r.n++;
+            diag.set(id, r);
+          });
+        }
+      }
       const { counts, windowS } = sim.movementCounts();
       const flows = new Map([...counts].map(([k, n]) => [k, (n * 3600) / Math.max(windowS, STEP_S)]));
       const rows = compareRows(junctions, layouts, null, flows);
@@ -89,6 +145,11 @@ describe.skipIf(!DUMP)('junction before/after validation (opt-in)', () => {
         rows, metrics: sim.getMetrics(), junction: node, deadlocks: sim.deadlockReport(),
         signal: node ? plans.find(p => p.nodeId === node.id) ?? null : null,
         assignment,
+        diag: diagOn ? [...diag].map(([id, r]) => ({ id, len: Math.round(r.len), lanes: r.lanes, dFrom: Math.round(r.dFrom), dTo: Math.round(r.dTo),
+          occ: +(r.occ / r.n).toFixed(2), speedMs: +(r.spd / r.n).toFixed(1), veh: +(r.veh / r.n).toFixed(1) })) : undefined,
+        grants: diagOn ? approaches.map(id => ({ id, ...Object.fromEntries(sim.grantOutcomes().get(id) ?? []) })) : undefined,
+        discharge: diagOn ? [...dis].map(([id, r]) => ({ id, lanes: sim.debugLanes().get(id)!.length, greenS: r.greenS, queuedGreenS: r.queuedGreenS, out: r.out, outNotGreen: r.outNotGreen,
+          vphGreen: Math.round(r.out * 3600 / Math.max(1, r.greenS)), pcuphQueuedGreen: Math.round(r.outQueuedPcu * 3600 / Math.max(1, r.queuedGreenS)), vphQueuedGreen: Math.round(r.outQueued * 3600 / Math.max(1, r.queuedGreenS)) })) : undefined,
       });
     }
     const out = { junction: jid, config, assignIters, corrections: corrected?.report ?? null, results };

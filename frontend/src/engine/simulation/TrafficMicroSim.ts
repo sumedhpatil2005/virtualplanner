@@ -1258,6 +1258,18 @@ export class TrafficMicroSim {
   }
 
   /** Whether the front vehicle of a lane may cross into its next link; reserves the junction if so. */
+  /** Diagnostics: outcomes of grant requests per approach link (only when enabled). */
+  private grantLog: Map<string, Map<string, number>> | null = null;
+  /** Test hook: start counting the outcomes of grant requests per approach link id. */
+  public traceGrants() { this.grantLog = new Map(); }
+  public grantOutcomes(): Map<string, Map<string, number>> { return this.grantLog ?? new Map(); }
+  private refuse(link: Link, reason: string) {
+    if (!this.grantLog) return;
+    let m = this.grantLog.get(link.id);
+    if (!m) { m = new Map(); this.grantLog.set(link.id, m); }
+    m.set(reason, (m.get(reason) ?? 0) + 1);
+  }
+
   private tryGrant(veh: Vehicle, link: Link, dist: number) {
     const next = this.links[veh.route[veh.routeIdx + 1]];
     // Lanes map across the junction in order (kerb lane to kerb lane), so vehicles
@@ -1290,7 +1302,7 @@ export class TrafficMicroSim {
       // room, if any.
       // Where the lane count changes (a merge or a widening) any lane with room will do.
       const t = next.lanes[lane][next.lanes[lane].length - 1];
-      if (link.lanes.length === next.lanes.length && t && t.v > BLOCKED_TAIL_MPS) return;
+      if (link.lanes.length === next.lanes.length && t && t.v > BLOCKED_TAIL_MPS) return this.refuse(link, 'room-wait');
       let best = -1, bestRoom = -Infinity;
       for (let k = 0; k < next.lanes.length; k++) {
         if (k === lane) continue;
@@ -1298,27 +1310,31 @@ export class TrafficMicroSim {
         const r = room(k, c.start - veh.pos) - need(c);
         if (r > bestRoom) { bestRoom = r; best = k; }
       }
-      if (best < 0 || bestRoom < 0) return;
+      if (best < 0 || bestRoom < 0) return this.refuse(link, 'room');
       lane = best;
       connector = this.connectorFor(link, veh.lane, next, lane);
       dist = connector.start - veh.pos;
     }
 
-    if (this.conflictingClaim(veh, link, connector, false)) return;
-
     const c = this.controls.get(link.to);
     if (c?.kind === 'signal') {
       const state = this.signalState(link.index);
       const canStop = dist > (veh.v * veh.v) / (2 * veh.type.comfortDecel);
-      if (state === 'red' || (state === 'amber' && canStop)) return;
+      if (state === 'red' || (state === 'amber' && canStop)) return this.refuse(link, 'signal');
+    }
+
+    if (this.conflictingClaim(veh, link, connector, false)) return this.refuse(link, 'conflict');
+
+    if (c?.kind === 'signal') {
       // Permissive right turn: give way to opposing green traffic (gap acceptance)
-      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return;
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way');
     } else if (c?.kind === 'priority') {
       const yields = this.yieldsAt(link, next, c);
       // Traffic that gives way edges up to the line before judging the gap
       if (yields && dist > YIELD_LINE_M) return;
-      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return;
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way');
     }
+    this.refuse(link, 'granted');
     veh.pairCross = withPartner;
     this.reserve(veh, lane, connector);
   }
@@ -1430,7 +1446,10 @@ export class TrafficMicroSim {
       if (r.vehId === veh.id || r.node !== link.to || r.from === link.index) continue;
       const approaching = r.veh.reservation === r;
       if (approaching && (drivingOnly || (r.connector.start - r.veh.pos) / Math.max(r.veh.v, 1) > CLAIM_AHEAD_S)) continue;
-      if (connectorsConflict(connector, r.connector)) return true;
+      if (connectorsConflict(connector, r.connector)) {
+        if (this.grantLog && !drivingOnly) this.refuse(link, `by ${this.links[r.from].id} ${approaching ? 'approaching' : 'in-box'} ${r.veh.v < 0.3 ? 'standing' : 'moving'} ${this.signalState(r.from) ?? 'nosig'}`);
+        return true;
+      }
     }
     return false;
   }
@@ -1540,16 +1559,29 @@ export class TrafficMicroSim {
         // Platoon grants at signals only: there the discharge rate of a standing queue
         // was measured against Indo-HCM; elsewhere only the front vehicle asks
         const platoon = this.controls.get(link.to)?.kind === 'signal' ? PLATOON_GRANTS : 1;
-        for (let i = 0; i < lane.length && i < platoon; i++) {
+        // Every grant not yet used is checked, not only the front one's: a platoon
+        // cleared on green that has not reached the line when the signal turns red
+        // gives its grants back (otherwise those standing at a red line keep claims
+        // that block the movements of the next phase).
+        // A follower can be past the start of its own turn (a turn starts further
+        // back than the straight-on line) while still queued behind a leader that
+        // has no grant: it has not entered the junction, so it is treated as not
+        // past its line.
+        for (let i = 0; i < lane.length; i++) {
           const veh = lane[i];
-          if (veh.routeIdx >= veh.route.length - 1) break;
-          if (veh.connector && veh.pos < veh.connector.start) {
+          if (veh.grantLane === null) continue;
+          const queuedBehind = i > 0 && lane[i - 1].grantLane === null && !lane[i - 1].arriving;
+          if (veh.connector && (veh.pos < veh.connector.start || queuedBehind)) {
             const signal = this.signalState(link.index);
-            const distance = veh.connector.start - veh.pos;
+            const distance = queuedBehind ? Infinity : veh.connector.start - veh.pos;
             const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
             if (signal === 'red' || (signal === 'amber' && canStop) ||
               (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true))) this.revokeGrant(veh);
           }
+        }
+        for (let i = 0; i < lane.length && i < platoon; i++) {
+          const veh = lane[i];
+          if (veh.routeIdx >= veh.route.length - 1) break;
           if (veh.grantLane !== null) continue;
           const dist = this.stopLine(veh, link) - veh.pos;
           // Followers ask only once near their line (the front one asks early where there is no control)
