@@ -412,6 +412,18 @@ export class TwinCityEngine {
           this.viewer.scene.screenSpaceCameraController.enableRotate = false;
           return;
         }
+        // A boundary edge's midpoint handle: dragging it adds a vertex there
+        if (idStr.startsWith('draw_mid_')) {
+          const i = parseInt(idStr.split('_')[2]);
+          const pts = this.editing.getDrawingPoints();
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          if (a && b) {
+            this.editing.insertDrawingPoint(i + 1, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ((a[2] || 0) + (b[2] || 0)) / 2]);
+            this.draggingPointIdx = i + 1;
+            this.viewer.scene.screenSpaceCameraController.enableRotate = false;
+          }
+          return;
+        }
         if (idStr.startsWith('edit_zone_point_')) {
           const parts = idStr.split('_');
           this.draggingZonePointIdx = parseInt(parts[parts.length - 1]);
@@ -523,6 +535,9 @@ export class TwinCityEngine {
         const alt = cartographic.height;
 
         const editMode = this.editing.getMode();
+        const pickedId = defined(pickedObject) && typeof pickedObject.id?.id === 'string' ? pickedObject.id.id as string : '';
+        // Clicking a boundary handle (to drag it) does not add a point on top of it
+        if (editMode === 'import_osm' && (pickedId.startsWith('draw_point_') || pickedId.startsWith('draw_mid_'))) return;
         if (editMode !== 'select') {
           this.editing.addDrawingPoint([lng, lat, alt]);
           if (this.editing.isSingleClickMode(editMode)) {
@@ -1003,6 +1018,23 @@ export class TwinCityEngine {
         });
         this.drawMarkers.push(marker);
       });
+      // Midpoint handles on each boundary edge (the closing edge too, once it is a polygon): drag one to add a vertex
+      const edges = points.length >= 3 ? points.length : points.length - 1;
+      for (let i = 0; i < edges; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        const mid = this.viewer!.entities.add({
+          id: `draw_mid_${i}`,
+          position: Cartesian3.fromDegrees((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ((a[2] || 0) + (b[2] || 0)) / 2),
+          point: {
+            pixelSize: 7,
+            color: Color.WHITE.withAlpha(0.85),
+            outlineWidth: 1,
+            outlineColor: Color.RED,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+          }
+        });
+        this.drawMarkers.push(mid);
+      }
     }
 
     if (mode === 'draw_road' || mode === 'draw_utility') {

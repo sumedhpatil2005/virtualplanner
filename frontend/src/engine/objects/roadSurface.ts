@@ -1,5 +1,5 @@
 import type { CityObject } from './types';
-import { elevatedLayer } from './bridgeElevation';
+import { depressedLevel, elevatedLayer, isOsmBridge, isOsmTunnel } from './bridgeElevation';
 
 /**
  * Height of each road class's surface above its centre line (m). Where roads
@@ -11,6 +11,6 @@ export const ROAD_CLASS_LIFT_M: Record<string, number> = { local: 0, collector: 
 
 /** How far above its coordinates a road's drawn surface is: 0 for bridges, tunnels and flyovers. */
 export function surfaceLiftM(o: CityObject | undefined): number {
-  if (!o || o.type !== 'road' || o.osmProvenance?.bridge || o.osmProvenance?.tunnel || elevatedLayer(o) > 0) return 0;
+  if (!o || o.type !== 'road' || isOsmBridge(o.osmProvenance) || isOsmTunnel(o.osmProvenance) || elevatedLayer(o) > 0 || depressedLevel(o) > 0) return 0;
   return ROAD_CLASS_LIFT_M[o.roadClass] ?? 0;
 }

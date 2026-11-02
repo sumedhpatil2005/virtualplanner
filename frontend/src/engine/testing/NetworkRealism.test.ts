@@ -44,21 +44,47 @@ const zAt = (r: RoadObject, x: number) => {
 };
 
 describe('OSM bridges stand above the roads they cross', () => {
-  it('raises a flyover to deck height with ramps where it meets the ground', () => {
+  it('raises a flyover over a road to deck height along its span, ramping down along its approaches', () => {
     const approachW = road('osm_w', [[-300, 0], [0, 0]], { osm: {} });
     const fly = road('osm_fly', [[0, 0], [400, 0]], { osm: { layer: 1, bridge: true } });
     const approachE = road('osm_e', [[400, 0], [700, 0]], { osm: {} });
     const cross = road('osm_cross', [[200, -200], [200, 200]], { osm: {} });
     liftOsmBridges([approachW, fly, approachE, cross]);
 
-    expect(zAt(fly, 0)).toBe(0);
-    expect(zAt(fly, 400)).toBe(0);
-    // Mid-span, over the cross road, it is at full height
-    expect(zAt(fly, 200)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M, 1);
-    // Ramps rise at the grade
-    expect(zAt(fly, 60)).toBeCloseTo(60 * RAMP_GRADE, 0);
-    // Ground roads are untouched
+    // OSM's bridge way is the span; the ramp is on the approach roads that carry on from it
+    expect(zAt(fly, 0)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M, 6);
+    expect(zAt(fly, 200)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M, 6);
+    expect(zAt(fly, 400)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M, 6);
+    // Approaches rise at the grade towards the deck and are on the ground beyond ramp reach
+    expect(zAt(approachW, -60)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M - 60 * RAMP_GRADE, 0);
+    expect(zAt(approachW, -300)).toBe(0);
+    expect(zAt(approachE, 460)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M - 60 * RAMP_GRADE, 0);
+    // The road below is untouched
     expect(cross.coordinates.every(c => c[2] === 0)).toBe(true);
+  });
+
+  it('brings a deck end down where it meets an at-grade junction', () => {
+    const approachW = road('osm_w', [[-300, 0], [0, 0]], { osm: {} });
+    const side = road('osm_side', [[0, 0], [0, 200]], { osm: {} }); // joins at the deck's west end
+    const fly = road('osm_fly', [[0, 0], [400, 0]], { osm: { layer: 1, bridge: true } });
+    const cross = road('osm_cross', [[200, -200], [200, 200]], { osm: {} });
+    liftOsmBridges([approachW, side, fly, cross]);
+    expect(zAt(fly, 0)).toBe(0);
+    expect(zAt(fly, 60)).toBeCloseTo(60 * RAMP_GRADE, 0);
+    expect(zAt(fly, 200)).toBeCloseTo(DECK_HEIGHT_PER_LAYER_M, 1);
+    // The junction's roads stay on the ground
+    expect(approachW.coordinates.every(c => c[2] === 0)).toBe(true);
+    expect(side.coordinates.every(c => c[2] === 0)).toBe(true);
+  });
+
+  it('keeps a bridge over nothing mapped (a stream) near road level, ramping within its span', () => {
+    const approachW = road('osm_w', [[-300, 0], [0, 0]], { osm: {} });
+    const bridge = road('osm_br', [[0, 0], [40, 0]], { osm: { layer: 1, bridge: true } });
+    const approachE = road('osm_e', [[40, 0], [300, 0]], { osm: {} });
+    liftOsmBridges([approachW, bridge, approachE]);
+    expect(Math.max(...bridge.coordinates.map(c => c[2]))).toBeLessThanOrEqual(20 * RAMP_GRADE + 1e-9);
+    expect(approachW.coordinates.every(c => c[2] === 0)).toBe(true);
+    expect(approachE.coordinates.every(c => c[2] === 0)).toBe(true);
   });
 
   it('gives the same heights when run again', () => {
