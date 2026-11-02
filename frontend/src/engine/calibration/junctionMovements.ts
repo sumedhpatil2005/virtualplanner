@@ -24,6 +24,8 @@ export interface LinkEnds {
   index: number;
   from: readonly [number, number] | readonly number[];
   to: readonly [number, number] | readonly number[];
+  /** The whole polyline (from ... to), when known: arm bearings are then taken where it crosses the zone edge. */
+  pts?: readonly (readonly number[])[];
 }
 export interface CountZone { id: string; lng: number; lat: number; radiusM: number }
 export interface ZoneArm { bearing: number; cardinal: Cardinal | null; inbound: number[]; outbound: number[]; errorDeg: number | null }
@@ -106,12 +108,24 @@ export function assignCardinals(bearings: readonly number[]): { labels: (Cardina
 
 export function layoutZone(zone: CountZone, links: readonly LinkEnds[]): ZoneLayout {
   const inside = (p: readonly number[]) => distanceM(p[0], p[1], zone.lng, zone.lat) <= zone.radiusM;
+  /**
+   * Where the arm leaves the zone: the first polyline point outside it,
+   * walking out from the junction end. Far ends of long links can bend away
+   * (two carriageways of one road ending in different directions), so the
+   * far end alone would split one arm into two.
+   */
+  const armPoint = (l: LinkEnds, inboundLink: boolean): readonly number[] => {
+    const pts = l.pts && l.pts.length >= 2 ? l.pts : [l.from, l.to];
+    const ordered = inboundLink ? [...pts].reverse() : pts;
+    for (const p of ordered) if (distanceM(p[0], p[1], zone.lng, zone.lat) > zone.radiusM) return p;
+    return ordered[ordered.length - 1];
+  };
   const inbound: number[] = [], outbound: number[] = [];
   const ends: { bearing: number; link: number; dir: 'in' | 'out' }[] = [];
   for (const l of links) {
     const fi = inside(l.from), ti = inside(l.to);
-    if (!fi && ti) { inbound.push(l.index); ends.push({ bearing: bearingDeg(zone.lng, zone.lat, l.from[0], l.from[1]), link: l.index, dir: 'in' }); }
-    else if (fi && !ti) { outbound.push(l.index); ends.push({ bearing: bearingDeg(zone.lng, zone.lat, l.to[0], l.to[1]), link: l.index, dir: 'out' }); }
+    if (!fi && ti) { const p = armPoint(l, true); inbound.push(l.index); ends.push({ bearing: bearingDeg(zone.lng, zone.lat, p[0], p[1]), link: l.index, dir: 'in' }); }
+    else if (fi && !ti) { const p = armPoint(l, false); outbound.push(l.index); ends.push({ bearing: bearingDeg(zone.lng, zone.lat, p[0], p[1]), link: l.index, dir: 'out' }); }
   }
   // Cluster bearings: sort, then split where the gap between neighbours exceeds ARM_MERGE_DEG
   const sorted = [...ends].sort((a, b) => a.bearing - b.bearing);

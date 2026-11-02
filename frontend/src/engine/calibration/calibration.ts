@@ -21,7 +21,7 @@
  */
 import type { DemandPlan } from '../simulation/StudyDemand';
 import { snapDemandPlan } from '../simulation/StudyDemand';
-import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimOptions, type VehicleKind } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimOptions, type MicroSimMetrics, type VehicleKind } from '../simulation/TrafficMicroSim';
 import type { StudyArea, DrivableObject, Bounds } from '../simulation/StudyAreaExplorer';
 import { geh, summarizeGeh, type GehSummary } from './geh';
 import { calibrateFlows, type IpfOptions, type IpfResult } from './ipf';
@@ -31,8 +31,8 @@ import { CARDINALS, TURNS, movementVeh, type CountDataset, type CountJunction, t
 export const WARMUP_S = 300;
 export const MEASURE_S = 900;
 
-/** Count zone radius: a roundabout ring needs more room than a crossing. */
-export const zoneRadiusM = (j: CountJunction) => (j.location.matched?.kind === 'roundabout' ? 60 : 40);
+/** Count zone radius: wide enough to hold a divided-road crossing (its carriageways settle within ~60 m in Pune OSM data) or a roundabout ring. */
+export const zoneRadiusM = (j: CountJunction) => (j.location.matched?.kind === 'roundabout' ? 70 : 60);
 
 /** Counted junctions whose located point lies inside the bounds. */
 export function junctionsIn(ds: CountDataset, bounds: Bounds): CountJunction[] {
@@ -100,7 +100,7 @@ export function buildSim(setup: SimSetup, plan: DemandPlan): TrafficMicroSim {
 /** Runs a plan from an empty network and returns veh/h per counted movement. */
 export async function measureFlows(setup: SimSetup, plan: DemandPlan, zones: readonly CountZone[],
   opts: { warmupS?: number; measureS?: number; yieldEveryMs?: number; aborted?: () => boolean; onProgress?: (share: number) => void } = {}):
-  Promise<{ flows: Map<string, number>; layouts: ZoneLayout[]; windowS: number }> {
+  Promise<{ flows: Map<string, number>; layouts: ZoneLayout[]; windowS: number; metrics: MicroSimMetrics }> {
   const { warmupS = WARMUP_S, measureS = MEASURE_S, yieldEveryMs = 20, aborted, onProgress } = opts;
   const sim = buildSim(setup, plan);
   const layouts = sim.setCountZones(zones);
@@ -118,7 +118,7 @@ export async function measureFlows(setup: SimSetup, plan: DemandPlan, zones: rea
   }
   const { counts, windowS } = sim.movementCounts();
   const flows = new Map([...counts].map(([k, n]) => [k, (n * 3600) / Math.max(windowS, STEP_S)]));
-  return { flows, layouts, windowS };
+  return { flows, layouts, windowS, metrics: sim.getMetrics() };
 }
 
 const KIND_OF: Record<VehicleClass, VehicleKind> = { LV: 'car', HV: 'bus_auto', TW: 'two_wheeler' };

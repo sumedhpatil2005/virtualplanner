@@ -267,3 +267,23 @@ describe('calibration in Simulate mode', () => {
     mode.dispose();
   });
 });
+
+describe('arm bearings on curving divided roads', () => {
+  it('takes the bearing where a link crosses the zone edge, so both carriageways of a bending road stay one arm', () => {
+    // North arm: inbound carriageway comes from the north-east far away, outbound leaves to the north-west,
+    // but both run due north for the first 100 m from the junction.
+    const links = [
+      { index: 0, from: pt(250, 250), to: pt(4, 10), pts: [pt(250, 250), pt(4, 100), pt(4, 10)] },
+      { index: 1, from: pt(-4, 10), to: pt(-250, 250), pts: [pt(-4, 10), pt(-4, 100), pt(-250, 250)] },
+      { index: 2, from: pt(0, -200), to: pt(0, -10) }, { index: 3, from: pt(0, -10), to: pt(0, -200) },
+      { index: 4, from: pt(200, 0), to: pt(10, 0) }, { index: 5, from: pt(10, 0), to: pt(200, 0) },
+    ];
+    const z = layoutZone({ id: 'c', lng: LNG0, lat: LAT0, radiusM: 40 }, links);
+    expect(z.arms).toHaveLength(3);
+    expect(z.approachOf.get(0)).toBe('N');
+    expect(z.exitOf.get(1)).toBe('N');
+    // Far ends only: the north arm would split in two
+    const far = layoutZone({ id: 'c', lng: LNG0, lat: LAT0, radiusM: 40 }, links.map(({ pts: _pts, ...l }) => l));
+    expect(far.arms).toHaveLength(4);
+  });
+});

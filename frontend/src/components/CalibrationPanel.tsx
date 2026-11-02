@@ -5,6 +5,7 @@ import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import { shortCitation, type CountDataset } from '../engine/calibration/observedCounts';
 import { rowsToCsv, nearestCounted, type CalibrationRow } from '../engine/calibration/calibration';
 import { GEH_PASS, GEH_TARGET_SHARE, type GehSummary } from '../engine/calibration/geh';
+import type { MicroSimMetrics } from '../engine/simulation/TrafficMicroSim';
 import { Section, Button, Notice } from './ui/kit';
 import { SourceBadge } from './ui/SourceBadge';
 
@@ -37,6 +38,9 @@ export const CalibrationPanel: React.FC<{ sim: SimulationModeState }> = ({ sim }
             <p className="text-xs text-slate-300">
               Counted here: {c.junctions.map(j => <span key={j.id} className="font-semibold text-white">{j.name}</span>).reduce<React.ReactNode[]>((a, n, i) => (i ? [...a, ', ', n] : [n]), [])}.
             </p>
+            {c.junctions.filter(j => !j.problem && j.maxCardinalErrorDeg !== null).map(j => (
+              <p key={j.id} className="text-[11px] text-slate-500">{j.name}: {j.arms} arms in the model, matched to the survey's N/E/S/W with up to {Math.round(j.maxCardinalErrorDeg!)}° deviation.</p>
+            ))}
             {c.junctions.filter(j => j.problem).map(j => (
               <Notice key={j.id} tone="warn" icon={AlertTriangle}>{j.name}: {j.problem} Not compared.</Notice>
             ))}
@@ -121,6 +125,18 @@ const Summary: React.FC<{ label: string; s: GehSummary | null; source: 'estimate
   </div>
 );
 
+/** End-of-run network state: explains simulated flows far below the counts (queues at the area edge, gridlock). */
+const RunState: React.FC<{ label: string; m: MicroSimMetrics | null }> = ({ label, m }) => {
+  if (!m) return null;
+  const queued = m.waitingToEnter > Math.max(50, m.onNetwork * 0.25);
+  return (
+    <p className={`text-[11px] ${queued ? 'text-amber-300/90' : 'text-slate-500'}`}>
+      {label} run, end of count: {m.onNetwork.toLocaleString()} vehicles on the network, {m.waitingToEnter.toLocaleString()} waiting to enter, mean speed {m.meanSpeedKmh === null ? '–' : Math.round(m.meanSpeedKmh)} km/h, {m.gridlockRemovals.toLocaleString()} gridlock removals.
+      {queued ? ' Most demand is queued outside the network, so simulated flows understate it.' : ''}
+    </p>
+  );
+};
+
 const Results: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const c = sim.calibration;
   const baseSource = sim.traffic.demand?.source === 'synthetic' || (sim.traffic.demand?.source === 'calibrated' && /Synthetic/.test(sim.traffic.demand.label)) ? 'synthetic' : 'estimated';
@@ -139,7 +155,7 @@ const Results: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
     <div className="space-y-2.5" data-testid="calibration-results">
       <div className="grid grid-cols-2 gap-2">
         <Summary label="Before" s={c.before} source={baseSource} />
-        <Summary label="After calibration" s={c.after} source="calibrated" />
+        <Summary label="After" s={c.after} source="calibrated" />
       </div>
       {c.fit && (
         <div className="rounded-lg border border-violet-400/20 bg-violet-500/5 p-2.5 text-xs text-slate-300 space-y-1">
@@ -152,6 +168,8 @@ const Results: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           <p className="text-slate-500">"After" is measured on the same counts that were fitted: it shows goodness of fit, not independent validation. Calibrated at the {Math.round(c.fit.demandLevel * 100)}% volume setting; changing volume clears it.</p>
         </div>
       )}
+      <RunState label="Before" m={c.runMetrics.before} />
+      <RunState label="After" m={c.runMetrics.after} />
       <p className="text-[11px] text-slate-500">Simulated: {c.windowS ? Math.round(c.windowS / 60) : '–'} min counted after a 5 min warm-up, scaled to veh/h. Compared with the observed peak hour (clock time not published).</p>
       {[...byJunction].map(([id, rows]) => (
         <div key={id} className="rounded-lg border border-white/10 overflow-hidden">

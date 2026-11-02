@@ -121,6 +121,8 @@ export interface CalibrationState {
   applied: boolean;
   /** Simulated seconds counted per run (after the warm-up). */
   windowS: number | null;
+  /** Network state at the end of each counted run, to explain low simulated flows (queues, gridlock). */
+  runMetrics: { before: MicroSimMetrics | null; after: MicroSimMetrics | null };
   staleReason: string | null;
 }
 
@@ -141,7 +143,7 @@ export interface SimulationModeState {
 
 const EMPTY_CALIBRATION: CalibrationState = {
   datasetStatus: 'idle', dataset: null, datasetError: null, junctions: [], rows: [], before: null, after: null, fit: null,
-  status: 'idle', progress: 0, error: null, applied: false, windowS: null, staleReason: null,
+  status: 'idle', progress: 0, error: null, applied: false, windowS: null, staleReason: null, runMetrics: { before: null, after: null },
 };
 
 /** Wait after a road edit before re-mapping, so a burst of changes maps once. */
@@ -788,7 +790,7 @@ export class SimulationMode {
       const checks = junctionChecks(junctions, before.layouts);
       if (!fit) {
         const rows = compareRows(junctions, before.layouts, before.flows, null);
-        this.setCalibration({ status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: null, fit: null, windowS: before.windowS });
+        this.setCalibration({ status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: null, fit: null, windowS: before.windowS, runMetrics: { before: before.metrics, after: null } });
         return true;
       }
       this.setCalibration({ status: 'fitting' });
@@ -803,7 +805,7 @@ export class SimulationMode {
       const fitted = result.ipf.factors.length ? result.ipf.factors : [1];
       this.calibratedPlan = result.plan;
       this.setCalibration({
-        status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: summarize(rows, 'gehAfter'), windowS: after.windowS, applied: true,
+        status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: summarize(rows, 'gehAfter'), windowS: after.windowS, applied: true, runMetrics: { before: before.metrics, after: after.metrics },
         fit: {
           iterations: result.ipf.iterations, converged: result.ipf.converged, cappedTrips: result.ipf.cappedTrips,
           seeds: result.seeds.length, seedVph: Math.round(result.seeds.reduce((n, s) => n + s.vehiclesPerHour, 0)), unreachable: result.unreachable.length,

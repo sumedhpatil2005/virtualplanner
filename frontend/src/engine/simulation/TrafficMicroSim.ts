@@ -1484,7 +1484,7 @@ export class TrafficMicroSim {
 
   /** Both ends of every link, for laying out count zones. */
   public linkEnds(): LinkEnds[] {
-    return this.links.map(l => ({ index: l.index, from: l.pts[0], to: l.pts[l.pts.length - 1] }));
+    return this.links.map(l => ({ index: l.index, from: l.pts[0], to: l.pts[l.pts.length - 1], pts: l.pts }));
   }
 
   /** Starts counting turning movements at these junctions (replacing any earlier zones). */
