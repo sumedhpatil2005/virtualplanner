@@ -32,6 +32,7 @@ export const CalibrationPanel: React.FC<{ sim: SimulationModeState }> = ({ sim }
           </Notice>
         )}
         {ds && <Citation ds={ds} />}
+        <NetworkModel busy={busy} />
         {ds && !c.junctions.length && <NoCountsHere ds={ds} sim={sim} />}
         {ds && c.junctions.length > 0 && (
           <>
@@ -194,6 +195,32 @@ const Results: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
       ))}
       <p className="text-[11px] text-slate-500">Move = approach · L left, T straight, R right (left-hand traffic). Obs <SourceBadge source="observed" className="ml-0.5" />, Sim <SourceBadge source="simulated" className="ml-0.5" />.</p>
       <Button size="sm" variant="ghost" icon={Download} onClick={download}>Download table (CSV)</Button>
+    </div>
+  );
+};
+
+/** Toggles for the local OSM correction layer and Webster signal timing, so their effect can be compared. */
+const NetworkModel: React.FC<{ busy: boolean }> = ({ busy }) => {
+  const mode = engineInstance.simMode;
+  const info = mode.networkLayerInfo();
+  return (
+    <div data-testid="network-model" className="rounded border border-slate-700/60 p-2 space-y-1.5">
+      <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+        <input type="checkbox" className="mt-0.5" disabled={busy || !info.corrections} checked={info.correctionsEnabled && !!info.corrections}
+          onChange={e => mode.setNetworkCorrections(e.target.checked)} />
+        <span>
+          Local OSM corrections{info.corrections ? ` (${info.corrections.id} v${info.corrections.version}: ${info.applied} applied here)` : ' (not loaded)'}
+          <span className="block text-[11px] text-slate-500">Evidenced fixes to one-way errors and lane counts, applied on top of OpenStreetMap; OSM itself is not edited.</span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+        <input type="checkbox" className="mt-0.5" disabled={busy} checked={info.signalTiming === 'webster'}
+          onChange={e => mode.setSignalTiming(e.target.checked ? 'webster' : 'equal')} />
+        <span>
+          Webster signal timing
+          <span className="block text-[11px] text-slate-500">Cycle and greens from the critical flows (observed counts where counted) with Indo-HCM saturation flow; off = equal 25 s greens.</span>
+        </span>
+      </label>
     </div>
   );
 };

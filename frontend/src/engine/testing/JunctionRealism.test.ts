@@ -90,6 +90,55 @@ describe('signal discharge', () => {
   });
 });
 
+describe('mixed-traffic discharge', () => {
+  /**
+   * A standing queue of the Pune vehicle mix (52% two-wheelers) on a 7 m
+   * two-lane approach discharges on green at close to the Indo-HCM 2017
+   * saturation flow for that width: 7 m x (1140 - 60 x 7) = 5040 PCU/h. The
+   * queue discharges as a platoon (followers are cleared behind the vehicle
+   * ahead instead of stopping at the line) and parallel lanes keep to their own
+   * lanes across the junction.
+   */
+  const discharge = (abreast: boolean) => {
+    const { area, map, j } = crossroads(2, 240);
+    const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 1, junctions: [j], twoWheelersAbreast: abreast, signalTiming: 'equal' });
+    const west = nodeAt(area, -400, 0), east = nodeAt(area, 400, 0);
+    const linkId = [...sim.debugLanes().keys()].find(id => sim.signalStateOf(id) !== null && sim.linkLength(id)! > 300 && id.startsWith('ew') && id.endsWith('fwd'))!;
+    let t = 0;
+    while (sim.signalStateOf(linkId) === 'green') { sim.step(); if (++t > 4000) break; }
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let i = 0; i < 120; i++) {
+      let r = rnd(), kind = VEHICLE_TYPES[0].kind;
+      for (const ty of VEHICLE_TYPES) if ((r -= ty.share) <= 0) { kind = ty.kind; break; }
+      sim.spawnVehicle(west, east, kind);
+    }
+    run(sim, 100);
+    while (sim.signalStateOf(linkId) !== 'green') sim.step();
+    const greenAt = sim.timeS;
+    const crossed = new Map<number, { t: number; kind: string }>();
+    run(sim, 60, now => sim.debugLanes().forEach((lanes, id) => {
+      if (id === linkId || !id.includes('ew')) return;
+      for (const lane of lanes) for (const v of lane) if (!crossed.has(v.id)) crossed.set(v.id, { t: now - greenAt, kind: v.kind });
+    }));
+    // Saturated part of the green: from 10 s (start-up loss over) to 50 s
+    const pcuOf = new Map(VEHICLE_TYPES.map(ty => [ty.kind as string, ty.pcu]));
+    const window = [...crossed.values()].filter(c => c.t >= 10 && c.t < 50);
+    return { pcuPerHour: window.reduce((n, c) => n + pcuOf.get(c.kind)!, 0) * 3600 / 40, queueLeft: sim.debugLanes().get(linkId)!.reduce((n, l) => n + l.length, 0) };
+  };
+
+  it('discharges a mixed queue on a 7 m approach at about the Indo-HCM saturation flow', () => {
+    const indoHcm7m = 7 * (1140 - 60 * 7);
+    for (const abreast of [false, true]) {
+      const { pcuPerHour, queueLeft } = discharge(abreast);
+      expect(queueLeft).toBeGreaterThan(0); // still saturated at the end of the window
+      expect(pcuPerHour).toBeGreaterThan(0.8 * indoHcm7m);
+      expect(pcuPerHour).toBeLessThan(1.25 * indoHcm7m);
+      console.log(JSON.stringify({ mixedDischarge: { abreast, pcuPerHour: Math.round(pcuPerHour), indoHcm7m } }));
+    }
+  });
+});
+
 describe('gap acceptance at a priority junction', () => {
   it('a side-road vehicle waits for a gap of at least the Indo-HCM critical gap in main-road traffic', () => {
     const roads = [road('main', [-500, 0], [500, 0], { cls: 'arterial', lanes: 2 }), road('mw', [-1000, 0], [-500, 0], { cls: 'arterial' }), road('me', [500, 0], [1000, 0], { cls: 'arterial' }),

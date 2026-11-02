@@ -18,6 +18,8 @@ import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
 import { compileStudyDemand, snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
+import { apiGet } from '../../lib/api';
+import { applyNetworkCorrections, validateCorrectionLayer, type NetworkCorrectionLayer, type CorrectionReport } from './networkCorrections';
 import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, junctionChecks, observedFlows, type CalibrationRow, type JunctionCheck, type SimSetup } from '../calibration/calibration';
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
@@ -167,6 +169,7 @@ const EMPTY_CALIBRATION: CalibrationState = {
 };
 
 /** Wait after a road edit before re-mapping, so a burst of changes maps once. */
+export const DEFAULT_CORRECTION_LAYER = 'pune_west_v1';
 const NETWORK_CHANGE_DEBOUNCE_MS = 250;
 /** How often live figures reach the UI, and how often road stretches are recoloured (real ms). */
 const METRICS_EVERY_MS = 500;
@@ -234,10 +237,29 @@ export class SimulationMode {
   private calibrationGeneration = 0;
   private readonly loadCounts: () => Promise<CountDataset>;
 
+  /** Local OSM correction layer (backend/data/network_corrections) and whether it is applied. */
+  private correctionLayer: NetworkCorrectionLayer | null = null;
+  private correctionsEnabled = true;
+  private lastCorrectionReport: CorrectionReport | null = null;
+  /** Signal plans: Webster from critical flows, or the earlier equal split. */
+  private signalTiming: 'webster' | 'equal' = 'webster';
+
   constructor(getRoads: () => DrivableObject[], osmSource: OsmRoadSource | null = null, signalSource: TrafficSignalSource | null = null, getContext: () => SimulationContext = () => ({}),
-    loadCounts: () => Promise<CountDataset> = () => fetchCountDataset(DEFAULT_COUNT_DATASET)) {
+    loadCounts: () => Promise<CountDataset> = () => fetchCountDataset(DEFAULT_COUNT_DATASET),
+    loadCorrections: (() => Promise<unknown>) | null = () => apiGet<unknown>(`/api/network-corrections/${DEFAULT_CORRECTION_LAYER}`)) {
     this.loadCounts = loadCounts;
-    this.getRoads = getRoads;
+    // Roads for the simulation: the project's roads with the correction layer (and the OSM
+    // one-way implications) applied on top; the stored roads are never changed
+    this.getRoads = () => {
+      const { roads, report } = applyNetworkCorrections(getRoads(), this.correctionLayer, this.correctionsEnabled);
+      this.lastCorrectionReport = report;
+      return roads;
+    };
+    loadCorrections?.().then(doc => {
+      this.correctionLayer = validateCorrectionLayer(doc);
+      this.networkChanged();
+      this.notify();
+    }).catch(() => { /* no layer: OSM as imported */ });
     this.osmSource = osmSource;
     this.signalSource = signalSource;
     this.getContext = getContext;
@@ -252,6 +274,11 @@ export class SimulationMode {
   };
 
   public getState = (): SimulationModeState => this.state;
+
+  /** New snapshot for subscribers when something outside the state (network layer) changed. */
+  private notify() {
+    this.setState({});
+  }
 
   private setState(patch: Partial<SimulationModeState>) {
     this.state = { ...this.state, ...patch };
@@ -355,6 +382,33 @@ export class SimulationMode {
     this.invalidateComparison('The study direction changed. Capture a new baseline.');
     this.setState({ direction });
     if (this.state.seedRoadIds.length > 0) this.recompute(false, false);
+  }
+
+  /** Turns the local OSM correction layer on or off (re-maps the area). */
+  public setNetworkCorrections(enabled: boolean) {
+    if (this.correctionsEnabled === enabled) return;
+    this.correctionsEnabled = enabled;
+    this.networkChanged();
+    this.notify();
+  }
+
+  /** Webster signal timing from critical flows, or the earlier equal split. */
+  public setSignalTiming(mode: 'webster' | 'equal') {
+    if (this.signalTiming === mode) return;
+    this.signalTiming = mode;
+    this.networkChanged();
+    this.notify();
+  }
+
+  /** What the network layer is doing, for the panel. */
+  public networkLayerInfo() {
+    return {
+      corrections: this.correctionLayer ? { id: this.correctionLayer.id, version: this.correctionLayer.version, count: this.correctionLayer.corrections.length } : null,
+      correctionsEnabled: this.correctionsEnabled,
+      applied: this.lastCorrectionReport?.applied.length ?? 0,
+      impliedOneWay: this.lastCorrectionReport?.impliedOneWay.length ?? 0,
+      signalTiming: this.signalTiming,
+    };
   }
 
   /** Roads changed or the scenario switched. Re-maps the current area shortly after. */
@@ -538,7 +592,7 @@ export class SimulationMode {
       seed: this.state.traffic.seed,
       watchRoadIds: area.seedRoadIds,
       focusLoad: focusLoadFor(this.state.traffic),
-      signalPoints: this.signalPoints ?? undefined,
+      signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
       junctions: context.junctions,
       demandTrips: plan ? snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))) : undefined,
     });
@@ -638,7 +692,7 @@ export class SimulationMode {
     const traffic = this.state.traffic;
     const sim = new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), {
       demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-      junctions: context.junctions, signalPoints: this.signalPoints ?? undefined,
+      junctions: context.junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
       demandTrips: snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))),
     });
     const steps = Math.round(durationS / STEP_S);
@@ -675,7 +729,7 @@ export class SimulationMode {
         const traffic = this.state.traffic;
         const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
           demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-          focusLoad: focusLoadFor(traffic), junctions: this.getContext().junctions, signalPoints: this.signalPoints ?? undefined,
+          focusLoad: focusLoadFor(traffic), junctions: this.getContext().junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
         });
         const trips = sim.getDemandTrips().flatMap(t => {
           const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
@@ -817,7 +871,7 @@ export class SimulationMode {
     const traffic = this.state.traffic;
     const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
       demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-      focusLoad: focusLoadFor(traffic), junctions: context.junctions, signalPoints: this.signalPoints ?? undefined,
+      focusLoad: focusLoadFor(traffic), junctions: context.junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
     });
     const trips = sim.getDemandTrips().flatMap(t => {
       const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
@@ -828,8 +882,11 @@ export class SimulationMode {
 
   private simSetup(area: StudyArea): SimSetup {
     const traffic = this.state.traffic;
+    const ds = this.state.calibration.dataset;
     return { area, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])),
-      options: { demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds, junctions: structuredClone(this.getContext().junctions), signalPoints: this.signalPoints ?? undefined } };
+      // Counted junctions are timed from their observed approach flows
+      signalDesignCounts: this.signalTiming === 'webster' && ds ? junctionsIn(ds, area.bounds) : undefined,
+      options: { demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds, junctions: structuredClone(this.getContext().junctions), signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming } };
   }
 
   private countedInArea(area: StudyArea) {

@@ -28,7 +28,7 @@ import type { StudyArea, DrivableObject, Bounds } from '../simulation/StudyAreaE
 import { geh, summarizeGeh, type GehSummary } from './geh';
 import { calibrateFlows, type IpfOptions, type IpfResult } from './ipf';
 import { routeMovements, movementKey, distanceM, type CountZone, type ZoneLayout, type LinkEnds } from './junctionMovements';
-import { CARDINALS, TURNS, movementVeh, type CountDataset, type CountJunction, type Cardinal, type Turn, type VehicleClass } from './observedCounts';
+import { CARDINALS, TURNS, movementVeh, movementPcu, type CountDataset, type CountJunction, type Cardinal, type Turn, type VehicleClass } from './observedCounts';
 
 export const WARMUP_S = 300;
 export const MEASURE_S = 900;
@@ -92,7 +92,46 @@ export function compareRows(junctions: readonly CountJunction[], layouts: readon
 export const summarize = (rows: readonly CalibrationRow[], which: 'gehBefore' | 'gehAfter'): GehSummary | null =>
   rows.some(r => r[which] !== null) ? summarizeGeh(rows.map(r => r[which]).filter((g): g is number => g !== null)) : null;
 
-export interface SimSetup { area: StudyArea; roads: ReadonlyMap<string, DrivableObject>; options: Omit<MicroSimOptions, 'demandTrips'> }
+export interface SimSetup {
+  area: StudyArea;
+  roads: ReadonlyMap<string, DrivableObject>;
+  options: Omit<MicroSimOptions, 'demandTrips'>;
+  /**
+   * Counted junctions whose signals are timed (Webster) from their observed
+   * approach flows rather than from the assigned demand.
+   */
+  signalDesignCounts?: readonly CountJunction[];
+}
+
+/**
+ * Observed design flow (PCU/h, IRC:106 factors of the count file) arriving on
+ * each inbound link of the counted junctions that laid out cleanly. An
+ * approach with several inbound carriageways splits its flow by their lanes.
+ */
+export function observedDesignFlows(junctions: readonly CountJunction[], layouts: readonly ZoneLayout[], linkIds: readonly string[], lanesOf: (id: string) => number,
+  factors: Record<VehicleClass, number> = { LV: 1, HV: 2.2, TW: 0.75 }): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const layout of layouts) {
+    if (layout.problem) continue;
+    const j = junctions.find(x => x.id === layout.zone.id);
+    if (!j) continue;
+    for (const arm of layout.arms) {
+      if (!arm.cardinal || !arm.inbound.length) continue;
+      const q = j.movements.filter(m => m.approach === arm.cardinal).reduce((n, m) => n + movementPcu(m, factors), 0);
+      const lanes = arm.inbound.map(i => Math.max(1, lanesOf(linkIds[i])));
+      const total = lanes.reduce((a, b) => a + b, 0);
+      arm.inbound.forEach((i, k) => out.set(linkIds[i], q * lanes[k] / total));
+    }
+  }
+  return out;
+}
+
+/** Applies observed design flows to a simulator whose count zones are set. */
+export function timeSignalsFromCounts(sim: TrafficMicroSim, junctions: readonly CountJunction[], layouts: readonly ZoneLayout[], factors?: Record<VehicleClass, number>) {
+  const lanes = sim.debugLanes();
+  const ids = [...lanes.keys()];
+  sim.setSignalDesignFlows(observedDesignFlows(junctions, layouts, ids, id => lanes.get(id)?.length ?? 1, factors));
+}
 
 export function buildSim(setup: SimSetup, plan: DemandPlan): TrafficMicroSim {
   const { area, roads, options } = setup;
@@ -106,6 +145,7 @@ export async function measureFlows(setup: SimSetup, plan: DemandPlan, zones: rea
   const { warmupS = WARMUP_S, measureS = MEASURE_S, yieldEveryMs = 20, aborted, onProgress } = opts;
   const sim = buildSim(setup, plan);
   const layouts = sim.setCountZones(zones);
+  if (setup.signalDesignCounts?.length) timeSignalsFromCounts(sim, setup.signalDesignCounts, layouts);
   const total = Math.round((warmupS + measureS) / STEP_S), warm = Math.round(warmupS / STEP_S);
   let yieldedAt = performance.now();
   for (let i = 0; i < total; i++) {

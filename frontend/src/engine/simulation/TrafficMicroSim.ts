@@ -79,6 +79,10 @@ export const DEADLOCK_S = 60;
 
 /** Simulation time step (s). */
 export const STEP_S = 0.25;
+/** Vehicles per lane that may hold a grant to cross at once (the front one and the platoon behind it). */
+const PLATOON_GRANTS = 6;
+/** A next lane whose last vehicle is slower than this (m/s) counts as blocked when choosing a lane. */
+const BLOCKED_TAIL_MPS = 1;
 /**
  * Lateral offset from the lane centre of each rider of a two-wheeler pair riding
  * abreast: 0.55 m puts the two 1.1 m apart, so two riders about 0.75 m wide fit
@@ -187,10 +191,11 @@ export interface MicroSimOptions {
   /** Two-wheelers ride two abreast in a lane (lateral filtering). Default true. */
   twoWheelersAbreast?: boolean;
   /**
-   * Route costs (s) per link id, replacing free-flow times: congested travel
-   * times fed back from an earlier run (assignment.ts).
+   * Route cost multipliers per link id (congested / free-flow travel time from
+   * an earlier run, assignment.ts). Route choice then weighs each link's usual
+   * cost (length over class-weighted speed) by how congested it was.
    */
-  linkCostsS?: ReadonlyMap<string, number>;
+  linkCostFactors?: ReadonlyMap<string, number>;
 }
 
 export interface MicroDemandTrip { fromNodeId: string; toNodeId: string; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string }
@@ -266,6 +271,8 @@ interface Reservation {
   /** The link and lane the movement leads into (keep-clear accounting). */
   toLink: number;
   toLane: number;
+  /** Crossing beside a partner: takes no room of its own in the next lane. */
+  alongside?: boolean;
 }
 
 interface Link {
@@ -342,6 +349,8 @@ interface Vehicle {
    * the vehicle ahead of its partner and never passes the partner.
    */
   abreast?: boolean;
+  /** Cleared to cross beside its partner (into the same lane, alongside it). */
+  pairCross?: boolean;
 }
 
 interface Control {
@@ -459,6 +468,8 @@ export class TrafficMicroSim {
   private readonly rng: () => number;
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
+  private linkTimeSum = new Float64Array(0);
+  private linkTimeN = new Uint32Array(0);
   private readonly abreastEnabled: boolean;
   /** Design flows (PCU/h) per inbound link index set from observed counts; others come from assigned demand. */
   private designFlows = new Map<number, number>();
@@ -541,8 +552,8 @@ export class TrafficMicroSim {
     const cost = new Float64Array(this.links.length);
     this.links.forEach((l, i) => {
       const e = edges.get(l.id)!;
-      const fed = options.linkCostsS?.get(l.id);
-      cost[i] = fed !== undefined && Number.isFinite(fed) && fed > 0 ? fed : e.length / ((e.speedLimit || 50) / 3.6);
+      const f = options.linkCostFactors?.get(l.id);
+      cost[i] = (e.length / ((e.speedLimit || 50) / 3.6)) * (f !== undefined && Number.isFinite(f) && f > 0 ? f : 1);
     });
     this.trees = new RouteTrees(
       this.nodeIndex.size,
@@ -581,6 +592,8 @@ export class TrafficMicroSim {
         this.odArrivals.push({ index, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
       }
     }
+    this.linkTimeSum = new Float64Array(this.links.length);
+    this.linkTimeN = new Uint32Array(this.links.length);
     this.retimeSignals();
   }
 
@@ -1191,6 +1204,24 @@ export class TrafficMicroSim {
     });
   }
 
+  /**
+   * Mean travel time (s) on each link that vehicles have used: the time from
+   * entering to crossing at its far end, scaled to the full length, with
+   * vehicles still on the link counted at their time so far when that is
+   * already longer (a queue that has not cleared is not free-flowing). Links
+   * nobody used are left out.
+   */
+  public linkTravelTimes(): Map<string, { meanS: number; samples: number; freeFlowS: number }> {
+    const out = new Map<string, { meanS: number; samples: number; freeFlowS: number }>();
+    const sum = Float64Array.from(this.linkTimeSum), n = Uint32Array.from(this.linkTimeN);
+    for (const l of this.links) for (const lane of l.lanes) for (const v of lane) {
+      const elapsed = this.t - (v.linkEnterT ?? this.t);
+      if (elapsed > l.length / l.speed) { sum[l.index] += elapsed; n[l.index]++; }
+    }
+    for (const l of this.links) if (n[l.index]) out.set(l.id, { meanS: sum[l.index] / n[l.index], samples: n[l.index], freeFlowS: l.length / l.speed });
+    return out;
+  }
+
   /** Webster designs in force, per signalised junction (for reports and tests). */
   public signalPlans(): { nodeId: string; cycleS: number; greensS: number[]; flowRatioSum: number | null; oversaturated: boolean }[] {
     const out: { nodeId: string; cycleS: number; greensS: number[]; flowRatioSum: number | null; oversaturated: boolean }[] = [];
@@ -1233,17 +1264,45 @@ export class TrafficMicroSim {
     // from parallel lanes discharge side by side; a blocked target lane falls back
     // to the emptiest one. (Sending every lane to the emptiest lane made parallel
     // movements converge and cross one at a time.)
-    let lane = this.mappedLane(link, veh.lane, next);
-    if (this.backSpace(next.lanes[lane]) < veh.type.lengthM + veh.type.minGapM + 2) lane = this.bestLane(next);
-    const connector = this.connectorFor(link, veh.lane, next, lane);
-    dist = connector.start - veh.pos;
+    // A rider abreast of a partner cleared into the same next link goes with it, side by side
+    const laneArr = link.lanes[veh.lane];
+    const partner = veh.abreast ? laneArr[laneArr.indexOf(veh) - 1] : undefined;
+    const withPartner = !!partner && partner.grantLane !== null && partner.route[partner.routeIdx + 1] === next.index;
     // Keep the junction box clear: enter only with room on the far side for this
     // vehicle, after every vehicle already cleared into the same lane. What is free
     // now counts, plus what a moving tail clears before this one reaches its line.
-    const target = next.lanes[lane];
-    const tail = target[target.length - 1];
-    const ahead = tail ? tail.v * Math.min(Math.max(0, dist) / Math.max(veh.v, 1), ANTICIPATE_S) : 0;
-    if (this.backSpace(target) + ahead - this.pendingInto(next.index, lane, veh) < connector.entry + veh.type.lengthM + veh.type.minGapM) return;
+    // A rider beside its partner needs no room of its own.
+    const need = (connector: LaneConnector) => connector.entry + veh.type.lengthM + veh.type.minGapM;
+    const room = (k: number, d: number) => {
+      const target = next.lanes[k];
+      const tail = target[target.length - 1];
+      const ahead = tail ? tail.v * Math.min(Math.max(0, d) / Math.max(veh.v, 1), ANTICIPATE_S) : 0;
+      return this.backSpace(target) + ahead - this.pendingInto(next.index, k, veh);
+    };
+    let lane = withPartner ? partner!.grantLane! : this.mappedLane(link, veh.lane, next);
+    let connector = this.connectorFor(link, veh.lane, next, lane);
+    dist = connector.start - veh.pos;
+    if (!withPartner && room(lane, dist) < need(connector)) {
+      // The lane it leads to has no room yet. Between links with the same number of
+      // lanes, if its tail is moving away the room comes in a moment: wait for it
+      // (switching then sends parallel lanes across each other). If its tail is
+      // standing (the lane is blocked), take another lane of the next link that has
+      // room, if any.
+      // Where the lane count changes (a merge or a widening) any lane with room will do.
+      const t = next.lanes[lane][next.lanes[lane].length - 1];
+      if (link.lanes.length === next.lanes.length && t && t.v > BLOCKED_TAIL_MPS) return;
+      let best = -1, bestRoom = -Infinity;
+      for (let k = 0; k < next.lanes.length; k++) {
+        if (k === lane) continue;
+        const c = this.connectorFor(link, veh.lane, next, k);
+        const r = room(k, c.start - veh.pos) - need(c);
+        if (r > bestRoom) { bestRoom = r; best = k; }
+      }
+      if (best < 0 || bestRoom < 0) return;
+      lane = best;
+      connector = this.connectorFor(link, veh.lane, next, lane);
+      dist = connector.start - veh.pos;
+    }
 
     if (this.conflictingClaim(veh, link, connector, false)) return;
 
@@ -1260,6 +1319,7 @@ export class TrafficMicroSim {
       if (yields && dist > YIELD_LINE_M) return;
       if (this.mustGiveWay(veh, link, next, connector, c, dist)) return;
     }
+    veh.pairCross = withPartner;
     this.reserve(veh, lane, connector);
   }
 
@@ -1345,7 +1405,7 @@ export class TrafficMicroSim {
   private pendingInto(linkIndex: number, lane: number, except: Vehicle): number {
     let m = 0;
     for (const r of this.reservations) {
-      if (r.toLink !== linkIndex || r.toLane !== lane || r.veh === except || r.veh.reservation !== r) continue;
+      if (r.toLink !== linkIndex || r.toLane !== lane || r.veh === except || r.veh.reservation !== r || r.alongside) continue;
       m += r.veh.type.lengthM + r.veh.type.minGapM;
     }
     return m;
@@ -1356,7 +1416,7 @@ export class TrafficMicroSim {
     veh.connector = connector;
     const link = this.links[veh.link];
     if (this.controls.has(link.to)) {
-      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector, toLink: veh.route[veh.routeIdx + 1], toLane: lane };
+      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector, toLink: veh.route[veh.routeIdx + 1], toLane: lane, alongside: !!veh.pairCross };
       this.reservations.add(veh.reservation);
     }
   }
@@ -1381,6 +1441,7 @@ export class TrafficMicroSim {
     veh.reservation = null;
     veh.connector = null;
     veh.grantLane = null;
+    veh.pairCross = false;
   }
 
   /** Frees every junction claimed by a vehicle leaving the network. */
@@ -1469,21 +1530,34 @@ export class TrafficMicroSim {
     this.insertQueued();
     const active = this.activeLinks();
 
-    // 1. Front vehicles near a junction ask to cross
+    // 1. Vehicles near a junction ask to cross: the front vehicle of each lane and,
+    // behind a vehicle already cleared to cross, the next one too (a queue
+    // discharges as a platoon on green, each driver following the one ahead over
+    // the line rather than stopping at it until the one ahead has gone). Each
+    // grant is checked on its own: signal, conflicts, room on the far side.
     for (const link of active) {
       for (const lane of link.lanes) {
-        const veh = lane[0];
-        if (!veh || veh.routeIdx >= veh.route.length - 1) continue;
-        if (veh.connector && veh.pos < veh.connector.start) {
-          const signal = this.signalState(link.index);
-          const distance = veh.connector.start - veh.pos;
-          const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
-          if (signal === 'red' || (signal === 'amber' && canStop) ||
-            (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true))) this.revokeGrant(veh);
+        // Platoon grants at signals only: there the discharge rate of a standing queue
+        // was measured against Indo-HCM; elsewhere only the front vehicle asks
+        const platoon = this.controls.get(link.to)?.kind === 'signal' ? PLATOON_GRANTS : 1;
+        for (let i = 0; i < lane.length && i < platoon; i++) {
+          const veh = lane[i];
+          if (veh.routeIdx >= veh.route.length - 1) break;
+          if (veh.connector && veh.pos < veh.connector.start) {
+            const signal = this.signalState(link.index);
+            const distance = veh.connector.start - veh.pos;
+            const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
+            if (signal === 'red' || (signal === 'amber' && canStop) ||
+              (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true))) this.revokeGrant(veh);
+          }
+          if (veh.grantLane !== null) continue;
+          const dist = this.stopLine(veh, link) - veh.pos;
+          // Followers ask only once near their line (the front one asks early where there is no control)
+          const near = dist <= (veh.v * veh.v) / (2 * veh.type.comfortDecel) + 15;
+          if (near || (i === 0 && !this.controls.has(link.to))) this.tryGrant(veh, link, dist);
+          // Only a cleared vehicle lets the one behind it ask
+          if (veh.grantLane === null) break;
         }
-        if (veh.grantLane !== null) continue;
-        const dist = this.stopLine(veh, link) - veh.pos;
-        if (!this.controls.has(link.to) || dist <= (veh.v * veh.v) / (2 * veh.type.comfortDecel) + 15) this.tryGrant(veh, link, dist);
       }
     }
 
@@ -1511,15 +1585,16 @@ export class TrafficMicroSim {
           if (i > 0 && li < 0) {
             // Alongside the front vehicle: it stops at the line until cleared itself
             const exiting = veh.routeIdx >= veh.route.length - 1;
-            gap = exiting ? 1e6 : dist - 0.3;
-            vLead = exiting ? veh.v : 0;
+            gap = exiting || veh.grantLane !== null ? 1e6 : dist - 0.3;
+            vLead = exiting || veh.grantLane !== null ? veh.v : 0;
           } else if (i > 0) {
             const lead = lane[li];
             gap = lead.pos - lead.type.lengthM - veh.pos;
             vLead = lead.v;
             // The leader stays on this link until it finishes its turn, so it can be
-            // past the stop line. Its clearance is its own: a follower stops at the line.
-            if (veh.routeIdx < veh.route.length - 1 && dist - 0.3 < gap) {
+            // past the stop line. Its clearance is its own: a follower not yet cleared
+            // stops at the line.
+            if (veh.routeIdx < veh.route.length - 1 && veh.grantLane === null && dist - 0.3 < gap) {
               gap = dist - 0.3;
               vLead = 0;
             }
@@ -1557,7 +1632,7 @@ export class TrafficMicroSim {
             // Never pass the partner it rides beside
             if (veh.abreast) limit = Math.min(limit, lane[i - 1].pos - 0.05);
             if (pos > limit) v = Math.min(v, lead ? lead.v : lane[i - 1].v);
-            if (veh.routeIdx < veh.route.length - 1) {
+            if (veh.routeIdx < veh.route.length - 1 && veh.grantLane === null) {
               const line = this.stopLine(veh, link) - 0.1;
               if (line < limit) {
                 limit = line;
@@ -1720,16 +1795,39 @@ export class TrafficMicroSim {
    * drives the rest of its movement (the lane connector) before the link's
    * own lane begins at `connector.entry`.
    */
+  /** Restores the order of a lane after its front vehicle was put back: nobody overlaps or passes the one ahead. */
+  private keepBehind(lane: Vehicle[]) {
+    for (let i = 1; i < lane.length; i++) {
+      const v = lane[i];
+      const lead = v.abreast ? lane[i - 2] : lane[i - 1];
+      let limit = lead ? lead.pos - lead.type.lengthM - 0.2 : Infinity;
+      if (v.abreast) limit = Math.min(limit, lane[i - 1].pos - 0.05);
+      if (v.pos > limit) { v.pos = Math.max(0, limit); v.v = Math.min(v.v, (lead ?? lane[i - 1]).v); }
+      else break;
+    }
+  }
+
   private crossJunction(veh: Vehicle, lane: Vehicle[]) {
     const c = veh.connector!;
     const nextIdx = veh.route[veh.routeIdx + 1];
     const next = this.links[nextIdx];
     const target = next.lanes[veh.grantLane!];
-    const pos = c.entry - c.length + (veh.pos - c.start);
-    if (pos > this.backSpace(target) - 0.2) {
-      // Another vehicle took the space this step: wait at the stop line
+    let pos = c.entry - c.length + (veh.pos - c.start);
+    // A rider crossing beside its partner enters the next lane alongside it (still
+    // behind the vehicle ahead of the pair), so the pair stays side by side
+    const tailV = target[target.length - 1];
+    const besideTail = !!veh.pairCross && !!tailV && tailV.type.kind === 'two_wheeler' && !tailV.abreast && veh.type.kind === 'two_wheeler';
+    if (besideTail) {
+      const front = target[target.length - 2];
+      pos = Math.min(pos, tailV.pos - 0.05, front ? front.pos - front.type.lengthM - 0.2 : Infinity);
+    }
+    if (besideTail ? pos < 0 : pos > this.backSpace(target) - 0.2) {
+      // Another vehicle took the space this step: wait at the stop line. It is put
+      // back a little, so the vehicles behind it (who may already be cleared and
+      // close behind) are kept behind it too.
       veh.pos = c.start - 0.01;
       veh.v = 0;
+      this.keepBehind(lane);
       return;
     }
     lane.shift();
@@ -1746,6 +1844,11 @@ export class TrafficMicroSim {
     perf.vehicles++;
     perf.pcu += veh.type.pcu;
     perf.lastCrossT = this.t;
+    // Link travel time for assignment feedback: time on the link scaled to its full length
+    if (driven > 0.5 * fromLink.length) {
+      this.linkTimeSum[veh.link] += (this.t - (veh.linkEnterT ?? this.t)) * fromLink.length / driven;
+      this.linkTimeN[veh.link]++;
+    }
     veh.linkStopS = 0;
     veh.link = nextIdx;
     veh.lane = next.lanes.indexOf(target);
@@ -1754,6 +1857,8 @@ export class TrafficMicroSim {
     veh.linkEnterPos = Math.max(0, pos);
     veh.routeIdx++;
     veh.arriving = { connector: c, reservation: veh.reservation };
+    veh.abreast = besideTail;
+    veh.pairCross = false;
     veh.grantLane = null;
     veh.connector = null;
     veh.reservation = null;
@@ -1878,7 +1983,7 @@ export class TrafficMicroSim {
           const exiting = v.routeIdx >= v.route.length - 1;
           const ahead = k > 0 ? (v.abreast ? lane[k - 2] : lane[k - 1]) : undefined;
           const limit = k > 0
-            ? Math.min(ahead ? ahead.pos - ahead.type.lengthM - 0.2 : Infinity, v.abreast ? lane[k - 1].pos - 0.05 : Infinity, exiting ? Infinity : this.stopLine(v, l) - 0.1)
+            ? Math.min(ahead ? ahead.pos - ahead.type.lengthM - 0.2 : Infinity, v.abreast ? lane[k - 1].pos - 0.05 : Infinity, exiting || v.grantLane !== null ? Infinity : this.stopLine(v, l) - 0.1)
             : !exiting && v.grantLane === null ? this.stopLine(v, l) - 0.1 : this.movementEnd(v, l);
           const extra = Math.max(0, Math.min(v.v * aheadS, limit - v.pos));
           const pos = v.pos + extra;
