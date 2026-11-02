@@ -389,6 +389,13 @@ export const VEHICLE_VARIANTS: readonly VehicleVariant[] = [
   { id: 'auto-green', kind: 'bus_auto', weight: 2, build: () => autoRickshaw('#15803d', '#facc15') },
   { id: 'bus-red', kind: 'bus_auto', weight: 2, build: () => bus('#b91c1c', '#fbbf24') },
   { id: 'bus-blue', kind: 'bus_auto', weight: 1, build: () => bus('#1e40af', '#e2e8f0') },
+  { id: 'auto-only-black', kind: 'auto', weight: 4, build: () => autoRickshaw('#18181b', '#facc15') },
+  { id: 'auto-only-green', kind: 'auto', weight: 2, build: () => autoRickshaw('#15803d', '#facc15') },
+  { id: 'pmpml-red', kind: 'bus', weight: 3, build: () => bus('#b91c1c', '#fbbf24') },
+  { id: 'pmpml-blue', kind: 'bus', weight: 1, build: () => bus('#1e40af', '#e2e8f0') },
+  // No truck mesh yet: goods vehicles reuse the bus body in goods-vehicle colours
+  { id: 'truck-orange', kind: 'truck', weight: 2, build: () => bus('#c2410c', '#e5e7eb') },
+  { id: 'truck-green', kind: 'truck', weight: 1, build: () => bus('#166534', '#fde68a') },
   { id: 'scooter-white', kind: 'two_wheeler', weight: 3, build: () => twoWheeler('#f1f5f9', '#0ea5e9', '#f8fafc', 'scooter') },
   { id: 'scooter-red', kind: 'two_wheeler', weight: 2, build: () => twoWheeler('#dc2626', '#f8fafc', '#18181b', 'scooter') },
   { id: 'scooter-grey', kind: 'two_wheeler', weight: 2, build: () => twoWheeler('#6b7280', '#a21caf', '#dc2626', 'scooter') },

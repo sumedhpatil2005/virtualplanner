@@ -19,7 +19,8 @@ import type { Cardinal } from '../calibration/observedCounts';
  * No rendering here; see MicroTrafficVisualizer.
  */
 
-export type VehicleKind = 'two_wheeler' | 'car' | 'bus_auto';
+/** Vehicle classes. `bus_auto` is the legacy combined class kept so older saved plans still run. */
+export type VehicleKind = 'two_wheeler' | 'car' | 'auto' | 'bus' | 'truck' | 'bus_auto';
 
 export interface VehicleTypeParams {
   kind: VehicleKind;
@@ -34,14 +35,46 @@ export interface VehicleTypeParams {
   speedFactor: number;
   /** How long the vehicle occupies an unsignalised junction while crossing (s). */
   clearS: number;
+  /** Passenger car units (IRC:106-1990, as tabulated in Pune CMP 2008 Table 4). */
+  pcu: number;
 }
 
-/** Pune fleet mix from the execution plan: ~60% two-wheelers, ~30% cars, ~10% buses and autos. */
+/**
+ * Vehicle classes for Indian mixed traffic.
+ *
+ * IDM parameters (length, time headway T, standstill gap s0, acceleration a,
+ * comfortable deceleration b) for motorcycle, car, auto-rickshaw and bus are
+ * the calibrated values for Chennai mixed traffic in Kanagaraj & Treiber (2018),
+ * "Self-driven particle model for mixed traffic and other disordered flows",
+ * Physica A 509:1-11, Table 1 (doi:10.1016/j.physa.2018.05.086). Trucks are not
+ * in that table: they use the bus values with an 8 m length (assumption).
+ *
+ * Shares (for capacity-based synthetic traffic) are the Gunjan Chowk, Pune
+ * classified counts, 08-20 h both directions (Thakur et al. 2017, IJETT 47(2)):
+ * two-wheelers 52.0%, cars 31.2%, autos 11.2%, buses 3.5%, goods vehicles 2.1%.
+ * Desired-speed factors and junction clearing times are model assumptions.
+ */
 export const VEHICLE_TYPES: readonly VehicleTypeParams[] = [
-  { kind: 'two_wheeler', share: 0.6, lengthM: 2.0, maxAccel: 2.0, comfortDecel: 2.5, headwayS: 0.9, minGapM: 1.2, speedFactor: 1.05, clearS: 1.5 },
-  { kind: 'car', share: 0.3, lengthM: 4.5, maxAccel: 1.5, comfortDecel: 2.0, headwayS: 1.2, minGapM: 2.0, speedFactor: 1.0, clearS: 2.2 },
-  { kind: 'bus_auto', share: 0.1, lengthM: 7.0, maxAccel: 1.0, comfortDecel: 1.8, headwayS: 1.5, minGapM: 2.5, speedFactor: 0.85, clearS: 3.0 },
+  { kind: 'two_wheeler', share: 0.520, lengthM: 1.8, maxAccel: 2.0, comfortDecel: 2.0, headwayS: 0.3, minGapM: 0.5, speedFactor: 1.05, clearS: 1.5, pcu: 0.75 },
+  { kind: 'car', share: 0.312, lengthM: 4.2, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 0.8, minGapM: 2.0, speedFactor: 1.0, clearS: 2.2, pcu: 1.0 },
+  { kind: 'auto', share: 0.112, lengthM: 2.6, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.8, clearS: 2.0, pcu: 2.0 },
+  { kind: 'bus', share: 0.035, lengthM: 10.3, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.85, clearS: 3.5, pcu: 2.2 },
+  { kind: 'truck', share: 0.021, lengthM: 8.0, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.8, clearS: 3.5, pcu: 2.2 },
+  { kind: 'bus_auto', share: 0, lengthM: 7.0, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.85, clearS: 3.0, pcu: 2.0 },
 ];
+
+/**
+ * Critical gaps for giving way (s): Indo-HCM 2017 (CSIR-CRRI) base critical gap
+ * for the major-road right turn (movement 1) 2.70 s and the minor-road right turn
+ * (movement 7) 3.80 s, as tabulated in "Traffic congestion analysis using
+ * Indo-HCM, IRC method..." (IJRESM, journal.ijresm.com, Table 4). Minor-road
+ * through and left movements use the minor right-turn value (assumption: the
+ * manual's OTM values for them were not available).
+ */
+export const CRITICAL_GAP_MAJOR_RIGHT_S = 2.7;
+export const CRITICAL_GAP_MINOR_S = 3.8;
+/** Vehicles stuck this long at a junction with nothing crossing it count as a deadlock. */
+export const DEADLOCK_S = 60;
 
 /** Simulation time step (s). */
 export const STEP_S = 0.25;
@@ -55,8 +88,6 @@ const TURN_SPEED_MPS = 4.5;
 const TURN_SLOWDOWN_M = 40;
 /** A vehicle stopped this long at the front of a queue is removed (gridlock), and counted. */
 export const GRIDLOCK_S = 180;
-/** A higher-priority vehicle this close in time to the junction makes lower-priority traffic wait. */
-const CRITICAL_GAP_S = 3;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
 /**
@@ -73,8 +104,12 @@ const MAX_VEHICLES = 5000;
  * OSM junctions are often clusters of nodes a few metres apart. Road stretches
  * shorter than this are folded into one junction (like SUMO's junction joining),
  * so vehicles never queue inside a junction on a link shorter than a car.
+ * 16 m (was 12): where two divided roads cross, OSM draws four nodes joined by
+ * 12-14 m carriageway stubs (Kasturi Chowk, Wakad). At 12 m they stayed four
+ * junctions, each with its own give-way or partial signal, and vehicles stopped
+ * on the stubs inside the crossing: the "waiting oddly at junctions" seen there.
  */
-export const JOIN_JUNCTION_M = 12;
+export const JOIN_JUNCTION_M = 16;
 /** A joined junction never spans more than this, so a dense street is not collapsed into one. */
 const MAX_JUNCTION_SPAN_M = 30;
 
@@ -207,6 +242,9 @@ interface Reservation {
   node: string;
   from: number;
   connector: LaneConnector;
+  /** The link and lane the movement leads into (keep-clear accounting). */
+  toLink: number;
+  toLane: number;
 }
 
 interface Link {
@@ -231,6 +269,8 @@ interface Link {
   medianHalf: number;
   /** The drawn road surface is this far above the link's points. */
   surfaceLift: number;
+  /** Part of a roundabout's circulating carriageway (OSM junction=roundabout). */
+  roundabout: boolean;
 }
 
 interface Vehicle {
@@ -272,12 +312,17 @@ interface Vehicle {
   zoneEntry?: (Cardinal | null)[];
   /** Time stopped (v < 0.3 m/s) on the current link, charged to the junction at its end. */
   linkStopS?: number;
+  /** When and where (m along the link) the vehicle came onto its current link, for control delay. */
+  linkEnterT?: number;
+  linkEnterPos?: number;
 }
 
 interface Control {
   kind: 'signal' | 'priority';
   /** Signal phase group per incoming link. */
-  groups: Map<number, 0 | 1>;
+  groups: Map<number, number>;
+  /** Number of signal phases the cycle is split into (2: by axis; one per approach for approach-wise plans). */
+  phases?: number;
   /** Priority junctions: the main road's class rank, or null when every approach ranks the same. */
   majorRank: number | null;
   offset: number;
@@ -349,6 +394,13 @@ export function idmAcceleration(v: number, v0: number, gap: number, vLead: numbe
   return Math.max(-9, Math.min(p.maxAccel, acc));
 }
 
+/** Level of service from mean control delay (HCM 2000 Exhibits 16-2 and 17-2). */
+export function losFor(delayS: number, signalised: boolean): string {
+  const t = signalised ? [10, 20, 35, 55, 80] : [10, 15, 25, 35, 50];
+  const i = t.findIndex(x => delayS <= x);
+  return 'ABCDEF'[i < 0 ? 5 : i];
+}
+
 export class TrafficMicroSim {
   private readonly links: Link[] = [];
   /** Original network node -> the joined junction it belongs to (absent: its own junction). */
@@ -373,6 +425,8 @@ export class TrafficMicroSim {
   private signalLinks: number[] = [];
   private readonly rng: () => number;
   private demandLevel: number;
+  /** Time-of-day multiplier on all arrivals: demand at the chosen hour / demand at the hour the plan represents. */
+  private hourFactor = 1;
   private nextId = 1;
   private t = 0;
 
@@ -401,6 +455,12 @@ export class TrafficMicroSim {
   private readonly movementCountMap = new Map<string, number>();
   /** Junction -> stopped time of vehicles that crossed it, and how many crossed. */
   private readonly junctionDelay = new Map<string, { stopS: number; vehicles: number }>();
+  /** Junction -> control delay (s, actual minus free-flow time on the approach), PCU crossed, queue samples. */
+  private readonly junctionPerf = new Map<string, { controlDelayS: number; vehicles: number; pcu: number; queueSumM: number; queueMaxM: number; samples: number; lastCrossT: number }>();
+  private deadlockEvents = 0;
+  private readonly deadlocked = new Set<string>();
+  private maxStuckInBoxS = 0;
+  private nextSampleT = 0;
 
   constructor(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, options: MicroSimOptions) {
     this.rng = makeRng(options.seed);
@@ -497,7 +557,7 @@ export class TrafficMicroSim {
       if (!closest) continue;
       const incoming = this.incomingOf(closest).map(([, l]) => l);
       const ref = incoming[0].headingEnd;
-      const groups = new Map<number, 0 | 1>(incoming.map(l => {
+      const groups = new Map<number, number>(incoming.map(l => {
         const d = angleBetweenDeg(l.headingEnd, ref);
         return [l.index, d < 45 || d > 135 ? 0 : 1];
       }));
@@ -508,7 +568,7 @@ export class TrafficMicroSim {
   }
 
   private nextOdArrival(trip: MicroDemandTrip, from: number, rng: () => number) {
-    const rate = trip.vehiclesPerHour * this.demandLevel / OD_REFERENCE_LEVEL / 3600;
+    const rate = trip.vehiclesPerHour * this.demandLevel * this.hourFactor / OD_REFERENCE_LEVEL / 3600;
     return rate > 0 ? from - Math.log(1 - rng()) / rate : Infinity;
   }
 
@@ -571,6 +631,7 @@ export class TrafficMicroSim {
       headingEnd: headingOf(pts[pts.length - 2], pts[pts.length - 1]),
       ...laneGeometry(road),
       surfaceLift: surfaceLiftM(road),
+      roundabout: road?.type === 'road' && !!(road as RoadObject).osmProvenance?.roundabout,
     };
   }
 
@@ -598,7 +659,7 @@ export class TrafficMicroSim {
     incoming.forEach((inLinks, nodeId) => {
       const armCount = arms.get(nodeId)?.size ?? 0;
       if (armCount < 3) return;
-      const groups = new Map<number, 0 | 1>();
+      const groups = new Map<number, number>();
       // Group approaches by axis: within 45° of the first approach's axis, or across it
       const ref = this.links[inLinks[0]].headingEnd;
       for (const i of inLinks) {
@@ -609,15 +670,15 @@ export class TrafficMicroSim {
         // Real signals: two phases, one per axis (both used whenever approaches lie on both)
         const twoPhases = new Set(groups.values()).size === 2;
         if (signalled.has(nodeId) && twoPhases) {
-          this.controls.set(nodeId, { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
+          this.controls.set(nodeId, this.approachWisePlan(inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
           return;
         }
       } else if (armCount >= 4) {
         // Signals only where a collector or bigger road runs on both axes; a main
         // road meeting a lane stays a priority junction
-        const majorOn = (g: 0 | 1) => inLinks.some(i => groups.get(i) === g && this.links[i].rank >= 2);
+        const majorOn = (g: number) => inLinks.some(i => groups.get(i) === g && this.links[i].rank >= 2);
         if (majorOn(0) && majorOn(1)) {
-          this.controls.set(nodeId, { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
+          this.controls.set(nodeId, this.approachWisePlan(inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
           return;
         }
       }
@@ -626,6 +687,33 @@ export class TrafficMicroSim {
       const majorRank = ranks.some(r => r < top) ? top : null;
       this.controls.set(nodeId, { kind: 'priority', groups: new Map(), majorRank, offset: 0, busyUntil: 0, busyFrom: -1 });
     });
+  }
+
+  /**
+   * Approach-wise ("split") phasing: each approach gets its own green in turn,
+   * with all its movements, so nothing in a phase conflicts. This is the
+   * textbook plan where turning flows are comparable with through flows and
+   * through and turning traffic share lanes (IIT Bombay, Mathew, "Design
+   * principles of traffic signal", NPTEL 571, four-phase option 1;
+   * https://www.civil.iitb.ac.in/tvm/nptel/571_TrSignal.pdf). The model has no
+   * turn bays, so every approach shares lanes; the Pune counts show turning
+   * flows of the same order as through flows. Parallel carriageways arriving
+   * within 30 degrees of each other are one approach. Each phase: SIGNAL_GREEN_S
+   * green, SIGNAL_AMBER_S amber, SIGNAL_ALL_RED_S all-red (120 s for four arms).
+   * Returns null for fewer than three approaches.
+   */
+  private approachWisePlan(inLinks: number[]): Control | null {
+    const reps: number[] = [];
+    const groups = new Map<number, number>();
+    for (const i of inLinks) {
+      const h = this.links[i].headingEnd;
+      let g = reps.findIndex(r => angleBetweenDeg(r, h) < 30);
+      if (g < 0) { g = reps.length; reps.push(h); }
+      groups.set(i, g);
+    }
+    if (reps.length < 3) return null;
+    const cycleS = reps.length * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
+    return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.rng() * cycleS, busyUntil: 0, busyFrom: -1 };
   }
 
   /**
@@ -758,7 +846,7 @@ export class TrafficMicroSim {
 
   private get focusRatePerS(): number {
     if (this.explicitDemand) return 0;
-    return this.focusPairs.length > 0 ? (this.focusCapacityVph * this.focusLoad) / 3600 : 0;
+    return this.focusPairs.length > 0 ? (this.focusCapacityVph * this.focusLoad * this.hourFactor) / 3600 : 0;
   }
 
   private nextFocusArrival(from: number): number {
@@ -792,7 +880,7 @@ export class TrafficMicroSim {
   }
 
   private nextArrival(source: Source, from: number): number {
-    const rate = source.ratePerS * this.demandLevel;
+    const rate = source.ratePerS * this.demandLevel * this.hourFactor;
     if (rate <= 0) return Infinity;
     return from - Math.log(1 - this.rng()) / rate; // Poisson arrivals
   }
@@ -801,6 +889,21 @@ export class TrafficMicroSim {
     this.demandLevel = Math.max(0, Math.min(1, level));
     for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
     for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
+  }
+
+  /**
+   * Scales every arrival stream by the time-of-day factor (hourly demand =
+   * calibrated peak-hour demand x profile[hour] / profile[count hour]).
+   */
+  public setHourFactor(factor: number) {
+    this.hourFactor = Math.max(0, Number.isFinite(factor) ? factor : 1);
+    for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
+    for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
+    this.focusNextT = this.nextFocusArrival(this.t);
+  }
+
+  public get currentHourFactor(): number {
+    return this.hourFactor;
   }
 
   public get timeS(): number {
@@ -946,6 +1049,8 @@ export class TrafficMicroSim {
         veh.lane = lane;
         veh.v = entryV;
         veh.wasMoving = entryV > 2;
+        veh.linkEnterT = this.t;
+        veh.linkEnterPos = 0;
         link.lanes[lane].push(veh);
         this.busy.add(link.index);
         this.noteLink(veh, veh.link);
@@ -961,10 +1066,10 @@ export class TrafficMicroSim {
     if (!c || c.kind !== 'signal') return null;
     const group = c.groups.get(linkIndex) ?? 0;
     const cycle = c.cycleS ?? SIGNAL_CYCLE_S;
-    const half = cycle / 2;
-    const green = half - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
+    const slot = cycle / (c.phases ?? 2);
+    const green = slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
     const tc = (this.t + c.offset) % cycle;
-    const local = group === 0 ? tc : (tc - half + cycle) % cycle;
+    const local = (tc - group * slot + cycle) % cycle;
     if (local < green) return 'green';
     if (local < green + SIGNAL_AMBER_S) return 'amber';
     return 'red';
@@ -976,14 +1081,13 @@ export class TrafficMicroSim {
     const lane = link.lanes.length === next.lanes.length ? veh.lane : this.bestLane(next);
     const connector = this.connectorFor(link, veh.lane, next, lane);
     dist = connector.start - veh.pos;
-    // Never enter a junction without room on the far side: what is free now,
-    // plus what a moving vehicle there clears before this one reaches its line
-    // (else every follower in a platoon brakes at every node for a leader that
-    // is driving away). The crossing itself still needs actual space.
+    // Keep the junction box clear: enter only with room on the far side for this
+    // vehicle, after every vehicle already cleared into the same lane. What is free
+    // now counts, plus what a moving tail clears before this one reaches its line.
     const target = next.lanes[lane];
     const tail = target[target.length - 1];
     const ahead = tail ? tail.v * Math.min(Math.max(0, dist) / Math.max(veh.v, 1), ANTICIPATE_S) : 0;
-    if (this.backSpace(target) + ahead < connector.entry + veh.type.lengthM + veh.type.minGapM) return;
+    if (this.backSpace(target) + ahead - this.pendingInto(next.index, lane, veh) < connector.entry + veh.type.lengthM + veh.type.minGapM) return;
 
     if (this.conflictingClaim(veh, link, connector, false)) return;
 
@@ -992,35 +1096,103 @@ export class TrafficMicroSim {
       const state = this.signalState(link.index);
       const canStop = dist > (veh.v * veh.v) / (2 * veh.type.comfortDecel);
       if (state === 'red' || (state === 'amber' && canStop)) return;
+      // Permissive right turn: give way to opposing green traffic (gap acceptance)
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return;
     } else if (c?.kind === 'priority') {
-      // Everyone waits for a vehicle from another approach that is crossing
-      if (c.busyUntil > this.t && c.busyFrom !== link.index) return;
-      // The main road keeps going; it only waited for a side-road vehicle already crossing
-      if (c.majorRank !== null && link.rank === c.majorRank) {
-        this.reserve(veh, lane, connector);
-        return;
-      }
-      // Side roads, and junctions of equal roads, edge up to the line first
-      if (dist > YIELD_LINE_M) return;
-      // Give way to higher-class approaches with a vehicle about to arrive: one
-      // cleared to cross, or moving and close. A queued, stopped vehicle there
-      // does not hold up the side road (it claims the junction once it moves).
-      for (const [otherIdx] of this.incomingOf(link.to)) {
-        if (otherIdx === link.index) continue;
-        const other = this.links[otherIdx];
-        if (other.rank <= link.rank) continue;
-        for (const l of other.lanes) {
-          const front = l[0];
-          if (!front) continue;
-          if (front.grantLane !== null) return;
-          if (front.v >= 0.5 && (other.length - front.pos) / front.v < CRITICAL_GAP_S) return;
-        }
-      }
-      const timeToJunction = dist / Math.max(veh.v, 1);
-      c.busyUntil = this.t + timeToJunction + veh.type.clearS;
-      c.busyFrom = link.index;
+      const yields = this.yieldsAt(link, next, c);
+      // Traffic that gives way edges up to the line before judging the gap
+      if (yields && dist > YIELD_LINE_M) return;
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return;
     }
     this.reserve(veh, lane, connector);
+  }
+
+  /** Signed turn angle from `link` into `next` (degrees, anticlockwise positive: left turns positive, right turns negative). */
+  private turnAngle(link: Link, next: Link): number {
+    let d = next.headingStart - link.headingEnd;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return (d * 180) / Math.PI;
+  }
+
+  /** India drives on the left: a right turn crosses the opposing stream. */
+  private isRightTurn(link: Link, next: Link): boolean {
+    return this.turnAngle(link, next) <= -TURN_ANGLE_DEG;
+  }
+
+  /** Whether `other`'s traffic has priority over `link`'s at a priority (unsignalised) junction or roundabout. */
+  private hasPriorityOver(other: Link, link: Link, c: Control): boolean {
+    // Roundabout: entering traffic gives way to traffic already circulating
+    if (other.roundabout !== link.roundabout) return other.roundabout;
+    if (c.majorRank !== null) return other.rank > link.rank;
+    return false;
+  }
+
+  /** Whether movements from `link` give way at all (side road, roundabout entry, or a right turn across the main road). */
+  private yieldsAt(link: Link, next: Link, c: Control): boolean {
+    for (const [i, other] of this.incomingOf(link.to)) {
+      if (i !== link.index && this.hasPriorityOver(other, link, c)) return true;
+    }
+    return this.isRightTurn(link, next);
+  }
+
+  /**
+   * Gap acceptance: true when a vehicle with priority over this movement will
+   * reach a conflicting path sooner than the critical gap (Indo-HCM: 2.7 s for a
+   * right turn from the main road or on green, 3.8 s from a minor road or
+   * roundabout entry). Who has priority:
+   *  - signal: oncoming green traffic that is not itself turning right, over a right turn;
+   *  - priority junction: higher-class roads over lower; circulating roundabout
+   *    traffic over entries; among equal roads, oncoming traffic over a right turn.
+   */
+  private mustGiveWay(veh: Vehicle, link: Link, next: Link, connector: LaneConnector, c: Control, dist: number): boolean {
+    const myRight = this.isRightTurn(link, next);
+    const timeToLine = Math.max(0, dist) / Math.max(veh.v, 1);
+    for (const [otherIdx, other] of this.incomingOf(link.to)) {
+      if (otherIdx === link.index) continue;
+      let priority: boolean;
+      let minor = false;
+      if (c.kind === 'signal') {
+        if (!myRight || this.signalState(otherIdx) !== 'green') continue;
+        priority = angleBetweenDeg(other.headingEnd, link.headingEnd) > 135; // oncoming
+      } else if (this.hasPriorityOver(other, link, c)) {
+        priority = true;
+        minor = true;
+      } else {
+        priority = myRight && !this.hasPriorityOver(link, other, c) && angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
+      }
+      if (!priority) continue;
+      const tc = (minor ? CRITICAL_GAP_MINOR_S : CRITICAL_GAP_MAJOR_RIGHT_S) + timeToLine;
+      for (let li = 0; li < other.lanes.length; li++) {
+        for (const w of other.lanes[li]) {
+          if (w.routeIdx >= w.route.length - 1) break; // leaves the area on this link
+          const wNext = this.links[w.route[w.routeIdx + 1]];
+          // Opposing right turns pass each other (left-hand traffic): an oncoming
+          // right-turner does not hold up our right turn
+          if (!minor && this.isRightTurn(other, wNext)) continue;
+          const wConn = w.connector ?? this.connectorFor(other, li, wNext, Math.min(li, wNext.lanes.length - 1));
+          const tArrive = (wConn.start - w.pos) / Math.max(w.v, 0.1);
+          if (w.v < 0.5 && w.grantLane === null) {
+            // Stopped on its approach: at a priority junction it waits for its own reasons;
+            // on green it is about to move if it is at the front of the line.
+            if (c.kind !== 'signal' || wConn.start - w.pos > 10) break;
+          } else if (tArrive > tc) break; // vehicles behind arrive later still
+          if (connectorsConflict(connector, wConn)) return true;
+          break;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Room in a lane already promised to vehicles cleared into it that have not reached it yet. */
+  private pendingInto(linkIndex: number, lane: number, except: Vehicle): number {
+    let m = 0;
+    for (const r of this.reservations) {
+      if (r.toLink !== linkIndex || r.toLane !== lane || r.veh === except || r.veh.reservation !== r) continue;
+      m += r.veh.type.lengthM + r.veh.type.minGapM;
+    }
+    return m;
   }
 
   private reserve(veh: Vehicle, lane: number, connector: LaneConnector) {
@@ -1028,7 +1200,7 @@ export class TrafficMicroSim {
     veh.connector = connector;
     const link = this.links[veh.link];
     if (this.controls.has(link.to)) {
-      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector };
+      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector, toLink: veh.route[veh.routeIdx + 1], toLane: lane };
       this.reservations.add(veh.reservation);
     }
   }
@@ -1232,6 +1404,90 @@ export class TrafficMicroSim {
     }
 
     this.t += dt;
+    if (this.t >= this.nextSampleT) {
+      this.nextSampleT = this.t + 5;
+      this.sampleJunctions(active);
+    }
+  }
+
+  private perfOf(node: string) {
+    let p = this.junctionPerf.get(node);
+    if (!p) {
+      p = { controlDelayS: 0, vehicles: 0, pcu: 0, queueSumM: 0, queueMaxM: 0, samples: 0, lastCrossT: 0 };
+      this.junctionPerf.set(node, p);
+    }
+    return p;
+  }
+
+  /**
+   * Every 5 simulated seconds: queue length per controlled junction (the longest
+   * approach lane: from the stop line back to the last vehicle in an unbroken line
+   * of vehicles under 5 km/h), and deadlock detection. A junction is deadlocked
+   * when nothing has crossed it for DEADLOCK_S while vehicles have stood at two or
+   * more of its approaches, or inside its box, for that long.
+   */
+  private sampleJunctions(active: Link[]) {
+    const queue = new Map<string, number>();
+    const stuckApproaches = new Map<string, number>();
+    for (const link of active) {
+      if (!this.controls.has(link.to)) continue;
+      let worst = 0;
+      let stuck = false;
+      for (const lane of link.lanes) {
+        let back = -1;
+        for (const v of lane) {
+          if (v.v > 1.4) break;
+          back = v.pos - v.type.lengthM;
+        }
+        if (back >= 0 || lane.length && lane[0].v <= 1.4) worst = Math.max(worst, Math.max(0, link.length - Math.max(0, back)));
+        if (lane[0] && lane[0].waitS >= DEADLOCK_S) stuck = true;
+        // Inside the box: still driving the movement of the junction behind it
+        for (const v of lane) {
+          if (v.arriving && v.v < 0.1) this.maxStuckInBoxS = Math.max(this.maxStuckInBoxS, v.waitS);
+        }
+      }
+      if (worst > 0) queue.set(link.to, Math.max(queue.get(link.to) ?? 0, worst));
+      if (stuck) stuckApproaches.set(link.to, (stuckApproaches.get(link.to) ?? 0) + 1);
+    }
+    for (const [node] of this.controls) {
+      const p = this.perfOf(node);
+      const q = queue.get(node) ?? 0;
+      p.queueSumM += q;
+      p.queueMaxM = Math.max(p.queueMaxM, q);
+      p.samples++;
+      const dead = (stuckApproaches.get(node) ?? 0) >= 2 && this.t - p.lastCrossT >= DEADLOCK_S;
+      if (dead && !this.deadlocked.has(node)) { this.deadlocked.add(node); this.deadlockEvents++; }
+      else if (!dead) this.deadlocked.delete(node);
+    }
+  }
+
+  /**
+   * Per controlled junction: vehicles and PCU crossed, mean control delay
+   * (s/veh), mean and max queue (m), and level of service from control delay.
+   * LOS thresholds are HCM 2000 (Exhibit 16-2 signalised: A<=10, B<=20, C<=35,
+   * D<=55, E<=80 s; Exhibit 17-2 two-way-stop: A<=10, B<=15, C<=25, D<=35,
+   * E<=50 s). The Indo-HCM 2017 Table 6.7 thresholds could not be checked
+   * against an accessible copy, so they are not used.
+   */
+  public junctionStats(): { id: string; lng: number; lat: number; signalised: boolean; vehicles: number; pcu: number; meanControlDelayS: number; meanQueueM: number; maxQueueM: number; los: string }[] {
+    const out: ReturnType<TrafficMicroSim['junctionStats']> = [];
+    this.junctionPerf.forEach((p, id) => {
+      const c = this.controls.get(id);
+      if (!c || p.vehicles === 0) return;
+      const members = this.junctionMembers.get(id) ?? [id];
+      const cs = members.map(m => this.areaNodes.get(m)?.coordinates).filter((x): x is [number, number, number] => !!x);
+      if (!cs.length) return;
+      const delay = p.controlDelayS / p.vehicles;
+      out.push({ id, lng: cs.reduce((a, q) => a + q[0], 0) / cs.length, lat: cs.reduce((a, q) => a + q[1], 0) / cs.length,
+        signalised: c.kind === 'signal', vehicles: p.vehicles, pcu: Math.round(p.pcu), meanControlDelayS: delay,
+        meanQueueM: p.samples ? p.queueSumM / p.samples : 0, maxQueueM: p.queueMaxM, los: losFor(delay, c.kind === 'signal') });
+    });
+    return out.sort((a, b) => b.vehicles - a.vehicles);
+  }
+
+  /** Deadlock detector: events so far, junctions deadlocked now, longest wait inside a junction box (s). */
+  public deadlockReport(): { events: number; current: string[]; maxStuckInBoxS: number; gridlockRemovals: number } {
+    return { events: this.deadlockEvents, current: [...this.deadlocked], maxStuckInBoxS: this.maxStuckInBoxS, gridlockRemovals: this.gridlockRemovals };
   }
 
   /** Links with vehicles on them, in link order; links that have emptied are dropped. */
@@ -1278,15 +1534,24 @@ export class TrafficMicroSim {
     }
     lane.shift();
     if (this.countLayouts.length) this.countCrossing(veh, veh.link, nextIdx);
-    const crossed = this.links[veh.link].to;
+    const fromLink = this.links[veh.link];
+    const crossed = fromLink.to;
     const d = this.junctionDelay.get(crossed) ?? { stopS: 0, vehicles: 0 };
     d.stopS += veh.linkStopS ?? 0;
     d.vehicles++;
     this.junctionDelay.set(crossed, d);
+    const perf = this.perfOf(crossed);
+    const driven = Math.max(0, veh.pos - (veh.linkEnterPos ?? 0));
+    perf.controlDelayS += Math.max(0, this.t - (veh.linkEnterT ?? this.t) - driven / Math.max(1, fromLink.speed * veh.speedFactor));
+    perf.vehicles++;
+    perf.pcu += veh.type.pcu;
+    perf.lastCrossT = this.t;
     veh.linkStopS = 0;
     veh.link = nextIdx;
     veh.lane = next.lanes.indexOf(target);
     veh.pos = pos;
+    veh.linkEnterT = this.t;
+    veh.linkEnterPos = Math.max(0, pos);
     veh.routeIdx++;
     veh.arriving = { connector: c, reservation: veh.reservation };
     veh.grantLane = null;
@@ -1340,7 +1605,7 @@ export class TrafficMicroSim {
       entries: this.explicitDemand ? new Set(this.odArrivals.filter(a => a.route.length).map(a => a.trip.fromNodeId)).size : this.sources.filter(s => s.ratePerS > 0).length,
       exits: this.explicitDemand ? new Set(this.odArrivals.filter(a => a.route.length).map(a => a.trip.toNodeId)).size : this.sinks.length,
       signals: [...this.controls.values()].filter(c => c.kind === 'signal').length,
-      inflowVph: this.explicitDemand ? Math.round(this.odArrivals.reduce((n, a) => n + a.trip.vehiclesPerHour, 0) * this.demandLevel / OD_REFERENCE_LEVEL) : Math.round((this.sources.reduce((a, s) => a + s.ratePerS, 0) * this.demandLevel + this.focusRatePerS) * 3600),
+      inflowVph: this.explicitDemand ? Math.round(this.odArrivals.reduce((n, a) => n + a.trip.vehiclesPerHour, 0) * this.demandLevel * this.hourFactor / OD_REFERENCE_LEVEL) : Math.round((this.sources.reduce((a, s) => a + s.ratePerS, 0) * this.demandLevel * this.hourFactor + this.focusRatePerS) * 3600),
       focusVph: Math.round(this.focusRatePerS * 3600),
       watched: {
         onRoad: onWatched,
@@ -1560,7 +1825,7 @@ export class TrafficMicroSim {
    * demand level. Intrazonal and zero-flow trips are not streams.
    */
   public demandRouteFlows(): { index: number; route: number[]; vehiclesPerHour: number; trip: MicroDemandTrip }[] {
-    return this.odArrivals.map(a => ({ index: a.index, route: [...a.route], vehiclesPerHour: a.trip.vehiclesPerHour * this.demandLevel / OD_REFERENCE_LEVEL, trip: { ...a.trip } }));
+    return this.odArrivals.map(a => ({ index: a.index, route: [...a.route], vehiclesPerHour: a.trip.vehiclesPerHour * this.demandLevel * this.hourFactor / OD_REFERENCE_LEVEL, trip: { ...a.trip } }));
   }
 
   public getDemandTrips(): MicroDemandTrip[] {
