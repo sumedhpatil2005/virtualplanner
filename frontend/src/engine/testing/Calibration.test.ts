@@ -213,3 +213,57 @@ describe('calibrating a crossroads to counts', () => {
     expect(buildSim(setup, base).linkEnds().length).toBeGreaterThan(0);
   });
 });
+
+// ── Simulate mode wiring ───────────────────────────────────────────────────
+import { SimulationMode } from '../simulation/SimulationMode';
+
+describe('calibration in Simulate mode', () => {
+  const roads = [
+    road('n1', [0, 0], [0, 150]), road('n2', [0, 150], [0, 300]),
+    road('s1', [0, 0], [0, -150]), road('s2', [0, -150], [0, -300]),
+    road('e1', [0, 0], [150, 0]), road('e2', [150, 0], [300, 0]),
+    road('w1', [0, 0], [-150, 0]), road('w2', [-150, 0], [-300, 0]),
+    road('n3', [0, 300], [0, 600]), road('s3', [0, -300], [0, -600]), road('e3', [300, 0], [600, 0]), road('w3', [-300, 0], [-600, 0]),
+  ];
+  const counted: CountJunction = {
+    id: 'toy_x', name: 'Toy crossroads', location: { lon: pt(0, 0)[0], lat: pt(0, 0)[1], method: 'test', matched: { kind: 'intersection', arms: 4 } },
+    movements: [{ approach: 'N', turn: 'straight', LV: 250 }, { approach: 'E', turn: 'straight', LV: 150 }, { approach: 'W', turn: 'right', TW: 80 }],
+  };
+
+  it('lists counted junctions in the area, measures before/after GEH and switches live demand to the calibrated plan', async () => {
+    const mode = new SimulationMode(() => roads, null, null, () => ({}), async () => dataset([counted]));
+    mode.enter();
+    mode.setRange(150); // the outer road pieces stay outside, so traffic enters and leaves there
+    mode.setFocus(false); // natural routes; focus traffic would overload this unsignalised crossing
+    mode.setDemandLevel(0.05);
+    mode.selectRoad('n1', false);
+    mode.pauseTraffic();
+    const ok = await mode.runCalibration(true, { warmupS: 60, measureS: 900 });
+    const c = mode.getState().calibration;
+    expect(c.error).toBeNull();
+    expect(ok).toBe(true);
+    expect(c.junctions.map(j => [j.id, j.problem])).toEqual([['toy_x', null]]);
+    expect(c.rows).toHaveLength(3);
+    expect(c.before).not.toBeNull();
+    expect(c.after!.meanGeh!).toBeLessThan(c.before!.meanGeh!);
+    expect(c.applied).toBe(true);
+    expect(c.fit!.assignedAfter.share).toBe(1);
+    expect(mode.getCalibratedPlan()!.provenance.source).toBe('calibrated');
+    // Changing the volume clears the calibration rather than silently keeping a fit made at another level
+    mode.setDemandLevel(0.12);
+    expect(mode.getState().calibration.applied).toBe(false);
+    expect(mode.getCalibratedPlan()).toBeNull();
+    mode.dispose();
+  });
+
+  it('says so when no counted junction is in the study area', async () => {
+    const far = { ...counted, location: { ...counted.location, lon: 74.5, lat: 19.5 } };
+    const mode = new SimulationMode(() => roads, null, null, () => ({}), async () => dataset([far]));
+    mode.enter();
+    mode.selectRoad('n1', false);
+    mode.pauseTraffic();
+    expect(await mode.runCalibration(false)).toBe(false);
+    expect(mode.getState().calibration.error).toMatch(/No counted junction/);
+    mode.dispose();
+  });
+});

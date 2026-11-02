@@ -14,6 +14,9 @@ import {
 import { SPEED_COLORS } from '../engine/rendering/renderers/MicroTrafficVisualizer';
 import { formatDistanceM } from '../lib/format';
 import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, Notice } from './ui/kit';
+import { SourceBadge } from './ui/SourceBadge';
+import { sourceOf } from './ui/dataSource';
+import { CalibrationPanel } from './CalibrationPanel';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -114,7 +117,8 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             </span>
           </div>
           <TrafficControls traffic={traffic} waiting={osmRoads.status === 'loading' ? 'Waiting for roads' : signals.status === 'loading' ? 'Loading signals' : null} />
-          {traffic.demand && <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">{traffic.demand.source === 'project-estimate' ? `Project demand · ${traffic.demand.period.replace('_', ' ').replace('Peak', 'peak')}` : 'Synthetic traffic'}</p><p className="mt-1 text-xs leading-relaxed text-slate-400">{traffic.demand.label}</p></div>}
+          {traffic.demand && <DemandNote demand={traffic.demand} />}
+          <CalibrationPanel sim={sim} />
           <SignalsNote signals={signals} />
           <VehicleInspector sim={sim} />
           <ScenarioExperiment sim={sim} />
@@ -124,6 +128,21 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
         </>
       )}
     </>
+  );
+};
+
+/** What the traffic demand is based on, labelled by data source. */
+const DemandNote: React.FC<{ demand: NonNullable<TrafficRunState['demand']> }> = ({ demand }) => {
+  const title = demand.source === 'project-estimate' ? 'Project demand' : demand.source === 'calibrated' ? 'Demand calibrated to counts' : 'Synthetic traffic';
+  return (
+    <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-3">
+      <p className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-indigo-300">
+        <span>{title} · {demand.period.replace('_', ' ').replace('Peak', 'peak')}</span>
+        <SourceBadge source={sourceOf(demand.source)} />
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">{demand.label}</p>
+      <p className="mt-1 text-xs text-slate-500 tabular-nums">{Math.round(demand.vehiclesPerHour).toLocaleString()} veh/h over {demand.pairCount.toLocaleString()} OD streams</p>
+    </div>
   );
 };
 
@@ -156,7 +175,7 @@ const TrafficControls: React.FC<{ traffic: TrafficRunState; waiting: string | nu
       {traffic.error && <Notice tone="warn" icon={AlertTriangle}>{traffic.error}</Notice>}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 pt-1">
         <span className="text-sm text-slate-400">Routes</span>
-        {traffic.demand?.source === 'project-estimate' ? <span className="text-xs text-indigo-300">Project origins and destinations</span> : <Segmented label="Where traffic goes" options={ROUTE_OPTIONS} value={traffic.focus ? 'focus' : 'natural'} onChange={v => mode.setFocus(v === 'focus')} />}
+        {traffic.demand?.source === 'project-estimate' || traffic.demand?.source === 'calibrated' ? <span className="text-xs text-indigo-300">{traffic.demand.source === 'calibrated' ? 'Calibrated origins and destinations' : 'Project origins and destinations'}</span> : <Segmented label="Where traffic goes" options={ROUTE_OPTIONS} value={traffic.focus ? 'focus' : 'natural'} onChange={v => mode.setFocus(v === 'focus')} />}
         <span className="text-sm text-slate-400">Volume</span>
         <Segmented label="Traffic volume" options={LEVEL_OPTIONS} value={nearestLevel(traffic.demandLevel)} onChange={v => mode.setDemandLevel(v)} />
         <span className="text-sm text-slate-400">Speed</span>

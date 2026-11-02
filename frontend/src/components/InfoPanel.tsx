@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { SourceBadge } from './ui/SourceBadge';
+import { sourceOf } from './ui/dataSource';
 import {
   Activity, Hammer, Crosshair, Route, Train, Building2, Shapes, AlertTriangle, CheckCircle2, ChevronRight,
   type LucideIcon,
@@ -219,7 +221,7 @@ const EndRow: React.FC<{ label: string; ids: string[] }> = ({ label, ids }) =>
 const n = (v: number | undefined | null, unit = '') => (v === undefined || v === null ? '—' : `${v.toLocaleString()}${unit}`);
 
 const BuildingDetails: React.FC<{ b: BuildingObject }> = ({ b }) => (
-  <Section title="Facts">
+  <Section title="Facts" aside={<span title="Residents and jobs are estimated from floor area and use"><SourceBadge source="estimated" /></span>}>
     <Facts rows={[
       ['Use', (b.category ?? b.usageType).replace(/_/g, ' ')],
       ['Floors', n(b.floors)],
@@ -275,7 +277,7 @@ const UtilityDetails: React.FC<{ u: UtilityObject; length: number | null }> = ({
 );
 
 const ZoneDetails: React.FC<{ z: ZoneObject }> = ({ z }) => (
-  <Section title="Facts">
+  <Section title="Facts" aside={<SourceBadge source={sourceOf(z.provenance?.source)} />}>
     <Facts rows={[
       ['Population', n(z.totalPopulation)],
       ['Jobs', n(z.totalEmployment)],
@@ -285,7 +287,7 @@ const ZoneDetails: React.FC<{ z: ZoneObject }> = ({ z }) => (
 );
 
 const GatewayDetails: React.FC<{ g: GatewayObject }> = ({ g }) => (
-  <Section title="Facts">
+  <Section title="Facts" aside={<SourceBadge source={sourceOf(g.provenance?.source)} />}>
     <Facts rows={[
       ['Morning peak in', n(g.inboundFlows?.AM_Peak, ' veh/h')],
       ['Morning peak out', n(g.outboundFlows?.AM_Peak, ' veh/h')],

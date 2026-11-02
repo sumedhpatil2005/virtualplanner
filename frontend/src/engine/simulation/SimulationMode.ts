@@ -17,6 +17,10 @@ import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
 import { compileStudyDemand, snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
+import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
+import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, junctionChecks, observedFlows, type CalibrationRow, type JunctionCheck, type SimSetup } from '../calibration/calibration';
+import { gehAgainst } from '../calibration/ipf';
+import type { GehSummary } from '../calibration/geh';
 
 export type TrafficStatus = 'idle' | 'running' | 'paused';
 
@@ -96,6 +100,30 @@ export interface SignalsState {
   count: number | null;
 }
 
+/** Calibration of the study area's demand against observed junction counts. */
+export interface CalibrationState {
+  datasetStatus: 'idle' | 'loading' | 'ready' | 'error';
+  dataset: CountDataset | null;
+  datasetError: string | null;
+  /** Counted junctions inside the study area, with any reason they cannot be compared. */
+  junctions: JunctionCheck[];
+  rows: CalibrationRow[];
+  before: GehSummary | null;
+  after: GehSummary | null;
+  fit: {
+    iterations: number; converged: boolean; cappedTrips: number; seeds: number; seedVph: number; unreachable: number;
+    factorMin: number; factorMax: number; assignedBefore: GehSummary; assignedAfter: GehSummary; demandLevel: number;
+  } | null;
+  status: 'idle' | 'measuring' | 'fitting' | 'error';
+  progress: number;
+  error: string | null;
+  /** Live traffic runs on the calibrated demand. */
+  applied: boolean;
+  /** Simulated seconds counted per run (after the warm-up). */
+  windowS: number | null;
+  staleReason: string | null;
+}
+
 export interface SimulationModeState {
   active: boolean;
   seedRoadIds: string[];
@@ -108,7 +136,13 @@ export interface SimulationModeState {
   signals: SignalsState;
   comparison: TrafficComparisonState;
   selectedVehicleId: number | null;
+  calibration: CalibrationState;
 }
+
+const EMPTY_CALIBRATION: CalibrationState = {
+  datasetStatus: 'idle', dataset: null, datasetError: null, junctions: [], rows: [], before: null, after: null, fit: null,
+  status: 'idle', progress: 0, error: null, applied: false, windowS: null, staleReason: null,
+};
 
 /** Wait after a road edit before re-mapping, so a burst of changes maps once. */
 const NETWORK_CHANGE_DEBOUNCE_MS = 250;
@@ -136,6 +170,7 @@ export class SimulationMode {
     signals: { status: 'off', count: null },
     comparison: { baseline: null, current: null, staleReason: null, running: false },
     selectedVehicleId: null,
+    calibration: EMPTY_CALIBRATION,
   };
   private readonly signalSource: TrafficSignalSource | null;
   private signalLoad: AbortController | null = null;
@@ -171,8 +206,14 @@ export class SimulationMode {
   private baselineContextKey = '';
   private baselineStudyKey = '';
   private comparisonGeneration = 0;
+  /** Demand fitted to observed counts; used by live traffic while set. */
+  private calibratedPlan: DemandPlan | null = null;
+  private calibrationGeneration = 0;
+  private readonly loadCounts: () => Promise<CountDataset>;
 
-  constructor(getRoads: () => DrivableObject[], osmSource: OsmRoadSource | null = null, signalSource: TrafficSignalSource | null = null, getContext: () => SimulationContext = () => ({})) {
+  constructor(getRoads: () => DrivableObject[], osmSource: OsmRoadSource | null = null, signalSource: TrafficSignalSource | null = null, getContext: () => SimulationContext = () => ({}),
+    loadCounts: () => Promise<CountDataset> = () => fetchCountDataset(DEFAULT_COUNT_DATASET)) {
+    this.loadCounts = loadCounts;
     this.getRoads = getRoads;
     this.osmSource = osmSource;
     this.signalSource = signalSource;
@@ -335,6 +376,7 @@ export class SimulationMode {
       });
       // Seeds deleted from the network drop out here
       this.setState({ area, error: null, seedRoadIds: area.seedRoadIds });
+      this.refreshCountedJunctions();
       this.visualizer.render(area, reveal);
       // The selected road is the subject: the camera goes to it, not the whole area
       if (fly) this.focusView();
@@ -467,7 +509,7 @@ export class SimulationMode {
     if (!area || this.state.traffic.status !== 'idle') return;
     const roads = new Map(this.getRoads().map(r => [r.id, r]));
     const context = this.getContext();
-    const plan = compileStudyDemand(context, this.demandBounds(area));
+    const plan = this.calibratedPlan ?? compileStudyDemand(context, this.demandBounds(area));
     const sim = new TrafficMicroSim(area, roads, {
       demandLevel: this.state.traffic.demandLevel,
       seed: this.state.traffic.seed,
@@ -478,7 +520,7 @@ export class SimulationMode {
       demandTrips: plan ? snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))) : undefined,
     });
     const metrics = sim.getMetrics();
-    this.setTraffic({ demand: plan?.provenance ?? { source: 'synthetic', label: 'Synthetic capacity-based arrivals; no project OD demand configured', period: context.period ?? 'AM_Peak', vehiclesPerHour: metrics.inflowVph, pairCount: sim.getDemandTrips().length } });
+    this.setTraffic({ demand: plan ? { ...plan.provenance } : { source: 'synthetic', label: 'Synthetic capacity-based arrivals; no project OD demand configured', period: context.period ?? 'AM_Peak', vehiclesPerHour: metrics.inflowVph, pairCount: sim.getDemandTrips().length } });
     if (metrics.entries === 0 || metrics.exits < (plan ? 1 : 2)) {
       this.setTraffic({
         error: plan ? 'No estimated OD trips can be routed in this study area. Include both trip origins and destinations.' : metrics.entries === 0
@@ -556,6 +598,7 @@ export class SimulationMode {
   }
 
   private invalidateComparison(reason: string) {
+    this.invalidateCalibration(reason);
     this.comparisonGeneration++;
     if (!this.state.comparison.baseline && !this.state.comparison.running) return;
     this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: reason, running: false } });
@@ -653,6 +696,142 @@ export class SimulationMode {
       if (generation === this.comparisonGeneration) this.invalidateComparison(err instanceof Error ? err.message : String(err));
       return null;
     }
+  }
+
+  // ── Calibration against observed counts ──────────────────────────────────
+
+  private setCalibration(patch: Partial<CalibrationState>) {
+    this.setState({ calibration: { ...this.state.calibration, ...patch } });
+  }
+
+  /** Loads the observed count file (once; again after an error). */
+  public ensureCountData(): Promise<void> {
+    const c = this.state.calibration;
+    if (c.datasetStatus === 'ready' || c.datasetStatus === 'loading') return Promise.resolve();
+    this.setCalibration({ datasetStatus: 'loading', datasetError: null });
+    return this.loadCounts()
+      .then(dataset => {
+        this.setCalibration({ datasetStatus: 'ready', dataset });
+        this.refreshCountedJunctions();
+      })
+      .catch(err => this.setCalibration({ datasetStatus: 'error', datasetError: err instanceof Error ? err.message : String(err) }));
+  }
+
+  private refreshCountedJunctions() {
+    const ds = this.state.calibration.dataset, area = this.state.area;
+    if (!ds) return;
+    const inside = area ? junctionsIn(ds, area.bounds) : [];
+    this.setCalibration({ junctions: inside.map(j => ({ id: j.id, name: j.name, problem: null, arms: 0, maxCardinalErrorDeg: null })) });
+  }
+
+  private invalidateCalibration(reason: string) {
+    this.calibrationGeneration++;
+    const c = this.state.calibration;
+    const hadResults = c.rows.length > 0 || this.calibratedPlan !== null || c.status === 'measuring' || c.status === 'fitting';
+    this.calibratedPlan = null;
+    if (!hadResults) return;
+    this.setCalibration({ rows: [], before: null, after: null, fit: null, applied: false, status: 'idle', progress: 0, error: null, staleReason: reason });
+  }
+
+  /** The uncalibrated demand for the area: the project estimate, or frozen synthetic arrivals when there is none. */
+  private basePlan(area: StudyArea): DemandPlan {
+    const context = this.getContext();
+    const plan = compileStudyDemand(context, this.demandBounds(area));
+    if (plan) return plan;
+    const traffic = this.state.traffic;
+    const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
+      demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
+      focusLoad: focusLoadFor(traffic), junctions: context.junctions, signalPoints: this.signalPoints ?? undefined,
+    });
+    const trips = sim.getDemandTrips().flatMap(t => {
+      const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
+      return from && to ? [{ from: [...from.coordinates] as [number, number, number], to: [...to.coordinates] as [number, number, number], vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId }] : [];
+    });
+    return { trips, provenance: { source: 'synthetic', label: 'Synthetic capacity-based arrivals (no project OD demand here).', period: context.period ?? 'AM_Peak', vehiclesPerHour: trips.reduce((n, t) => n + t.vehiclesPerHour, 0), pairCount: trips.length } };
+  }
+
+  private simSetup(area: StudyArea): SimSetup {
+    const traffic = this.state.traffic;
+    return { area, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])),
+      options: { demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds, junctions: structuredClone(this.getContext().junctions), signalPoints: this.signalPoints ?? undefined } };
+  }
+
+  private countedInArea(area: StudyArea) {
+    const ds = this.state.calibration.dataset;
+    if (!ds) throw new Error('The observed count file has not loaded.');
+    const junctions = junctionsIn(ds, area.bounds);
+    if (!junctions.length) throw new Error('No counted junction lies inside this study area.');
+    return junctions;
+  }
+
+  /**
+   * Runs the current (uncalibrated) demand from an empty network and compares
+   * the simulated turning flows with the counts. With `fit`, then scales the
+   * demand to the counts, runs that too and switches live traffic to it.
+   */
+  public async runCalibration(fit: boolean, opts: { warmupS?: number; measureS?: number } = {}): Promise<boolean> {
+    this.flushPendingRecompute();
+    await this.ensureCountData();
+    const area = this.state.area;
+    const generation = ++this.calibrationGeneration;
+    const aborted = () => generation !== this.calibrationGeneration;
+    try {
+      if (!area) throw new Error('Select a study road first.');
+      const junctions = this.countedInArea(area);
+      const setup = this.simSetup(area);
+      const base = this.basePlan(area);
+      if (!base.trips.length) throw new Error('This study area has no demand to calibrate.');
+      const zones = junctions.map(zoneFor);
+      this.setCalibration({ status: 'measuring', progress: 0, error: null, staleReason: null });
+      const before = await measureFlows(setup, base, zones, { ...opts, aborted, onProgress: p => this.setCalibration({ progress: fit ? p / 2 : p }) });
+      if (aborted()) return false;
+      const checks = junctionChecks(junctions, before.layouts);
+      if (!fit) {
+        const rows = compareRows(junctions, before.layouts, before.flows, null);
+        this.setCalibration({ status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: null, fit: null, windowS: before.windowS });
+        return true;
+      }
+      this.setCalibration({ status: 'fitting' });
+      await new Promise<void>(r => setTimeout(r, 0));
+      const result = fitPlan(setup, base, junctions);
+      if (aborted()) return false;
+      this.setCalibration({ status: 'measuring' });
+      const after = await measureFlows(setup, result.plan, zones, { ...opts, aborted, onProgress: p => this.setCalibration({ progress: 0.5 + p / 2 }) });
+      if (aborted()) return false;
+      const rows = compareRows(junctions, before.layouts, before.flows, after.flows);
+      const observed = observedFlows(junctions.filter(j => !checks.find(c => c.id === j.id)?.problem));
+      const fitted = result.ipf.factors.length ? result.ipf.factors : [1];
+      this.calibratedPlan = result.plan;
+      this.setCalibration({
+        status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: summarize(rows, 'gehAfter'), windowS: after.windowS, applied: true,
+        fit: {
+          iterations: result.ipf.iterations, converged: result.ipf.converged, cappedTrips: result.ipf.cappedTrips,
+          seeds: result.seeds.length, seedVph: Math.round(result.seeds.reduce((n, s) => n + s.vehiclesPerHour, 0)), unreachable: result.unreachable.length,
+          factorMin: Math.min(...fitted), factorMax: Math.max(...fitted),
+          assignedBefore: gehAgainst(observed, result.ipf.before), assignedAfter: gehAgainst(observed, result.ipf.after),
+          demandLevel: this.state.traffic.demandLevel,
+        },
+      });
+      if (this.state.traffic.status !== 'idle') this.restartTraffic();
+      return true;
+    } catch (err) {
+      if (!aborted()) this.setCalibration({ status: 'error', error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
+  }
+
+  /** Back to the uncalibrated demand. */
+  public clearCalibration() {
+    const wasApplied = this.calibratedPlan !== null;
+    this.calibrationGeneration++;
+    this.calibratedPlan = null;
+    this.setCalibration({ rows: [], before: null, after: null, fit: null, applied: false, status: 'idle', progress: 0, error: null, staleReason: null });
+    if (wasApplied && this.state.traffic.status !== 'idle') this.restartTraffic();
+  }
+
+  /** The calibrated plan, for reports. */
+  public getCalibratedPlan(): DemandPlan | null {
+    return this.calibratedPlan;
   }
 
   public clearBaseline() {

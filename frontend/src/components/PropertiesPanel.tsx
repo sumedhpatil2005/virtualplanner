@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { SourceBadge } from './ui/SourceBadge';
+import { sourceOf } from './ui/dataSource';
 import { Trash2, ArrowLeft } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -346,12 +348,14 @@ export const PropertiesPanel: React.FC = () => {
         (zUpdates as any)[field] = Number(value);
       } else if (field === 'landUseMix') {
         zUpdates.landUseMix = value;
+      } else if (field === 'provenance') {
+        zUpdates.provenance = value;
       }
     } else if (selectedObj.type === 'gateway') {
       const gwUpdates = updates as Partial<GatewayObject>;
       if (field === 'name' || field === 'connectedNodeId') {
         (gwUpdates as any)[field] = value;
-      } else if (field === 'inboundFlows' || field === 'outboundFlows' || field === 'modeSplit') {
+      } else if (field === 'inboundFlows' || field === 'outboundFlows' || field === 'modeSplit' || field === 'provenance') {
         (gwUpdates as any)[field] = value;
       }
     }
@@ -694,7 +698,7 @@ const BuildingInspector: React.FC<{
 
       {/* Capacities */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-        <span className="text-xs text-indigo-400 uppercase font-mono block">Planning Capacities</span>
+        <span className="text-xs text-indigo-400 uppercase font-mono flex items-center justify-between">Planning Capacities <SourceBadge source="estimated" /></span>
         <div className="text-xs space-y-1.5">
           {(b.category === 'residential' || !b.category) && (
             <div className="flex justify-between border-b border-white/5 pb-1">
@@ -2076,7 +2080,7 @@ const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) 
 
         <div className="grid grid-cols-2 gap-2.5">
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Residents</label>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">Total Residents <SourceBadge source={sourceOf(z.provenance?.source)} /></label>
             <input
               type="number"
               value={z.totalPopulation || 0}
@@ -2240,7 +2244,11 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
       </div>
 
       <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Flow Rate (Vehicles/hr)</label>
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Flow Rate (Vehicles/hr)</label>
+          <SourceBadge source={sourceOf(g.provenance?.source)} />
+        </div>
+        <ProvenancePicker value={g.provenance?.source} onChange={source => onUpdate('provenance', { ...(g.provenance ?? { confidence: 0.5 }), source, updatedAt: new Date().toISOString() })} />
         <div className="space-y-2 pt-1.5">
           {periods.map(p => {
             const inf = g.inboundFlows?.[p] || 0;
@@ -2418,3 +2426,16 @@ const FlyoverImpactNotice: React.FC<{ impact: NonNullable<import('../engine/obje
   </div>
 );
 
+
+/** Lets the planner say where entered flows come from, so they are labelled honestly. */
+const ProvenancePicker: React.FC<{ value: string | undefined; onChange: (source: 'estimated' | 'survey' | 'observed') => void }> = ({ value, onChange }) => (
+  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+    Data source
+    <select value={value === 'observed' || value === 'survey' ? value : 'estimated'} onChange={e => onChange(e.target.value as 'estimated' | 'survey' | 'observed')}
+      className="bg-slate-950 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-slate-200">
+      <option value="estimated">Estimated (heuristic)</option>
+      <option value="survey">Survey (own count)</option>
+      <option value="observed">Observed (published, cite in name)</option>
+    </select>
+  </label>
+);

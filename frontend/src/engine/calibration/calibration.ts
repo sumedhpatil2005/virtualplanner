@@ -201,7 +201,7 @@ export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly C
 export function junctionChecks(junctions: readonly CountJunction[], layouts: readonly ZoneLayout[]): JunctionCheck[] {
   return junctions.map(j => {
     const l = layouts.find(x => x.zone.id === j.id);
-    return { id: j.id, name: j.name, problem: l?.problem ?? 'Not in the simulated network.', arms: l?.arms.length ?? 0, maxCardinalErrorDeg: l?.maxCardinalErrorDeg ?? null };
+    return { id: j.id, name: j.name, problem: l ? l.problem : 'Not in the simulated network.', arms: l?.arms.length ?? 0, maxCardinalErrorDeg: l?.maxCardinalErrorDeg ?? null };
   });
 }
 
