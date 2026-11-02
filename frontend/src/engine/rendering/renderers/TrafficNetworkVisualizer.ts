@@ -1,4 +1,5 @@
-import { Viewer, CustomDataSource, Color, Cartesian3, HeightReference, PolylineArrowMaterialProperty } from 'cesium';
+import { Viewer, CustomDataSource, Color, HeightReference, PolylineArrowMaterialProperty } from 'cesium';
+import { scenePoint } from '../../terrain/groundHeight';
 import type { TrafficNetwork } from '../../objects/trafficTypes';
 
 export class TrafficNetworkVisualizer {
@@ -63,7 +64,7 @@ export class TrafficNetworkVisualizer {
       this.dataSource!.entities.add({
         id: `debug_node_${node.id}`,
         name: `Node: ${node.id}`,
-        position: Cartesian3.fromDegrees(node.coordinates[0], node.coordinates[1], node.coordinates[2] + 1.0),
+        position: scenePoint(node.coordinates[0], node.coordinates[1], node.coordinates[2] + 1.0),
         point: {
           pixelSize: 10,
           color: color,
@@ -77,7 +78,7 @@ export class TrafficNetworkVisualizer {
     // Render edges
     network.edges.forEach(edge => {
       const positions = edge.coordinates.map(c => 
-        Cartesian3.fromDegrees(c[0], c[1], c[2] + 0.5)
+        scenePoint(c[0], c[1], c[2] + 0.5)
       );
 
       this.dataSource!.entities.add({

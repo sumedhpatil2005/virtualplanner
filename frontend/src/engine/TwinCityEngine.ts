@@ -1,7 +1,6 @@
 import {
   Viewer,
   Entity,
-  Cartesian3,
   Cartesian2,
   Color,
   ScreenSpaceEventHandler,
@@ -17,8 +16,13 @@ import {
   HeightReference,
   PolylineDashMaterialProperty,
   EllipsoidTerrainProvider,
-  createWorldTerrainAsync
+  createWorldTerrainAsync,
+  sampleTerrainMostDetailed,
+  type TerrainProvider
 } from 'cesium';
+import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/TerrainHeightField';
+import { setGroundField, getGroundField, modelHeight, scenePoint } from './terrain/groundHeight';
+import { cesiumIonToken } from '../lib/cesiumToken';
 import { ObjectManager } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
 import { renderManagerInstance } from './rendering/RenderManager';
@@ -145,6 +149,7 @@ export class TwinCityEngine {
       }
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
+      this.topUpTerrain();
     });
     this.layers.onChange(() => {
       if (this.layers.isVisible('traffic_network_debug')) this.requestTrafficNetwork();
@@ -365,11 +370,13 @@ export class TwinCityEngine {
 
     if (!wantTerrain) {
       this.terrainEnabled = false;
+      this.terrainProvider = null;
       viewer.terrainProvider = new EllipsoidTerrainProvider();
+      this.setGround(null);
       return;
     }
 
-    if (!import.meta.env.VITE_CESIUM_ION_TOKEN) {
+    if (!cesiumIonToken()) {
       this.layers.setVisibility('terrain', false);
       (window as any).showToast?.('Terrain needs a Cesium ion token: set VITE_CESIUM_ION_TOKEN in frontend/.env and restart.', 'error');
       return;
@@ -377,18 +384,78 @@ export class TwinCityEngine {
 
     this.terrainEnabled = true;
     createWorldTerrainAsync()
-      .then(provider => {
-        if (this.terrainEnabled && this.viewer) {
-          this.viewer.terrainProvider = provider;
-          (window as any).showToast?.('Terrain on. City models are placed at sea-level height, so some may appear below the terrain surface.', 'info');
-        }
+      .then(async provider => {
+        if (!this.terrainEnabled || !this.viewer) return;
+        this.terrainProvider = provider;
+        // Sample the ground under the model before showing the terrain, so nothing is drawn buried
+        const field = new TerrainHeightField();
+        await field.addCells(this.modelCells(), this.groundSampler(provider));
+        if (!this.terrainEnabled || !this.viewer) return;
+        this.viewer.terrainProvider = provider;
+        this.setGround(field);
+        (window as any).showToast?.(`Terrain on. Roads, buildings and bridges sit on the sampled ground (${field.cellCount} map cell${field.cellCount === 1 ? '' : 's'}).`, 'info');
       })
       .catch(err => {
+        // Fallback: without ground heights the model would be buried under the terrain, so stay on the ellipsoid
         console.warn('[TwinCityEngine] Terrain load failed:', err);
         this.terrainEnabled = false;
+        this.terrainProvider = null;
+        this.setGround(null);
+        if (this.viewer) this.viewer.terrainProvider = new EllipsoidTerrainProvider();
         this.layers.setVisibility('terrain', false);
-        (window as any).showToast?.('Could not load terrain from Cesium ion. Check the token and your connection.', 'error');
+        (window as any).showToast?.('Could not load terrain heights from Cesium ion, so terrain stays off and the model stays on flat ground. Check the token and your connection.', 'error');
       });
+  }
+
+  private terrainProvider: TerrainProvider | null = null;
+  private terrainTopUp: Promise<void> | null = null;
+
+  /** Map cells (0.01°) holding any model geometry. */
+  private modelCells(): Set<string> {
+    const points: number[][] = [];
+    for (const o of this.objects.getAll()) {
+      const c = (o as { coordinates?: unknown }).coordinates;
+      if (!Array.isArray(c) || !c.length) continue;
+      if (typeof c[0] === 'number') points.push(c as number[]);
+      else for (const p of c as number[][]) if (Array.isArray(p)) points.push(p);
+    }
+    return cellsFor(points);
+  }
+
+  /** Terrain heights from the provider, in batches so a big import does not stall one request. */
+  private groundSampler(provider: TerrainProvider): GroundSampler {
+    return async points => {
+      const out: (number | undefined)[] = [];
+      const BATCH = 5000;
+      for (let i = 0; i < points.length; i += BATCH) {
+        const carto = points.slice(i, i + BATCH).map(p => Cartographic.fromDegrees(p.lng, p.lat));
+        const sampled = await sampleTerrainMostDetailed(provider, carto);
+        for (const c of sampled) out.push(c.height);
+      }
+      return out;
+    };
+  }
+
+  /** New ground: every mesh is regenerated on it. */
+  private setGround(field: TerrainHeightField | null) {
+    setGroundField(field);
+    renderManagerInstance.clear();
+    renderManagerInstance.reconcile(this.getFilteredObjects());
+    this.syncZonesAndGatewaysWithCesium();
+    this.simMode.networkChanged();
+    this.viewer?.scene.requestRender();
+  }
+
+  /** Geometry imported while terrain is on: sample the cells it added, then redraw on them. */
+  private topUpTerrain() {
+    const provider = this.terrainProvider, field = getGroundField();
+    if (!this.terrainEnabled || !provider || !field || this.terrainTopUp) return;
+    const missing = [...this.modelCells()].filter(k => !field.has(k));
+    if (!missing.length) return;
+    this.terrainTopUp = field.addCells(missing, this.groundSampler(provider))
+      .then(added => { if (added && getGroundField() === field) this.setGround(field); })
+      .catch(err => console.warn('[TwinCityEngine] Terrain top-up failed; new geometry uses the median ground height:', err))
+      .finally(() => { this.terrainTopUp = null; });
   }
 
   public getPrimitivesCount(): number {
@@ -445,7 +512,7 @@ export class TwinCityEngine {
       const cartographic = Cartographic.fromCartesian(position);
       const lng = CesiumMath.toDegrees(cartographic.longitude);
       const lat = CesiumMath.toDegrees(cartographic.latitude);
-      const alt = cartographic.height;
+      const alt = modelHeight(lng, lat, cartographic.height);
 
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         if (this.draggingPointIdx !== null) {
@@ -532,7 +599,7 @@ export class TwinCityEngine {
         const cartographic = Cartographic.fromCartesian(position);
         const lng = CesiumMath.toDegrees(cartographic.longitude);
         const lat = CesiumMath.toDegrees(cartographic.latitude);
-        const alt = cartographic.height;
+        const alt = modelHeight(lng, lat, cartographic.height);
 
         const editMode = this.editing.getMode();
         const pickedId = defined(pickedObject) && typeof pickedObject.id?.id === 'string' ? pickedObject.id.id as string : '';
@@ -768,7 +835,7 @@ export class TwinCityEngine {
       this.gapPreviewEntity = null;
     }
     if (!gap) return;
-    const lift = (p: [number, number, number]) => Cartesian3.fromDegrees(p[0], p[1], (p[2] || 0) + 1.5);
+    const lift = (p: [number, number, number]) => scenePoint(p[0], p[1], (p[2] || 0) + 1.5);
     this.gapPreviewEntity = this.viewer.entities.add({
       position: lift(gap.joinPoint),
       point: { pixelSize: 10, color: Color.fromCssColorString('#34d399'), outlineColor: Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
@@ -911,7 +978,7 @@ export class TwinCityEngine {
           ? Color.GOLD
           : Color.CYAN;
 
-      const position = Cartesian3.fromDegrees(activePoint[0], activePoint[1], (activePoint[2] || 0) + 1.5);
+      const position = scenePoint(activePoint[0], activePoint[1], (activePoint[2] || 0) + 1.5);
 
       if (!this.snapReticleEntity) {
         this.snapReticleEntity = this.viewer.entities.add({
@@ -955,8 +1022,8 @@ export class TwinCityEngine {
     const drawingPts = this.editing.getDrawingPoints();
     if (drawingPts.length > 0 && (mode.startsWith('draw_') || mode === 'import_osm')) {
       const lastPt = drawingPts[drawingPts.length - 1];
-      const p1 = Cartesian3.fromDegrees(lastPt[0], lastPt[1], lastPt[2] || 0);
-      const p2 = Cartesian3.fromDegrees(activePoint[0], activePoint[1], activePoint[2] || 0);
+      const p1 = scenePoint(lastPt[0], lastPt[1], lastPt[2] || 0);
+      const p2 = scenePoint(activePoint[0], activePoint[1], activePoint[2] || 0);
 
       if (!this.rubberbandEntity) {
         this.rubberbandEntity = this.viewer.entities.add({
@@ -1000,14 +1067,14 @@ export class TwinCityEngine {
     const mode = this.editing.getMode();
     if (points.length === 0 || mode === 'select') return;
 
-    const cartesians = points.map(p => Cartesian3.fromDegrees(p[0], p[1], p[2]));
+    const cartesians = points.map(p => scenePoint(p[0], p[1], p[2]));
 
     // Render temporary markers for each drawing point to make editing clear
     if (mode === 'import_osm') {
       points.forEach((pt, idx) => {
         const marker = this.viewer!.entities.add({
           id: `draw_point_${idx}`,
-          position: Cartesian3.fromDegrees(pt[0], pt[1], pt[2]),
+          position: scenePoint(pt[0], pt[1], pt[2]),
           point: {
             pixelSize: 10,
             color: Color.RED,
@@ -1024,7 +1091,7 @@ export class TwinCityEngine {
         const a = points[i], b = points[(i + 1) % points.length];
         const mid = this.viewer!.entities.add({
           id: `draw_mid_${i}`,
-          position: Cartesian3.fromDegrees((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ((a[2] || 0) + (b[2] || 0)) / 2),
+          position: scenePoint((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, ((a[2] || 0) + (b[2] || 0)) / 2),
           point: {
             pixelSize: 7,
             color: Color.WHITE.withAlpha(0.85),
@@ -1144,7 +1211,7 @@ export class TwinCityEngine {
 
     areas.forEach(area => {
       const isSelected = selections.includes(area.id);
-      const pts = area.polygonCoordinates.map(c => Cartesian3.fromDegrees(c[0], c[1], c[2]));
+      const pts = area.polygonCoordinates.map(c => scenePoint(c[0], c[1], c[2]));
 
       const entity = this.viewer!.entities.add({
         id: area.id,
@@ -1201,7 +1268,7 @@ export class TwinCityEngine {
       const zones = filtered.filter(o => o.type === 'zone') as ZoneObject[];
       zones.forEach(zone => {
         const isSelected = selections.includes(zone.id);
-        const pts = zone.coordinates.map(c => Cartesian3.fromDegrees(c[0], c[1], c[2] || 0.5));
+        const pts = zone.coordinates.map(c => scenePoint(c[0], c[1], c[2] || 0.5));
 
         const entity = this.viewer!.entities.add({
           id: zone.id,
@@ -1226,7 +1293,7 @@ export class TwinCityEngine {
             verticalOrigin: VerticalOrigin.BOTTOM,
             disableDepthTestDistance: Number.POSITIVE_INFINITY
           },
-          position: Cartesian3.fromDegrees(
+          position: scenePoint(
             zone.coordinates.reduce((sum, c) => sum + c[0], 0) / zone.coordinates.length,
             zone.coordinates.reduce((sum, c) => sum + c[1], 0) / zone.coordinates.length,
             2.0
@@ -1243,7 +1310,7 @@ export class TwinCityEngine {
       gateways.forEach(gw => {
         const isSelected = selections.includes(gw.id);
         const coord = (gw.coordinates && gw.coordinates[0]) || [0, 0, 0];
-        const pos = Cartesian3.fromDegrees(coord[0], coord[1], coord[2] || 1.0);
+        const pos = scenePoint(coord[0], coord[1], coord[2] || 1.0);
 
         const entity = this.viewer!.entities.add({
           id: gw.id,
@@ -1274,7 +1341,7 @@ export class TwinCityEngine {
         if (gw.connectedNodeId && this.trafficNetwork) {
           const node = this.trafficNetwork.nodes.get(gw.connectedNodeId);
           if (node) {
-            const nodePos = Cartesian3.fromDegrees(node.coordinates[0], node.coordinates[1], node.coordinates[2] || 1.0);
+            const nodePos = scenePoint(node.coordinates[0], node.coordinates[1], node.coordinates[2] || 1.0);
             const lineEntity = this.viewer!.entities.add({
               polyline: {
                 positions: [pos, nodePos],
@@ -1302,7 +1369,7 @@ export class TwinCityEngine {
 
         const marker = this.viewer!.entities.add({
           id: `edit_zone_point_${selectedObj.id}_${idx}`,
-          position: Cartesian3.fromDegrees(pt[0], pt[1], pt[2] || 0.5),
+          position: scenePoint(pt[0], pt[1], pt[2] || 0.5),
           point: {
             pixelSize: 10,
             color: Color.CYAN,

@@ -270,6 +270,8 @@ interface Vehicle {
   odo: number;
   /** Per count zone, the approach this vehicle entered it by (see setCountZones). */
   zoneEntry?: (Cardinal | null)[];
+  /** Time stopped (v < 0.3 m/s) on the current link, charged to the junction at its end. */
+  linkStopS?: number;
 }
 
 interface Control {
@@ -397,6 +399,8 @@ export class TrafficMicroSim {
   private countLayouts: ZoneLayout[] = [];
   private countFromT = 0;
   private readonly movementCountMap = new Map<string, number>();
+  /** Junction -> stopped time of vehicles that crossed it, and how many crossed. */
+  private readonly junctionDelay = new Map<string, { stopS: number; vehicles: number }>();
 
   constructor(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, options: MicroSimOptions) {
     this.rng = makeRng(options.seed);
@@ -1244,6 +1248,7 @@ export class TrafficMicroSim {
   private trackWaiting(veh: Vehicle, dt: number) {
     if (veh.v < 0.3) {
       veh.waitS += dt;
+      veh.linkStopS = (veh.linkStopS ?? 0) + dt;
       if (veh.wasMoving) {
         veh.stops++;
         veh.wasMoving = false;
@@ -1273,6 +1278,12 @@ export class TrafficMicroSim {
     }
     lane.shift();
     if (this.countLayouts.length) this.countCrossing(veh, veh.link, nextIdx);
+    const crossed = this.links[veh.link].to;
+    const d = this.junctionDelay.get(crossed) ?? { stopS: 0, vehicles: 0 };
+    d.stopS += veh.linkStopS ?? 0;
+    d.vehicles++;
+    this.junctionDelay.set(crossed, d);
+    veh.linkStopS = 0;
     veh.link = nextIdx;
     veh.lane = next.lanes.indexOf(target);
     veh.pos = pos;
@@ -1485,6 +1496,24 @@ export class TrafficMicroSim {
   /** Both ends of every link, for laying out count zones. */
   public linkEnds(): LinkEnds[] {
     return this.links.map(l => ({ index: l.index, from: l.pts[0], to: l.pts[l.pts.length - 1], pts: l.pts }));
+  }
+
+  /**
+   * Mean stopped delay per controlled junction (three or more arms) since the
+   * start, for vehicles that crossed it: the time they stood (below 0.3 m/s)
+   * on the approach. Basis for an approximate level of service.
+   */
+  public junctionDelays(): { id: string; lng: number; lat: number; signalised: boolean; vehicles: number; meanStoppedDelayS: number }[] {
+    const out: { id: string; lng: number; lat: number; signalised: boolean; vehicles: number; meanStoppedDelayS: number }[] = [];
+    this.junctionDelay.forEach((d, id) => {
+      const c = this.controls.get(id);
+      if (!c || d.vehicles === 0) return;
+      const members = this.junctionMembers.get(id) ?? [id];
+      const cs = members.map(m => this.areaNodes.get(m)?.coordinates).filter((x): x is [number, number, number] => !!x);
+      if (!cs.length) return;
+      out.push({ id, lng: cs.reduce((a, p) => a + p[0], 0) / cs.length, lat: cs.reduce((a, p) => a + p[1], 0) / cs.length, signalised: c.kind === 'signal', vehicles: d.vehicles, meanStoppedDelayS: d.stopS / d.vehicles });
+    });
+    return out.sort((a, b) => b.vehicles - a.vehicles);
   }
 
   /** Starts counting turning movements at these junctions (replacing any earlier zones). */

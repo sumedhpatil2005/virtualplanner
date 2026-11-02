@@ -1,4 +1,5 @@
-import { Viewer, PointPrimitiveCollection, Cartesian3, Color } from 'cesium';
+import { Viewer, PointPrimitiveCollection, Color } from 'cesium';
+import { scenePoint } from '../../terrain/groundHeight';
 
 export class VehicleVisualizer {
   private viewer: Viewer;
@@ -18,7 +19,7 @@ export class VehicleVisualizer {
     if (!this.collection) return;
     
     // Elevate point slightly (e.g., +1.5 meters) so it sits nicely above the road surface
-    const position = Cartesian3.fromDegrees(coords[0], coords[1], (coords[2] || 0) + 1.5);
+    const position = scenePoint(coords[0], coords[1], (coords[2] || 0) + 1.5);
 
     let point = this.pointMap.get(id);
     if (!point) {

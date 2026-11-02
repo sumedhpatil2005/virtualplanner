@@ -1,4 +1,5 @@
-import { Cartesian2, Cartesian3, Color, Entity, LabelStyle, PolygonHierarchy, VerticalOrigin, type Viewer } from 'cesium';
+import { Cartesian2, Color, Entity, LabelStyle, PolygonHierarchy, VerticalOrigin, type Viewer } from 'cesium';
+import { scenePoint } from '../../terrain/groundHeight';
 import type { CityObject } from '../../objects/types';
 import { junctionLayout } from '../../objects/junctionLayout';
 import { GeometryContext } from '../geometry/GeometryContext';
@@ -30,7 +31,7 @@ export class JunctionEditorOverlay {
       const cs = j.coordinates;
       this.markers.push(this.viewer.entities.add({
         id: `junction_edit_${j.id}`,
-        position: Cartesian3.fromDegrees(cs[0], cs[1], (cs[2] || 0) + 1.5),
+        position: scenePoint(cs[0], cs[1], (cs[2] || 0) + 1.5),
         point: { pixelSize: selected ? 14 : 10, color: Color.fromCssColorString(selected ? '#fbbf24' : '#22d3ee'), outlineColor: Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity },
         label: {
           text: selected ? `${j.name}\n${j.hasSignals ? 'Signalised' : 'Give way'} · ${j.connectedRoads.length} roads` : 'Junction',
@@ -49,8 +50,8 @@ export class JunctionEditorOverlay {
     const layout = junctionLayout(point, nearby);
     const color = Color.fromCssColorString(layout.valid ? '#22d3ee' : '#fb7185');
     const label = layout.valid ? `Place junction · ${layout.roadIds.length} road${layout.roadIds.length === 1 ? '' : 's'}\nClick to place · Esc to cancel` : 'Move onto a road connection';
-    const position = Cartesian3.fromDegrees(x, y, layout.elevation + 1.5);
-    const boundary = layout.boundary.map(p => Cartesian3.fromDegrees(p[0], p[1], p[2] + 0.18));
+    const position = scenePoint(x, y, layout.elevation + 1.5);
+    const boundary = layout.boundary.map(p => scenePoint(p[0], p[1], p[2] + 0.18));
     if (!this.ghost) {
       this.ghost = this.viewer.entities.add({
         id: 'junction_placement_preview', position,
@@ -77,7 +78,7 @@ export class JunctionEditorOverlay {
       this.hoveredRoads = key;
       for (const road of nearby.filter(r => layout.roadIds.includes(r.id))) {
         this.approaches.push(this.viewer.entities.add({
-          polyline: { positions: road.coordinates.map(p => Cartesian3.fromDegrees(p[0], p[1], p[2] + 0.2)), width: 4, material: Color.CYAN.withAlpha(0.65), depthFailMaterial: Color.CYAN.withAlpha(0.35) },
+          polyline: { positions: road.coordinates.map(p => scenePoint(p[0], p[1], p[2] + 0.2)), width: 4, material: Color.CYAN.withAlpha(0.65), depthFailMaterial: Color.CYAN.withAlpha(0.35) },
         }));
       }
     }

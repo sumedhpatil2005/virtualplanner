@@ -1,4 +1,5 @@
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
+import { groundAt, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
 import { junctionLayout } from '../../objects/junctionLayout';
 import { ROAD_CLASS_LIFT_M } from '../../objects/roadSurface';
@@ -15,6 +16,8 @@ function wgs84ToCartesian(lng: number, lat: number, h: number): [number, number,
   const f = 1.0 / 298.257223563; // flattening
   const e2 = 2.0 * f - f * f; // eccentricity squared
 
+  // Model heights are above the ground; the ground is the sampled terrain when terrain is on
+  h += groundAt(lng, lat);
   const radLng = lng * (Math.PI / 180.0);
   const radLat = lat * (Math.PI / 180.0);
 
@@ -100,7 +103,12 @@ export class ProceduralGeometryGenerator {
   /**
    * Generates a list of 3D building meshes for [Far, Medium, Close] LODs
    */
+  /** A building's base sits flat at the lowest ground under its footprint. */
   private generateBuildingMesh(building: BuildingObject): MeshData[] {
+    return withFlatGround(building.coordinates, () => this.generateBuildingMeshOnGround(building));
+  }
+
+  private generateBuildingMeshOnGround(building: BuildingObject): MeshData[] {
     const footprint = building.coordinates;
     const height = building.height || 10;
     const numPoints = footprint.length;

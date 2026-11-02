@@ -1,4 +1,5 @@
 import { Viewer, Cartesian3, Color, Model, Matrix4, ColorBlendMode, ShadowMode } from 'cesium';
+import { scenePoint } from '../../terrain/groundHeight';
 import type { TrafficMicroSim, SignalState, VehicleView } from '../../simulation/TrafficMicroSim';
 import { variantFor, vehicleModelUrl, trafficLightUrl, type VehicleVariant } from '../vehicles/vehicleModels';
 
@@ -142,7 +143,7 @@ export class MicroTrafficVisualizer {
       }
       t.opacity = v.opacity;
       t.seenFrame = frame;
-      Cartesian3.fromDegrees(t.lng, t.lat, t.z + ROAD_CLEARANCE_M, undefined, t.position);
+      scenePoint(t.lng, t.lat, t.z + ROAD_CLEARANCE_M, t.position);
       t.cameraDist2 = Cartesian3.distanceSquared(t.position, camera);
       live.push(t);
     }, aheadS);
@@ -249,7 +250,7 @@ export class MicroTrafficVisualizer {
     sim.forEachSignal((linkId, at, state) => {
       let head = this.signals.get(linkId);
       if (!head) {
-        const position = Cartesian3.fromDegrees(at.lng, at.lat, at.z + ROAD_CLEARANCE_M);
+        const position = scenePoint(at.lng, at.lat, at.z + ROAD_CLEARANCE_M);
         const matrix = new Array<number>(16).fill(0);
         writePose(matrix, at.lng, at.lat, position, at.heading, 0);
         head = { models: {}, state, matrix, position, near: false };

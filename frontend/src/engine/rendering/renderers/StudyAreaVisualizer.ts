@@ -1,10 +1,10 @@
+import { scenePoint } from '../../terrain/groundHeight';
 import {
   Viewer,
   Entity,
   CustomDataSource,
   Color,
   Cartesian2,
-  Cartesian3,
   BoundingSphere,
   HeadingPitchRange,
   PolylineGlowMaterialProperty,
@@ -217,7 +217,7 @@ export class StudyAreaVisualizer {
       if (s.role !== 'seed') continue;
       this.seedEntities.set(s.key, ds.entities.add({
         polyline: {
-          positions: s.coordinates.map(c => Cartesian3.fromDegrees(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
+          positions: s.coordinates.map(c => scenePoint(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
           width: 16,
           material: this.pulsingGlow(seedColor),
         },
@@ -235,7 +235,7 @@ export class StudyAreaVisualizer {
           return new GeometryInstance({
             id: s.key,
             geometry: new PolylineGeometry({
-              positions: s.coordinates.map(c => Cartesian3.fromDegrees(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
+              positions: s.coordinates.map(c => scenePoint(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
               width: LINE_WIDTH_PX,
               vertexFormat: PolylineColorAppearance.VERTEX_FORMAT,
             }),
@@ -311,7 +311,7 @@ export class StudyAreaVisualizer {
   private addMarkers(area: StudyArea, viewer: Viewer) {
     const points = (this.points = viewer.scene.primitives.add(new PointPrimitiveCollection()));
     const labels = (this.labels = viewer.scene.primitives.add(new LabelCollection()));
-    const at = (c: readonly number[], z = c[2] || 0) => Cartesian3.fromDegrees(c[0], c[1], z + LIFT_M);
+    const at = (c: readonly number[], z = c[2] || 0) => scenePoint(c[0], c[1], z + LIFT_M);
     const ink = Color.fromCssColorString('#0f172a');
 
     for (const j of area.junctions) {
@@ -378,10 +378,10 @@ export class StudyAreaVisualizer {
   public flyToBounds(bounds: Bounds) {
     if (!this.viewer) return;
     const corners = [
-      Cartesian3.fromDegrees(bounds.minLng, bounds.minLat),
-      Cartesian3.fromDegrees(bounds.maxLng, bounds.minLat),
-      Cartesian3.fromDegrees(bounds.minLng, bounds.maxLat),
-      Cartesian3.fromDegrees(bounds.maxLng, bounds.maxLat),
+      scenePoint(bounds.minLng, bounds.minLat),
+      scenePoint(bounds.maxLng, bounds.minLat),
+      scenePoint(bounds.minLng, bounds.maxLat),
+      scenePoint(bounds.maxLng, bounds.maxLat),
     ];
     const sphere = BoundingSphere.fromPoints(corners);
     this.viewer.camera.flyToBoundingSphere(sphere, {
@@ -405,7 +405,7 @@ export class StudyAreaVisualizer {
     const first = coords[0], last = coords[coords.length - 1];
     const bearing = Math.atan2((last[0] - first[0]) * kx, (last[1] - first[1]) * 111320);
     const z = coords.reduce((s, c) => s + (c[2] || 0), 0) / coords.length;
-    const sphere = new BoundingSphere(Cartesian3.fromDegrees((b.minLng + b.maxLng) / 2, lat0, z), Math.max(30, extentM / 2));
+    const sphere = new BoundingSphere(scenePoint((b.minLng + b.maxLng) / 2, lat0, z), Math.max(30, extentM / 2));
     this.viewer.camera.flyToBoundingSphere(sphere, {
       offset: new HeadingPitchRange(bearing - Math.PI / 2, CesiumMath.toRadians(-32), Math.min(1800, Math.max(260, extentM * 1.1))),
       duration: 1.4,
@@ -414,7 +414,7 @@ export class StudyAreaVisualizer {
 
   public flyToPoint(coords: [number, number, number]) {
     if (!this.viewer) return;
-    const sphere = new BoundingSphere(Cartesian3.fromDegrees(coords[0], coords[1], coords[2] || 0), 30);
+    const sphere = new BoundingSphere(scenePoint(coords[0], coords[1], coords[2] || 0), 30);
     this.viewer.camera.flyToBoundingSphere(sphere, {
       offset: new HeadingPitchRange(0, CesiumMath.toRadians(-60), 350),
       duration: 1.0,
