@@ -56,6 +56,12 @@ export interface OSMProvenance {
   bridge: boolean;
   tunnel: boolean;
   roundabout: boolean;
+  /**
+   * Set on a piece of a way cut at a study-area boundary ("Map Selected Area"):
+   * which area and piece, and which ends were made by the cut (the road goes on
+   * outside the area there).
+   */
+  clip?: { areaId: string; piece: number; startCut: boolean; endCut: boolean };
 }
 
 export interface RoadSectionProfile {

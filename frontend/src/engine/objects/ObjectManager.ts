@@ -117,6 +117,13 @@ export class ObjectManager {
     });
   }
 
+  /** OSM way ids held as roads, whole or as pieces cut at a study-area boundary. */
+  public osmWayIdsPresent(): Set<number> {
+    const ids = new Set<number>();
+    for (const o of this.objects.values()) if (o.type === 'road' && o.osmProvenance) ids.add(Number(o.osmProvenance.osmId));
+    return ids;
+  }
+
   public getAll(): CityObject[] {
     return Array.from(this.objects.values());
   }

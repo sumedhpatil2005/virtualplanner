@@ -3,6 +3,7 @@ import type { TrafficNetwork, TrafficEdge, TrafficNode } from '../objects/traffi
 import { TrafficNetworkBuilder, GRADE_SEPARATION_M, type GradeSeparation } from './TrafficNetworkBuilder';
 import { MinHeap } from './Pathfinder';
 import { isUserBuilt } from '../objects/builtBy';
+import { hasOsmTopology } from '../objects/osmTopology';
 import { connectEnds, AUTO_CONNECT_M } from '../editing/autoConnect';
 
 /**
@@ -76,7 +77,7 @@ export type SegmentRole = 'seed' | 'both' | 'downstream' | 'upstream';
 export type JunctionKind = 't_junction' | 'crossroads' | 'complex' | 'roundabout' | 'dead_end';
 export type BoundaryKind = 'entry' | 'exit' | 'entry_exit';
 export type ProblemSeverity = 'error' | 'warning' | 'info';
-export type ProblemKind = 'near_miss' | 'one_way_trap' | 'one_way_source' | 'isolated' | 'no_alternative' | 'dead_end' | 'open_end' | 'duplicate';
+export type ProblemKind = 'near_miss' | 'one_way_trap' | 'one_way_source' | 'isolated' | 'no_alternative' | 'dead_end' | 'open_end' | 'duplicate' | 'area_edge';
 
 export interface Bounds {
   minLng: number;
@@ -227,11 +228,15 @@ export function clampRangeM(meters: number): number {
 }
 
 /** An imported OSM road whose ends are where OSM put them. */
-function isUneditedOsm(r: DrivableObject | undefined): boolean {
-  if (r?.type !== 'road' || !r.osmProvenance || r.sections?.[0]?.provenance.geometryModified) return false;
-  const src = r.sourceCoordinates;
-  const same = (a?: readonly number[], b?: readonly number[]) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
-  return !src || (same(src[0], r.coordinates[0]) && same(src[src.length - 1], r.coordinates[r.coordinates.length - 1]));
+const isUneditedOsm = (r: DrivableObject | undefined): boolean => hasOsmTopology(r);
+
+/** Whether `point` is an end of `road` made by cutting it at a mapped area's boundary. */
+export function isAreaCutEnd(road: DrivableObject | undefined, point: readonly number[]): boolean {
+  const clip = road?.type === 'road' ? road.osmProvenance?.clip : undefined;
+  if (!clip || !road) return false;
+  const c = road.coordinates;
+  const near = (a: readonly number[]) => Math.abs(a[0] - point[0]) < 1e-7 && Math.abs(a[1] - point[1]) < 1e-7;
+  return (clip.startCut && near(c[0])) || (clip.endCut && near(c[c.length - 1]));
 }
 
 /** Both travel directions of one stretch of road share this key. */
@@ -660,6 +665,19 @@ export class StudyAreaExplorer {
   ): Omit<StudyProblem, 'distanceM'> | null {
     const here = roadName(roadIds[0]);
     const base = { location: node.coordinates, roadIds };
+
+    // A road cut at the edge of a mapped area ("Map Selected Area") goes on outside it: not a
+    // dead end or a one-way trap, but where traffic would enter or leave. No flow is invented here.
+    if (arms === 1 && isAreaCutEnd(index.roads.get(roadIds[0]), node.coordinates)) {
+      return {
+        ...base,
+        id: `area_edge_${node.id}`,
+        kind: 'area_edge',
+        severity: 'info',
+        title: `"${here}" continues outside the mapped area`,
+        detail: 'The road was cut where it crosses the mapped area\'s boundary. Place a gateway here and give it counted or estimated flows to let traffic enter or leave; until then no traffic uses this end.',
+      };
+    }
 
     if (arms === 1) {
       const miss = this.findNearMiss(index, build, node, new Set(roadIds));

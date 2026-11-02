@@ -3,7 +3,17 @@ import type { Area } from '../objects/types';
 export type InfrastructureCategory = 'roads' | 'buildings' | 'metro' | 'signals';
 export const INFRASTRUCTURE_CATEGORIES: InfrastructureCategory[] = ['roads', 'buildings', 'metro', 'signals'];
 export interface ImportCategoryReport { category: InfrastructureCategory; added: number; preserved: number; skipped: number; source?: 'local' | 'Overpass' | 'cache'; error?: string; }
-export interface StudyAreaImportReport { areaId: string; areaName: string; categories: ImportCategoryReport[]; cancelled: boolean; completed: boolean; }
+export interface StudyAreaImportReport {
+  areaId: string; areaName: string; categories: ImportCategoryReport[]; cancelled: boolean; completed: boolean;
+  /** "Map Selected Area": features were cut to the drawn polygon instead of kept whole. */
+  clippedToBoundary?: boolean;
+  /** Road ends made by cutting at the polygon (gateway candidates; no flows are added there). */
+  boundaryCuts?: number;
+}
+export interface StudyAreaImportOptions {
+  /** Keep only what lies inside the polygon, cutting roads and metro lines at its edge. Off: whole features touching it are kept. */
+  clipToBoundary?: boolean;
+}
 export interface StudyAreaImportProgress { category: InfrastructureCategory; phase: 'fetching' | 'saving'; completed: number; total: number; }
 export type Point = [number, number, number];
 

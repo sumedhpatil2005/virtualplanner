@@ -30,6 +30,9 @@ export const Toolbar: React.FC = () => {
   const [progress, setProgress] = useState<StudyAreaImportProgress | null>(null);
   const [report, setReport] = useState<StudyAreaImportReport | null>(null);
   const [savingBoundary, setSavingBoundary] = useState(false);
+  // "Map Selected Area" keeps only what lies inside the drawn polygon, cutting roads at its edge
+  const [clipOnSave, setClipOnSave] = useState(true);
+  const [redrawingId, setRedrawingId] = useState<string | null>(null);
 
   // Sync state with engine
   useEffect(() => {
@@ -38,6 +41,7 @@ export const Toolbar: React.FC = () => {
       setActiveMode(mode);
       setIsImporting(engineInstance.editing.getIsImporting());
       setDrawingPointsCount(engineInstance.editing.getDrawingPoints().length);
+      setRedrawingId(engineInstance.editing.getRedrawingAreaId());
       setSavedAreas(engineInstance.editing.getSavedAreas().filter(area => !area.id.startsWith(STUDY_AREA_ROADS_PREFIX)));
       setProgress(engineInstance.editing.studyAreaImportProgress ? { ...engineInstance.editing.studyAreaImportProgress } : null);
       const currentReport = engineInstance.editing.studyAreaImportReport;
@@ -79,13 +83,24 @@ export const Toolbar: React.FC = () => {
     engineInstance.history.redo();
   };
 
-  const handleFinishArea = () => {
+  const handleFinishArea = (clip: boolean) => {
     if (drawingPointsCount < 3) {
       (window as any).showToast?.("Please place at least 3 points on the map to define a boundary.", "error");
       return;
     }
-    setAreaName(`Area ${Math.random().toString(36).substr(2, 4).toUpperCase()}`);
+    setClipOnSave(clip);
+    const redrawn = redrawingId ? savedAreas.find(a => a.id === redrawingId) : undefined;
+    setAreaName(redrawn?.name ?? `Area ${Math.random().toString(36).substr(2, 4).toUpperCase()}`);
     setShowNameModal(true);
+  };
+
+  const handleRedrawArea = (areaId: string) => {
+    try {
+      engineInstance.editing.beginRedrawArea(areaId);
+      (window as any).showToast?.('Boundary loaded for editing: drag its points, drag a white midpoint to add one, right-click a point to remove it. Map it again to save.', 'info');
+    } catch (err: any) {
+      (window as any).showToast?.(err.message || 'Could not edit that boundary.', 'error');
+    }
   };
 
   const handleSaveAreaConfirm = async () => {
@@ -102,7 +117,7 @@ export const Toolbar: React.FC = () => {
       setShowNameModal(false);
       // Auto-select the newly saved area
       engineInstance.selection.selectSingle(newArea.id);
-      await handleImportAll(newArea);
+      await handleImportAll(newArea, categories, clipOnSave);
     } catch (err: any) {
       (window as any).showToast?.(err.message || "Failed to save area.", "error");
     } finally { setSavingBoundary(false); }
@@ -126,12 +141,13 @@ export const Toolbar: React.FC = () => {
 
   const activeArea: Area | undefined = savedAreas.find(a => a.id === selectedAreaId) ?? (selectedAreaId ? engineInstance.editing.studyAreaFromZone(selectedAreaId) ?? undefined : undefined);
 
-  const handleImportAll = async (area = activeArea, selected = categories) => {
+  const handleImportAll = async (area = activeArea, selected = categories, clip = false) => {
     if (!area) return;
     try {
-      const outcome = await engineInstance.editing.importStudyArea(area, engineInstance.scenarios.getActiveScenarioId(), selected);
+      const outcome = await engineInstance.editing.importStudyArea(area, engineInstance.scenarios.getActiveScenarioId(), selected, { clipToBoundary: clip });
       const added = outcome.categories.filter(c => c.category !== 'signals').reduce((n, c) => n + c.added, 0);
-      (window as any).showToast?.(`${outcome.cancelled ? 'Import cancelled' : outcome.completed ? 'Import saved' : 'Import partially complete'}: ${added} new objects. See the study area summary.`, outcome.completed ? 'success' : 'info');
+      const cuts = clip && outcome.boundaryCuts ? ` ${outcome.boundaryCuts} road ends cut at the boundary (gateway candidates).` : '';
+      (window as any).showToast?.(`${outcome.cancelled ? 'Import cancelled' : outcome.completed ? (clip ? 'Area mapped' : 'Import saved') : 'Import partially complete'}: ${added} new objects.${cuts} See the study area summary.`, outcome.completed ? 'success' : 'info');
     } catch (err: any) { (window as any).showToast?.(err.message || 'Import failed.', 'error'); }
   };
 
@@ -237,13 +253,33 @@ export const Toolbar: React.FC = () => {
                         <div className="text-xs text-slate-400 font-medium leading-relaxed">
                           {drawingPointsCount > 0 ? (
                             <div className="flex flex-col gap-1.5">
-                              <span className="text-amber-400 font-semibold">{drawingPointsCount} vertices placed</span>
+                              <span className="text-amber-400 font-semibold">
+                                {redrawingId ? 'Editing boundary · ' : 'Draw Area · '}{drawingPointsCount} {drawingPointsCount === 1 ? 'point' : 'points'}{drawingPointsCount < 3 ? ` (${3 - drawingPointsCount} more needed)` : ''}
+                              </span>
+                              <span className="text-slate-500">Drag a red point to move it, drag a white midpoint to add one, right-click a point to remove it.</span>
+                              <button
+                                onClick={() => handleFinishArea(true)}
+                                disabled={drawingPointsCount < 3 || savingBoundary || isImporting}
+                                title="Import roads, buildings, junctions and other supported features inside this polygon only; roads are cut at its edge"
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded py-1.5 font-bold text-xs cursor-pointer"
+                              >
+                                {savingBoundary ? 'Saving…' : 'Map Selected Area'}
+                              </button>
                               <div className="flex gap-1">
                                 <button
-                                  onClick={handleFinishArea}
-                                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded py-1 font-bold text-xs cursor-pointer"
+                                  onClick={() => handleFinishArea(false)}
+                                  disabled={drawingPointsCount < 3 || savingBoundary || isImporting}
+                                  title="Keep whole roads and buildings that touch the boundary"
+                                  className="flex-1 bg-indigo-700/70 hover:bg-indigo-600 disabled:opacity-50 text-white rounded py-1 text-xs cursor-pointer"
                                 >
-                                  {savingBoundary ? 'Saving…' : 'Create and import'}
+                                  Import whole features
+                                </button>
+                                <button
+                                  onClick={() => engineInstance.editing.removeDrawingPoint(drawingPointsCount - 1)}
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 rounded px-2 py-1 cursor-pointer"
+                                  title="Remove the last point"
+                                >
+                                  Undo point
                                 </button>
                                 <button
                                   onClick={() => engineInstance.editing.clearDrawing()}
@@ -254,7 +290,7 @@ export const Toolbar: React.FC = () => {
                               </div>
                             </div>
                           ) : (
-                            <span>Click 3+ points to draw a study area, or select a saved area or demand zone.</span>
+                            <span><strong className="text-slate-300">Draw Area:</strong> click 3 or more points on the map to outline a polygon, then Map Selected Area. Or select a saved area or demand zone.</span>
                           )}
                         </div>
 
@@ -277,6 +313,15 @@ export const Toolbar: React.FC = () => {
                                     }`}
                                   >
                                     <button type="button" aria-pressed={isSelected} onClick={() => handleAreaSelect(area.id)} className="truncate flex-1 text-left cursor-pointer">{area.name}</button>
+                                    {isSelected && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleRedrawArea(area.id); }}
+                                        className="text-indigo-300 hover:text-indigo-200 px-1"
+                                        title="Edit this boundary's points"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
                                     {isSelected && (
                                       <button
                                         onClick={(e) => {
@@ -303,16 +348,21 @@ export const Toolbar: React.FC = () => {
                               Selected: {activeArea.name}
                             </div>
                             {categoryChoices}
-                            <button onClick={() => handleImportAll()} disabled={!categories.length || isImporting}
+                            <button onClick={() => handleImportAll(activeArea, categories, true)} disabled={!categories.length || isImporting}
                               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded py-1.5 font-bold text-xs cursor-pointer flex items-center justify-center gap-1">
-                              <Globe size={10} /> {categories.length === 4 ? 'Import all infrastructure' : 'Import selected infrastructure'}
+                              <Globe size={10} /> Map Selected Area
                             </button>
-                            <p className="text-xs text-slate-500">Existing objects and manual edits are preserved. Full connecting roads crossing the boundary are retained.</p>
+                            <button onClick={() => handleImportAll(activeArea, categories, false)} disabled={!categories.length || isImporting}
+                              className="w-full bg-indigo-700/70 hover:bg-indigo-600 disabled:opacity-50 text-white rounded py-1 text-xs cursor-pointer flex items-center justify-center gap-1">
+                              {categories.length === 4 ? 'Import all, whole features' : 'Import selected, whole features'}
+                            </button>
+                            <p className="text-xs text-slate-500">Map Selected Area keeps only what lies inside the polygon and cuts roads at its edge (cut ends become gateway candidates in Simulate; no traffic is added there). Whole features keeps full roads crossing the boundary. Existing objects and manual edits are preserved either way.</p>
                           </div>
                         )}
                         {report && !isImporting && (
                           <div className="border-t border-white/10 pt-2 text-xs flex flex-col gap-1" role="status">
-                            <strong className="text-slate-200">{report.cancelled ? 'Cancelled' : report.completed ? 'Saved' : 'Partial import'} · {report.areaName}</strong>
+                            <strong className="text-slate-200">{report.cancelled ? 'Cancelled' : report.completed ? 'Saved' : 'Partial import'} · {report.areaName}{report.clippedToBoundary ? ' (cut to boundary)' : ''}</strong>
+                            {report.clippedToBoundary && <div className="text-slate-400">{report.boundaryCuts ?? 0} road ends cut at the boundary</div>}
                             {report.categories.map(c => <div key={c.category} className={c.error ? 'text-amber-300' : 'text-slate-400'}>
                               {c.category}: {c.error ? `failed — ${c.error}` : c.category === 'signals' ? `${c.added} mapped signals available` : `${c.added} added, ${c.preserved} preserved, ${c.skipped} unsupported/skipped`} {c.source && !c.error ? `(${c.source})` : ''}
                             </div>)}
@@ -377,8 +427,8 @@ export const Toolbar: React.FC = () => {
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex flex-col items-center justify-center z-[9999] pointer-events-auto">
           <div className="glass-panel p-6 rounded-2xl flex flex-col gap-4 max-w-sm border border-indigo-500/20 shadow-2xl animate-scale-in">
             <div className="flex flex-col gap-1 text-center">
-              <h3 className="text-slate-100 font-semibold text-sm">Create study area</h3>
-              <p className="text-slate-400 text-xs">Name the boundary and choose the infrastructure to import.</p>
+              <h3 className="text-slate-100 font-semibold text-sm">{clipOnSave ? 'Map Selected Area' : 'Create study area'}</h3>
+              <p className="text-slate-400 text-xs">{clipOnSave ? 'Name the area and choose what to map. Only what lies inside the polygon is imported; roads are cut at its edge.' : 'Name the boundary and choose the infrastructure to import. Whole features touching it are kept.'}</p>
             </div>
             {categoryChoices}
             <input
@@ -399,7 +449,7 @@ export const Toolbar: React.FC = () => {
                 disabled={savingBoundary || !categories.length}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl py-2 cursor-pointer transition-all"
               >
-                {savingBoundary ? 'Saving…' : 'Create and import'}
+                {savingBoundary ? 'Saving…' : clipOnSave ? 'Map Selected Area' : 'Create and import'}
               </button>
               <button
                 onClick={() => setShowNameModal(false)}

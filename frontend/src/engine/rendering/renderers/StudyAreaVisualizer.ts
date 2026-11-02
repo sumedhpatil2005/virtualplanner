@@ -361,11 +361,12 @@ export class StudyAreaVisualizer {
     }
 
     for (const p of area.problems) {
-      if (p.severity === 'info') continue; // dead ends already show as grey junction dots
+      // Dead ends already show as grey junction dots; roads cut at a mapped area's edge are gateway candidates
+      if (p.severity === 'info' && p.kind !== 'area_edge') continue;
       points.add({
         position: at(p.location),
         pixelSize: 15,
-        color: Color.fromCssColorString(p.severity === 'error' ? '#ef4444' : '#f59e0b'),
+        color: Color.fromCssColorString(p.kind === 'area_edge' ? '#a78bfa' : p.severity === 'error' ? '#ef4444' : '#f59e0b'),
         outlineColor: Color.WHITE,
         outlineWidth: 2,
         disableDepthTestDistance: ALWAYS_ON_TOP,

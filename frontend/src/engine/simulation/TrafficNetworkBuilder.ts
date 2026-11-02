@@ -1,6 +1,7 @@
 import type { RoadObject } from '../objects/types';
 import type { TrafficNetwork, TrafficNode, TrafficEdge, TurnMovement, TurnDirection } from '../objects/trafficTypes';
 import { SpatialHashGrid } from '../rendering/spatial/SpatialHashGrid';
+import { hasOsmTopology } from '../objects/osmTopology';
 
 /**
  * Calculates geodesic distance between two points in meters using the Haversine formula.
@@ -94,6 +95,50 @@ export const GRADE_SEPARATION_M = 3.0;
 export class TrafficNetworkBuilder {
   private readonly spatialTolerance = JOIN_TOLERANCE_DEG;
 
+  /**
+   * Splits two OSM ways at the nodes they share (at the same level) and
+   * reports every place they cross without one.
+   */
+  private joinAtSharedNodes(
+    roadA: RoadObject,
+    roadB: RoadObject,
+    addSplitPt: (roadId: string, sIndex: number, pt: [number, number, number]) => void,
+    onCrossing: (crossing: [number, number], zA: number, zB: number) => void,
+  ) {
+    const a = roadA.coordinates, b = roadB.coordinates;
+    const shared = sharedVertices(a, b);
+    if (shared.size > 0) {
+      const indexB = new Map<string, number[]>();
+      b.forEach((p, i) => {
+        const k = vertexKey(p);
+        if (shared.has(k)) (indexB.get(k) ?? indexB.set(k, []).get(k)!).push(i);
+      });
+      a.forEach((pA, iA) => {
+        const list = indexB.get(vertexKey(pA));
+        if (!list) return;
+        for (const iB of list) {
+          const pB = b[iB];
+          if (Math.abs((pA[2] || 0) - (pB[2] || 0)) > GRADE_SEPARATION_M) continue;
+          addSplitPt(roadA.id, iA === a.length - 1 ? iA - 1 : iA, pA);
+          addSplitPt(roadB.id, iB === b.length - 1 ? iB - 1 : iB, pB);
+        }
+      });
+    }
+    for (let sA = 0; sA < a.length - 1; sA++) {
+      for (let sB = 0; sB < b.length - 1; sB++) {
+        const pA1 = a[sA], pA2 = a[sA + 1], pB1 = b[sB], pB2 = b[sB + 1];
+        const crossing = lineIntersection(pA1[0], pA1[1], pA2[0], pA2[1], pB1[0], pB1[1], pB2[0], pB2[1]);
+        if (!crossing || shared.has(vertexKey(crossing))) continue;
+        // Touching at a vertex of one way only (no shared node) is not a crossing either way
+        const dxA = pA2[0] - pA1[0], dyA = pA2[1] - pA1[1];
+        const ua = Math.abs(dxA) > Math.abs(dyA) ? (crossing[0] - pA1[0]) / dxA : (crossing[1] - pA1[1]) / (dyA || 1);
+        const dxB = pB2[0] - pB1[0], dyB = pB2[1] - pB1[1];
+        const ub = Math.abs(dxB) > Math.abs(dyB) ? (crossing[0] - pB1[0]) / dxB : (crossing[1] - pB1[1]) / (dyB || 1);
+        onCrossing(crossing, (pA1[2] || 0) + ua * ((pA2[2] || 0) - (pA1[2] || 0)), (pB1[2] || 0) + ub * ((pB2[2] || 0) - (pB1[2] || 0)));
+      }
+    }
+  }
+
   public build(roads: RoadObject[]): { network: TrafficNetwork; diagnostics: string; gradeSeparations: GradeSeparation[] } {
     const startTime = performance.now();
     const roadMap = new Map<string, RoadObject>(roads.map(r => [r.id, r]));
@@ -133,7 +178,9 @@ export class TrafficNetworkBuilder {
     };
 
     let bridgeTunnelCrossingsCount = 0;
+    let unjoinedOsmCrossings = 0;
     const gradeSeparations: GradeSeparation[] = [];
+    const osmTopology = new Map(roads.map(r => [r.id, hasOsmTopology(r)]));
     // Each pair is checked once: from the road that comes first in the list
     const order = new Map<string, number>(roads.map((r, i) => [r.id, i]));
 
@@ -166,6 +213,23 @@ export class TrafficNetworkBuilder {
         // Layer / Bridge / Tunnel check
         const provA = roadA.osmProvenance;
         const provB = roadB.osmProvenance;
+
+        // Two OpenStreetMap ways as mapped: OSM records where they join (a shared
+        // node), so they join there and nowhere else. A crossing without a shared
+        // node is a bridge, a tunnel or a mapping gap, never a junction to invent;
+        // ends that stop short of each other stay apart (the study area reports it).
+        if (osmTopology.get(roadA.id) && osmTopology.get(roadB.id)) {
+          this.joinAtSharedNodes(roadA, roadB, addSplitPt, (crossing, zA, zB) => {
+            bridgeTunnelCrossingsCount++;
+            const aOnTop = zA !== zB ? zA > zB : (provA?.layer ?? 0) >= (provB?.layer ?? 0);
+            if (Math.abs(zA - zB) > GRADE_SEPARATION_M || (provA?.layer ?? 0) !== (provB?.layer ?? 0)) {
+              gradeSeparations.push({ coordinates: crossing, upperZ: Math.max(zA, zB), lowerZ: Math.min(zA, zB), roadIds: aOnTop ? [roadA.id, roadB.id] : [roadB.id, roadA.id] });
+            } else {
+              unjoinedOsmCrossings++;
+            }
+          });
+          continue;
+        }
         let gradeSeparated = false;
 
         if (provA && provB && provA.layer !== provB.layer) {
@@ -302,7 +366,7 @@ export class TrafficNetworkBuilder {
     const nodeIncomingMap = new Map<string, string[]>();
     const nodeOutgoingMap = new Map<string, string[]>();
 
-    const activeNodes: { id: string; coords: [number, number, number] }[] = [];
+    const activeNodes: { id: string; coords: [number, number, number]; osm: boolean }[] = [];
     const nodeCoordsById = new Map<string, [number, number, number]>();
     // Nodes bucketed into tolerance-sized cells, so a match is always in the 3x3 neighbourhood
     const nodeCells = new Map<number, number[]>();
@@ -310,9 +374,10 @@ export class TrafficNetworkBuilder {
     const cellKeyOf = (cx: number, cy: number) => cx * 4194304 + cy;
     const tol = this.spatialTolerance;
 
-    const getNodeId = (coord: [number, number, number]): string => {
+    const getNodeId = (coord: [number, number, number], osm = false): string => {
       const cx = Math.floor(coord[0] / tol);
       const cy = Math.floor(coord[1] / tol);
+      const coordKey = osm ? vertexKey(coord) : '';
       // Earliest-created matching node wins, as with a linear scan in creation order
       let match = -1;
       for (let dx = -1; dx <= 1; dx++) {
@@ -324,6 +389,9 @@ export class TrafficNetworkBuilder {
             const n = activeNodes[idx];
             const dist = Math.sqrt((n.coords[0] - coord[0])**2 + (n.coords[1] - coord[1])**2);
             const zDist = Math.abs((n.coords[2] || 0) - (coord[2] || 0));
+            // Ends of OSM ways only merge with each other at the same OSM node; a road
+            // the user built still joins whatever lies within the tolerance
+            if (osm && n.osm && vertexKey(n.coords) !== coordKey) continue;
             if (dist < tol && zDist < GRADE_SEPARATION_M) match = idx;
           }
         }
@@ -337,7 +405,7 @@ export class TrafficNetworkBuilder {
       const cell = nodeCells.get(cellKey);
       if (cell) cell.push(activeNodes.length);
       else nodeCells.set(cellKey, [activeNodes.length]);
-      activeNodes.push({ id, coords: coord });
+      activeNodes.push({ id, coords: coord, osm });
       if (!nodeCoordsById.has(id)) nodeCoordsById.set(id, coord);
       return id;
     };
@@ -393,8 +461,9 @@ export class TrafficNetworkBuilder {
         const startPt = coords[0];
         const endPt = coords[coords.length - 1];
 
-        const startNodeId = getNodeId(startPt);
-        const endNodeId = getNodeId(endPt);
+        const isOsm = osmTopology.get(road.id) ?? false;
+        const startNodeId = getNodeId(startPt, isOsm);
+        const endNodeId = getNodeId(endPt, isOsm);
 
         const startClusterCoords = nodeCoordsById.get(startNodeId)!;
         const endClusterCoords = nodeCoordsById.get(endNodeId)!;
@@ -571,6 +640,7 @@ Total Detected Junctions (Nodes): ${nodesMap.size}
 Total Traffic Edges Generated: ${edgesMap.size}
 Roads with no connections: ${disconnectedRoadsCount}
 Detected Bridge/Tunnel Crossings: ${bridgeTunnelCrossingsCount}
+OSM crossings without a shared node (not joined): ${unjoinedOsmCrossings}
 Detected Roundabout Nodes: ${roundaboutsCount}
 Suspicious Intersections (>4 connections): ${suspiciousJunctionsCount}
 -----------------------------------------------`;

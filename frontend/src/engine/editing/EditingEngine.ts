@@ -15,7 +15,8 @@ import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
 import { junctionLayout } from '../objects/junctionLayout';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
-import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
+import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
+import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
 
 /** highway=* values fetched for study areas; the importer's allowlist, plus tracks it may keep. */
 const STUDY_AREA_HIGHWAYS = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|track';
@@ -131,7 +132,8 @@ export class EditingEngine {
 
   public addDrawingPoint(point: [number, number, number]) {
     // A throttled hover preview may still describe an older pointer location.
-    const snap = this.snapManager.findSnap(point);
+    // A study-area boundary is not a road: it does not snap to road points.
+    const snap = this.activeMode === 'import_osm' ? null : this.snapManager.findSnap(point);
     const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
 
     // A double-click also fires two single clicks at the same spot; ignore
@@ -142,6 +144,33 @@ export class EditingEngine {
     }
 
     this.drawingPoints.push(resolvedPoint);
+    this.notify();
+  }
+
+  /** Inserts a boundary vertex before `index` (used by the midpoint handles of a study-area boundary). */
+  public insertDrawingPoint(index: number, point: [number, number, number]) {
+    if (index < 0 || index > this.drawingPoints.length) return;
+    this.drawingPoints.splice(index, 0, point);
+    this.notify();
+  }
+
+  /** The saved Area whose boundary is being redrawn, if any (its id is kept when saved again). */
+  private redrawingAreaId: string | null = null;
+
+  public getRedrawingAreaId(): string | null {
+    return this.redrawingAreaId;
+  }
+
+  /** Loads a saved Area's boundary into the drawing, to move, add or remove its vertices and save it again. */
+  public beginRedrawArea(id: string) {
+    const area = this.savedAreas.find(a => a.id === id);
+    if (!area) throw new Error('That study area is no longer saved.');
+    const ring = area.polygonCoordinates.map(p => [p[0], p[1], p[2] || 0] as [number, number, number]);
+    const first = ring[0], last = ring[ring.length - 1];
+    if (ring.length > 1 && first[0] === last[0] && first[1] === last[1]) ring.pop();
+    if (this.activeMode !== 'import_osm') this.setMode('import_osm');
+    this.drawingPoints = ring;
+    this.redrawingAreaId = id;
     this.notify();
   }
 
@@ -158,6 +187,7 @@ export class EditingEngine {
 
   public clearDrawing() {
     this.drawingPoints = [];
+    this.redrawingAreaId = null;
     this.activeSnap = null;
     this.notify();
   }
@@ -686,7 +716,8 @@ export class EditingEngine {
       if (lon > maxLon) maxLon = lon;
     }
 
-    const id = 'area_' + Math.random().toString(36).substr(2, 9);
+    const redrawn = this.redrawingAreaId ? this.savedAreas.find(a => a.id === this.redrawingAreaId) : undefined;
+    const id = redrawn?.id ?? 'area_' + Math.random().toString(36).substr(2, 9);
     const areaObj: Area = {
       id,
       name,
@@ -700,7 +731,8 @@ export class EditingEngine {
 
     await apiPost('/api/areas', areaObj);
 
-    this.savedAreas.push(areaObj);
+    // Saving a redrawn boundary replaces the saved one (same id)
+    this.savedAreas = [...this.savedAreas.filter(a => a.id !== id), areaObj];
     this.clearDrawing();
     this.notify();
     return areaObj;
@@ -789,7 +821,9 @@ export class EditingEngine {
     for (const el of elements) {
       if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) continue;
 
-      const id = `osm_${el.id}`;
+      // A piece of a way cut at a study-area boundary ("Map Selected Area") gets its own id
+      const clip: { areaId: string; piece: number; startCut: boolean; endCut: boolean } | undefined = el.__clip;
+      const id = clip ? clippedRoadId(el.id, clip.areaId, clip.piece) : `osm_${el.id}`;
       const tags = el.tags || {};
       // Footways, paths, cycleways etc. are not roads for the traffic network
       const decision = classifyOsmWay(tags);
@@ -981,9 +1015,11 @@ export class EditingEngine {
           osmSourceId: `way/${el.id}`,
           originalTags: tags,
           layer: parseInt(tags.layer) || 0,
-          bridge: tags.bridge === 'yes',
-          tunnel: tags.tunnel === 'yes',
-          roundabout: tags.junction === 'roundabout'
+          // Any bridge=* or tunnel=* value but "no" (bridge=viaduct is a bridge too)
+          bridge: !!tags.bridge && tags.bridge !== 'no',
+          tunnel: !!tags.tunnel && tags.tunnel !== 'no' && tags.tunnel !== 'building_passage',
+          roundabout: tags.junction === 'roundabout',
+          ...(clip && { clip })
         }
       };
 
@@ -1027,7 +1063,8 @@ export class EditingEngine {
   private async fillFromLocalOsm(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[]): Promise<number> {
     const elements = await this.localOsm.ways(boxes);
     const deleted = await this.objectManager.deletedOsmIds();
-    const roads = this.osmWaysToRoads(elements, BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id) && !deleted.has(r.id));
+    const present = this.objectManager.osmWayIdsPresent();
+    const roads = this.osmWaysToRoads(elements, BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id) && !deleted.has(r.id) && !present.has(r.osmProvenance!.osmId));
     await this.objectManager.addMultipleAndSave(roads);
     return roads.length;
   }
@@ -1044,7 +1081,8 @@ export class EditingEngine {
     if (ids.length === 0) throw new Error('OpenStreetMap returned no roads for this area. Try again in a moment.');
 
     const deleted = await this.objectManager.deletedOsmIds();
-    const missing = ids.filter(id => !this.objectManager.getById(`osm_${id}`) && !deleted.has(`osm_${id}`));
+    const present = this.objectManager.osmWayIdsPresent();
+    const missing = ids.filter(id => !this.objectManager.getById(`osm_${id}`) && !deleted.has(`osm_${id}`) && !present.has(id));
     // Fetched in batches, then added together: one update for the map and the network
     const roads: RoadObject[] = [];
     for (let i = 0; i < missing.length; i += OSM_FETCH_BATCH) {
@@ -1086,12 +1124,13 @@ export class EditingEngine {
     return zone?.type === 'zone' ? areaFromBoundary(`zone-boundary:${zone.id}`, zone.name, zone.coordinates) : null;
   }
 
-  public async importStudyArea(area: Area, scenarioId: string, categories: InfrastructureCategory[]): Promise<StudyAreaImportReport> {
+  public async importStudyArea(area: Area, scenarioId: string, categories: InfrastructureCategory[], options: StudyAreaImportOptions = {}): Promise<StudyAreaImportReport> {
+    const clip = !!options.clipToBoundary;
     if (this.locked) throw new Error('Import is available in Build mode.');
     if (this.isImporting) throw new Error('An import is already running.');
     if (!categories.length) throw new Error('Choose at least one infrastructure category.');
     categories = [...new Set(categories)];
-    const report: StudyAreaImportReport = { areaId: area.id, areaName: area.name, categories: [], cancelled: false, completed: false };
+    const report: StudyAreaImportReport = { areaId: area.id, areaName: area.name, categories: [], cancelled: false, completed: false, clippedToBoundary: clip, boundaryCuts: 0 };
     this.studyAreaImportReport = report;
     this.setIsImporting(true);
     const abort = this.importAbort!.signal;
@@ -1107,7 +1146,7 @@ export class EditingEngine {
           if (category === 'signals') {
             const points = await new TrafficSignalSource(this.localOsm, this.overpass).signalsIn(boxes[0], abort);
             if (abort.aborted) throw new OverpassCancelledError();
-            result.source = 'cache'; result.added = points.filter(([lng, lat]) => geometryTouchesArea([[lng, lat, 0]], area)).length;
+            result.source = 'cache'; result.added = points.filter(([lng, lat]) => clip ? pointInPolygon([lng, lat], area.polygonCoordinates) : geometryTouchesArea([[lng, lat, 0]], area)).length;
             continue;
           }
           let elements: any[];
@@ -1125,7 +1164,12 @@ export class EditingEngine {
             const points = el.geometry?.map((p: any) => [p.lon, p.lat, 0]) ?? (el.type === 'node' ? [[el.lon, el.lat, 0]] : (el.members ?? []).flatMap((m: any) => (m.geometry ?? []).map((p: any) => [p.lon, p.lat, 0])));
             return geometryTouchesArea(points, area);
           });
-          const converted = category === 'roads' ? this.osmWaysToRoads(touching, scenarioId) : category === 'buildings' ? this.osmElementsToBuildings(touching, scenarioId) : this.osmElementsToMetro(touching, scenarioId);
+          // "Map Selected Area": the boundary box only chose what to fetch; keep what lies inside the polygon,
+          // cutting roads and metro lines where they cross it
+          const converted = clip
+            ? this.clipToArea(category, touching, area, scenarioId, report)
+            : category === 'roads' ? this.osmWaysToRoads(touching, scenarioId) : category === 'buildings' ? this.osmElementsToBuildings(touching, scenarioId) : this.osmElementsToMetro(touching, scenarioId);
+          const presentWays = category === 'roads' ? this.objectManager.osmWayIdsPresent() : null;
           result.skipped = touching.length - converted.length;
           const seen = new Set<string>();
           const additions: CityObject[] = [], pending: CityObject[] = [];
@@ -1138,6 +1182,10 @@ export class EditingEngine {
             // Historical numeric IDs were ambiguous. Never conflate a relation with a way.
             const compatibleLegacy = legacyObject && (legacyType === sourceType || (!legacyType && sourceType !== 'relation' && legacyObject.type === obj.type));
             const existing = this.objectManager.getById(obj.id) ?? (compatibleLegacy ? legacyObject : undefined);
+            // A way already in the project, whole or as pieces cut at another boundary, is not added twice
+            const osmWay = obj.type === 'road' ? obj.osmProvenance?.osmId : undefined;
+            if (!existing && osmWay !== undefined && presentWays?.has(osmWay)) { result.preserved++; continue; }
+            if (osmWay !== undefined && deleted.has(`osm_${osmWay}`) && obj.id !== `osm_${osmWay}`) { result.preserved++; continue; }
             if (existing) {
               result.preserved++;
               // Retry a failed save using the current object, preserving any intervening edits.
@@ -1164,6 +1212,50 @@ export class EditingEngine {
       report.completed = !report.cancelled && report.categories.length === categories.length && report.categories.every(c => !c.error);
       return report;
     } finally { this.studyAreaImportProgress = null; this.setIsImporting(false); this.notify(); }
+  }
+
+  /**
+   * Converts fetched OSM elements for "Map Selected Area": roads and metro
+   * lines are cut where they cross the polygon (pieces outside are dropped),
+   * buildings are kept when their footprint's centre lies inside, stations
+   * when they do. Cut ends are recorded on the piece (osmProvenance.clip) so
+   * the study area can offer them as gateway candidates; nothing is joined
+   * at a cut.
+   */
+  private clipToArea(category: Exclude<InfrastructureCategory, 'signals'>, elements: any[], area: Area, scenarioId: string, report: StudyAreaImportReport): CityObject[] {
+    const polygon = area.polygonCoordinates;
+    if (category === 'buildings') {
+      return this.osmElementsToBuildings(elements, scenarioId).filter(b => footprintInPolygon(b.coordinates as [number, number, number][], polygon));
+    }
+    if (category === 'roads') {
+      const pieces: any[] = [];
+      for (const el of elements) {
+        if (el.type !== 'way' || !Array.isArray(el.geometry) || el.geometry.length < 2) { pieces.push(el); continue; }
+        const coords = el.geometry.map((p: any) => [p.lon, p.lat, 0]);
+        const parts = clipPolylineToPolygon(coords, polygon);
+        if (parts.length === 1 && !parts[0].startCut && !parts[0].endCut && parts[0].coordinates.length === coords.length) { pieces.push(el); continue; }
+        parts.forEach((part, k) => {
+          pieces.push({ ...el, geometry: part.coordinates.map(([lon, lat]) => ({ lon, lat })), __clip: { areaId: area.id, piece: k, startCut: part.startCut, endCut: part.endCut } });
+        });
+      }
+      const roads = this.osmWaysToRoads(pieces, scenarioId);
+      report.boundaryCuts = (report.boundaryCuts ?? 0) + roads.reduce((n, r) => n + (r.osmProvenance?.clip?.startCut ? 1 : 0) + (r.osmProvenance?.clip?.endCut ? 1 : 0), 0);
+      return roads;
+    }
+    // Metro: stations inside, lines cut at the boundary (they carry their own elevation)
+    const out: CityObject[] = [];
+    for (const obj of this.osmElementsToMetro(elements, scenarioId)) {
+      if (obj.type === 'metro_station') {
+        const c = obj.coordinates as unknown as number[] | number[][];
+        const pt = (Array.isArray(c[0]) ? c[0] : c) as number[];
+        if (pointInPolygon(pt, polygon)) out.push(obj);
+        continue;
+      }
+      const parts = clipPolylineToPolygon(obj.coordinates as [number, number, number][], polygon);
+      if (parts.length === 1 && !parts[0].startCut && !parts[0].endCut) { out.push(obj); continue; }
+      parts.forEach((part, k) => out.push({ ...obj, id: `${obj.id}_in_${area.id}_${k}`, coordinates: part.coordinates } as CityObject));
+    }
+    return out;
   }
 
   private async fetchAreaElements(area: Area, category: Exclude<InfrastructureCategory, 'signals'>, signal: AbortSignal): Promise<any[]> {
@@ -1417,4 +1509,9 @@ export class EditingEngine {
   public cancelImport() {
     this.importAbort?.abort();
   }
+}
+
+/** Id of the piece of OSM way `wayId` lying inside study area `areaId` ("Map Selected Area"). */
+export function clippedRoadId(wayId: number | string, areaId: string, piece: number): string {
+  return `osm_${wayId}_in_${areaId}_${piece}`;
 }

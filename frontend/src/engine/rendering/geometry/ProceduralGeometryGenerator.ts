@@ -1,5 +1,5 @@
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
-import { elevatedLayer } from '../../objects/bridgeElevation';
+import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
 import { junctionLayout } from '../../objects/junctionLayout';
 import { ROAD_CLASS_LIFT_M } from '../../objects/roadSurface';
 import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
@@ -407,17 +407,21 @@ export class ProceduralGeometryGenerator {
 
     let roadCoords = coords;
     // Bridges and roads on a raised OSM layer: their heights come from liftOsmBridges (ramped at the ends)
-    const isBridge = !!road.osmProvenance?.bridge || elevatedLayer(road) > 0;
-    const isTunnel = road.osmProvenance?.tunnel || false;
+    const isBridge = isOsmBridge(road.osmProvenance) || elevatedLayer(road) > 0;
+    // Tunnels and roads in a cut: their depths come from liftOsmBridges too, where something crosses over them
+    const isTunnel = !!road.osmProvenance?.tunnel || depressedLevel(road) > 0;
     const bridgeElevation = 6.0;
     const maxElev = coords.reduce((max, c) => Math.max(max, c[2] || 0), 0);
+    const minElev = coords.reduce((min, c) => Math.min(min, c[2] || 0), 0);
 
     if (isBridge && maxElev < 0.01) {
       // Heights not worked out (yet): draw the deck level at the usual height
       roadCoords = coords.map(c => [c[0], c[1], bridgeElevation]);
-    } else if (isTunnel) {
-      // Offset tunnels slightly below the surface
+    } else if (isTunnel && minElev > -0.01) {
+      // No depth worked out (nothing crosses over it): just below the surface
       roadCoords = coords.map(c => [c[0], c[1], -0.2]);
+    } else if (isTunnel) {
+      roadCoords = coords;
     } else {
       // Where roads overlap at a junction the bigger road lies on top, a few
       // centimetres up, so surfaces never flicker against each other and the
@@ -688,7 +692,7 @@ export class ProceduralGeometryGenerator {
     for (const other of allObjects.drivablesNear(minLng - pad, minLat - pad, maxLng + pad, maxLat + pad)) {
       if (other.id === road.id) continue;
       // The other road's surface, as drawn: its class lift on top of its points
-      const lift = other.type === 'road' && !other.osmProvenance?.bridge && elevatedLayer(other) === 0 ? ROAD_CLASS_LIFT_M[other.roadClass] ?? 0 : 0;
+      const lift = other.type === 'road' && !isOsmBridge(other.osmProvenance) && elevatedLayer(other) === 0 && depressedLevel(other) === 0 ? ROAD_CLASS_LIFT_M[other.roadClass] ?? 0 : 0;
       const coordinates = lift ? other.coordinates.map(c => [c[0], c[1], (c[2] || 0) + lift]) : other.coordinates;
       gaps.push(...crossingGaps(path, { coordinates, width: other.width || 10 }));
     }
