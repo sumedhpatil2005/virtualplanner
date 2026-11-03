@@ -282,6 +282,18 @@ Confidence follows the layer: *high* = OSM contradicted by the survey turning co
   - Kureshi et al. 2026 (Zenodo 21712996) Table I lists Sakharam Waghmare Chowk as four-lane, i.e. 2 lanes per direction; the one two-way piece of the same road (way 1534819001) is tagged lanes=4 for both directions together.
 - **Status:** awaiting owner approval; not submitted.
 
+## Candidate edits not in the correction layer (awaiting owner approval and imagery)
+
+These are suspected OSM gaps found during the November 2026 calibration round. Unlike the corrections above, they are **not** applied locally: the correction layer's policy needs an independent check besides the survey, and for these only the survey (and the network's own connectivity) speaks. They are listed so a mapper can check them on imagery. **Awaiting owner approval; nothing submitted, nothing applied.**
+
+### Panchratna Chowk: no median opening between the two carriageways of Hinjawadi Road
+
+- **What OSM shows (snapshot of 2026-11-01):** Panchratna Chowk Road (way [475607455](https://www.openstreetmap.org/way/475607455), the north arm) ends on the eastbound carriageway (way [1237995656](https://www.openstreetmap.org/way/1237995656)) at about 18.59114 N, 73.74021 E. The south arm (way [518992282](https://www.openstreetmap.org/way/518992282)) ends on the westbound carriageway (ways [239840580](https://www.openstreetmap.org/way/239840580) / [1209259317](https://www.openstreetmap.org/way/1209259317)) at about 18.59102 N, 73.74042 E, where OSM has a traffic signal. No way joins the two carriageways there, so the junction is two separate T-junctions: in the model a vehicle cannot go from the north arm to the south arm (or turn right from either, or turn right from the east or west approach) without leaving the junction.
+- **What the survey shows:** Khandekar et al. (2025) Table 2 / Kureshi et al. (2026) count Panchratna Chowk as a signalised four-approach junction with 529 veh/h north-to-south straight, 443 veh/h south-to-north straight, and right turns from all four approaches (pune_west_2026.json). Those six movements need a crossing of the median.
+- **Supporting check:** with stop-line counting (CALIBRATION.md §4.1) the core of this junction has exactly four arms, matching the study's four approaches, which supports the inferred location; only the crossing is missing.
+- **Candidate edit:** if imagery shows a median opening (or an at-grade crossing) at the signal, add the short connecting carriageway(s) between the two nodes, with the turn restrictions that apply. If imagery shows no opening, the survey's Panchratna Chowk is probably a different junction and the location in the count file must be revisited instead.
+- **Status:** awaiting owner approval and imagery; not submitted; not applied locally.
+
 ## Approval checklist (per edit, before any OSM changeset)
 
 1. Project owner approves the specific edit in writing.
