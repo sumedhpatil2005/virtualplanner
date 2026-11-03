@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RoadObject, RoadClassification, JunctionObject } from '../objects/types';
 import { StudyAreaExplorer, type StudyArea } from '../simulation/StudyAreaExplorer';
-import { TrafficMicroSim, STEP_S, VEHICLE_TYPES, CRITICAL_GAP_MINOR_S, losFor, OD_REFERENCE_LEVEL } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, VEHICLE_TYPES, CRITICAL_GAP_MINOR_S, losFor, OD_REFERENCE_LEVEL, timeToCover } from '../simulation/TrafficMicroSim';
 import { compileStudyDemand } from '../simulation/StudyDemand';
 import { PUNE_TRIP_RATES, vehiclesPerMotorisedTrip } from '../simulation/tripRates';
 import { hourFactor, periodOf, type DiurnalProfile } from '../simulation/timeOfDay';
@@ -136,6 +136,79 @@ describe('mixed-traffic discharge', () => {
       expect(pcuPerHour).toBeLessThan(1.25 * indoHcm7m);
       console.log(JSON.stringify({ mixedDischarge: { abreast, pcuPerHour: Math.round(pcuPerHour), indoHcm7m } }));
     }
+  });
+});
+
+/**
+ * Discharge of a standing mixed queue (Pune class shares) from the west
+ * approach of a two-lane-per-direction signalised crossroads, by where the
+ * vehicles go (shares turning left, going straight, turning right). Each
+ * vehicle's class and destination come from `orderSeed`, so different seeds
+ * give different orders in the queue. PCU/h over the saturated part of the
+ * green (10-50 s), counted as vehicles leave the approach.
+ */
+const queueDischarge = (mix: [number, number, number], orderSeed: number, abreast = true) => {
+  const { area, map, j } = crossroads(2, 240);
+  const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 1, junctions: [j], twoWheelersAbreast: abreast, signalTiming: 'equal' });
+  const west = nodeAt(area, -400, 0), east = nodeAt(area, 400, 0), north = nodeAt(area, 0, 400), south = nodeAt(area, 0, -400);
+  const linkId = [...sim.debugLanes().keys()].find(id => sim.signalStateOf(id) !== null && sim.linkLength(id)! > 300 && id.startsWith('ew') && id.endsWith('fwd'))!;
+  let t = 0;
+  while (sim.signalStateOf(linkId) === 'green') { sim.step(); if (++t > 4000) break; }
+  let seed = orderSeed;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let i = 0; i < 120; i++) {
+    let r = rnd(), kind = VEHICLE_TYPES[0].kind;
+    for (const ty of VEHICLE_TYPES) if ((r -= ty.share) <= 0) { kind = ty.kind; break; }
+    const u = rnd();
+    // Left-hand traffic: from the west approach, left is north and right is south
+    sim.spawnVehicle(west, u < mix[0] ? north : u < mix[0] + mix[1] ? east : south, kind);
+  }
+  run(sim, 100);
+  while (sim.signalStateOf(linkId) !== 'green') sim.step();
+  const greenAt = sim.timeS;
+  const kindOf = new Map(sim.debugLanes().get(linkId)!.flat().map(v => [v.id, v.kind as string] as const));
+  const left = new Map<number, number>();
+  run(sim, 60, now => {
+    const still = new Set(sim.debugLanes().get(linkId)!.flat().map(v => v.id));
+    kindOf.forEach((_k, id) => { if (!still.has(id) && !left.has(id)) left.set(id, now - greenAt); });
+  });
+  const pcuOf = new Map(VEHICLE_TYPES.map(ty => [ty.kind as string, ty.pcu]));
+  return [...left].filter(([, tt]) => tt >= 10 && tt < 50).reduce((n, [id]) => n + pcuOf.get(kindOf.get(id)!)!, 0) * 3600 / 40;
+};
+const INDO_HCM_7M = 7 * (1140 - 60 * 7);
+
+describe('queue discharge does not stall', () => {
+  it('two-wheelers abreast keep the Indo-HCM saturation flow whatever the order of the queue', () => {
+    // A rider cleared beside its partner used to be refused every step once the partner
+    // had crossed first and pulled away, and one rider braking behind the vehicle ahead made
+    // its whole lane count as blocked: for some orders the lane stalled until red (1,323 and
+    // 2,511 PCU/h on this approach for two orders, against 5,040)
+    for (const orderSeed of [7, 11, 23, 41, 97]) {
+      const pcu = queueDischarge([0, 1, 0], orderSeed);
+      expect(pcu).toBeGreaterThan(0.8 * INDO_HCM_7M);
+      expect(pcu).toBeLessThan(1.3 * INDO_HCM_7M);
+    }
+  });
+
+  it('a turning queue discharges as a platoon', () => {
+    // Followers anticipate the room the vehicle ahead makes while they drive the turn, and
+    // a lane whose rear is pulling away is not taken for blocked. Before, each follower waited
+    // for the whole gap beyond the junction to open first: a queue turning right discharged at
+    // 2,493 PCU/h here (0.49 of Indo-HCM for 7 m), left at 3,866 (0.77); now about 0.84 and 0.90.
+    // HCM 2000 (Exhibit 16-7) adjusts saturation flow by 0.85 for an exclusive kerb-side (here
+    // left) turn lane and 0.95 for a protected far-side (here right) turn.
+    const near = queueDischarge([1, 0, 0], 7), far = queueDischarge([0, 0, 1], 7), mixed = queueDischarge([0.3, 0.4, 0.3], 7);
+    expect(near).toBeGreaterThan(0.8 * INDO_HCM_7M);
+    expect(far).toBeGreaterThan(0.75 * INDO_HCM_7M);
+    expect(mixed).toBeGreaterThan(0.95 * Math.min(near, far));
+    console.log(JSON.stringify({ turnDischarge: { near: Math.round(near), far: Math.round(far), mixed: Math.round(mixed), indoHcm7m: INDO_HCM_7M } }));
+  });
+
+  it('time to cover a distance accelerating from a speed up to a top speed', () => {
+    expect(timeToCover(0, 3, 1, 10)).toBe(0);
+    expect(timeToCover(20, 5, 1, 5)).toBeCloseTo(4, 6); // already at top speed
+    expect(timeToCover(8, 0, 1, 10)).toBeCloseTo(4, 6); // s = a t^2 / 2
+    expect(timeToCover(30, 0, 1, 4.5)).toBeCloseTo(4.5 + (30 - 10.125) / 4.5, 6); // accelerate 4.5 s over 10.125 m, then cruise
   });
 });
 

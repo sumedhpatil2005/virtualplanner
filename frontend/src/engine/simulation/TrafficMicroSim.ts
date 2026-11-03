@@ -81,8 +81,20 @@ export const DEADLOCK_S = 60;
 export const STEP_S = 0.25;
 /** Vehicles per lane that may hold a grant to cross at once (the front one and the platoon behind it). */
 const PLATOON_GRANTS = 6;
-/** A next lane whose last vehicle is slower than this (m/s) counts as blocked when choosing a lane. */
+/** A next lane whose last vehicle is slower than this (m/s) and not speeding up counts as blocked when choosing a lane. */
 const BLOCKED_TAIL_MPS = 1;
+/** Speeding up faster than this (m/s²), a slow tail is pulling away rather than blocked. */
+const PULLING_AWAY_MPS2 = 0.2;
+/**
+ * Whether the rear of a lane is moving off: one of its last three vehicles is
+ * above walking pace or speeding up. One rider braking hard behind the vehicle
+ * it has just followed across (a pair entering side by side) does not make the
+ * lane blocked while the vehicles ahead of it pull away.
+ */
+const rearMoving = (lane: readonly { v: number; acc: number }[]) => {
+  for (let k = lane.length - 1; k >= Math.max(0, lane.length - 3); k--) if (lane[k].v > BLOCKED_TAIL_MPS || lane[k].acc > PULLING_AWAY_MPS2) return true;
+  return false;
+};
 /**
  * Lateral offset from the lane centre of each rider of a two-wheeler pair riding
  * abreast: 0.55 m puts the two 1.1 m apart, so two riders about 0.75 m wide fit
@@ -107,8 +119,18 @@ const YIELD_LINE_M = 8;
  * of clearance, often 60 m out, starves crossing and merging approaches.
  */
 const CLAIM_AHEAD_S = 2;
-/** Room ahead is anticipated over at most this long, so a brief look ahead never assumes a distant gap. */
-const ANTICIPATE_S = 2;
+/**
+ * Time (s) to cover `dist` metres from speed `v`, accelerating at `a` up to
+ * `vMax` (uniform acceleration, then constant speed).
+ */
+export function timeToCover(dist: number, v: number, a: number, vMax: number): number {
+  if (dist <= 0) return 0;
+  const top = Math.max(vMax, v, 0.1);
+  if (v >= top || a <= 0) return dist / Math.max(v, 0.1);
+  const dAcc = (top * top - v * v) / (2 * a);
+  if (dist <= dAcc) return (-v + Math.sqrt(v * v + 2 * a * dist)) / a;
+  return (top - v) / a + (dist - dAcc) / top;
+}
 /** Beyond this many vehicles, new arrivals wait at the area edge. */
 const MAX_VEHICLES = 5000;
 /**
@@ -1285,29 +1307,41 @@ export class TrafficMicroSim {
     // now counts, plus what a moving tail clears before this one reaches its line.
     // A rider beside its partner needs no room of its own.
     const need = (connector: LaneConnector) => connector.entry + veh.type.lengthM + veh.type.minGapM;
-    const room = (k: number, d: number) => {
+    // The room is needed where the movement ends, when this vehicle gets there: a
+    // moving tail goes on at its speed for as long as this vehicle takes to reach
+    // the line and drive the movement (kinematics from its speed and acceleration,
+    // at turning speed through a turn). Projecting the tail only over the time to
+    // the line (at the line: none) made every follower wait for the whole gap to
+    // open before moving, so a turning queue could not discharge as a platoon
+    // (one vehicle per lane every 4-5 s).
+    const room = (k: number, d: number, connector: LaneConnector) => {
       const target = next.lanes[k];
       const tail = target[target.length - 1];
-      const ahead = tail ? tail.v * Math.min(Math.max(0, d) / Math.max(veh.v, 1), ANTICIPATE_S) : 0;
+      const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? TURN_SPEED_MPS : next.speed * veh.speedFactor);
+      const ahead = tail && rearMoving(target) ? tail.v * tArrive : 0;
       return this.backSpace(target) + ahead - this.pendingInto(next.index, k, veh);
     };
     let lane = withPartner ? partner!.grantLane! : this.mappedLane(link, veh.lane, next);
     let connector = this.connectorFor(link, veh.lane, next, lane);
     dist = connector.start - veh.pos;
-    if (!withPartner && room(lane, dist) < need(connector)) {
+    if (!withPartner && room(lane, dist, connector) < need(connector)) {
       // The lane it leads to has no room yet. Between links with the same number of
       // lanes, if its tail is moving away the room comes in a moment: wait for it
       // (switching then sends parallel lanes across each other). If its tail is
       // standing (the lane is blocked), take another lane of the next link that has
       // room, if any.
       // Where the lane count changes (a merge or a widening) any lane with room will do.
-      const t = next.lanes[lane][next.lanes[lane].length - 1];
-      if (link.lanes.length === next.lanes.length && t && t.v > BLOCKED_TAIL_MPS) return this.refuse(link, 'room-wait');
+      // A lane whose rear is pulling away is not blocked: at the start of green the
+      // vehicles just across are still below walking pace (and a rider entering beside
+      // its partner may brake hard behind the vehicle ahead), and treating the lane as
+      // blocked sent the followers of one lane into the other lane of the next link,
+      // across that lane's platoon, so both stalled at the line.
+      if (link.lanes.length === next.lanes.length && rearMoving(next.lanes[lane])) return this.refuse(link, 'room-wait');
       let best = -1, bestRoom = -Infinity;
       for (let k = 0; k < next.lanes.length; k++) {
         if (k === lane) continue;
         const c = this.connectorFor(link, veh.lane, next, k);
-        const r = room(k, c.start - veh.pos) - need(c);
+        const r = room(k, c.start - veh.pos, c) - need(c);
         if (r > bestRoom) { bestRoom = r; best = k; }
       }
       if (best < 0 || bestRoom < 0) return this.refuse(link, 'room');
@@ -1844,16 +1878,25 @@ export class TrafficMicroSim {
     const nextIdx = veh.route[veh.routeIdx + 1];
     const next = this.links[nextIdx];
     const target = next.lanes[veh.grantLane!];
-    let pos = c.entry - c.length + (veh.pos - c.start);
+    // Measured along the next link, the movement starts at entry - length (negative
+    // when the turn is longer than the stretch of the next link it covers)
+    const moveStart = c.entry - c.length;
+    let pos = moveStart + (veh.pos - c.start);
     // A rider crossing beside its partner enters the next lane alongside it (still
-    // behind the vehicle ahead of the pair), so the pair stays side by side
+    // behind the vehicle ahead of the pair), so the pair stays side by side. Only
+    // while the partner is still beside it: a partner that has already ridden on
+    // (it crossed first and pulled away) leaves this rider to cross on its own,
+    // subject to room like anyone else. (Before, a rider whose partner had gone was
+    // refused every step until the signal turned red: placed "beside" a partner far
+    // ahead it always landed behind the start of the movement, so the lane stalled.)
     const tailV = target[target.length - 1];
-    const besideTail = !!veh.pairCross && !!tailV && tailV.type.kind === 'two_wheeler' && !tailV.abreast && veh.type.kind === 'two_wheeler';
+    const besideTail = !!veh.pairCross && !!tailV && tailV.type.kind === 'two_wheeler' && !tailV.abreast && veh.type.kind === 'two_wheeler'
+      && tailV.pos - pos <= tailV.type.lengthM;
     if (besideTail) {
       const front = target[target.length - 2];
       pos = Math.min(pos, tailV.pos - 0.05, front ? front.pos - front.type.lengthM - 0.2 : Infinity);
     }
-    if (besideTail ? pos < 0 : pos > this.backSpace(target) - 0.2) {
+    if (besideTail ? pos < moveStart - 0.01 : pos > this.backSpace(target) - 0.2) {
       // Another vehicle took the space this step: wait at the stop line. It is put
       // back a little, so the vehicles behind it (who may already be cleared and
       // close behind) are kept behind it too.
