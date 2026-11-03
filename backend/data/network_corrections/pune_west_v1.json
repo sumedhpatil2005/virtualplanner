@@ -7,7 +7,7 @@
  "policy": [
   "Corrections are applied by TwinCity on top of the imported OSM roads when the simulation network is built; OpenStreetMap itself is never edited.",
   "A correction is made only where OSM is contradicted by the survey and by an independent check (left-hand-traffic side rule, OSM tagging rules, the study's own description).",
-  "Each correction can be turned off (enabled: false here, or the whole layer from the Simulate panel); docs/OSM_PROPOSED_EDITS.md lists the matching OSM edits for a mapper to review."
+  "Each correction can be turned off (enabled: false here, or the whole layer from the Simulate panel); docs/PROPOSED_OSM_EDITS.md lists the matching OSM edits for a mapper to review."
  ],
  "actions": {
   "reverse": "Reverse the way's direction of travel (geometry order), keeping it one-way.",

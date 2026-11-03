@@ -22,7 +22,7 @@ describe('Webster optimum cycle', () => {
   });
 
   it('splits effective green in proportion to the flow ratios, and the phases add up to the cycle', () => {
-    // Two phases, amber 3 s, all-red 2 s: L = 2 x (2 + 2) = 8 s (IRC:93 L = 2n + R)
+    // Two phases, amber 3 s, all-red 2 s: L = 2 x (2 + 2) = 8 s (L = 2n + R, IJERA 9(4) 2019)
     const t = websterTiming([{ flow: 400, saturationFlow: 1250 }, { flow: 250, saturationFlow: 1000 }], { amberS: 3, allRedS: 2 });
     expect(t.lostTimeS).toBe(8);
     expect(t.optimumCycleS).toBeCloseTo((1.5 * 8 + 5) / (1 - 0.57), 6);

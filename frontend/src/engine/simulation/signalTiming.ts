@@ -1,6 +1,6 @@
 /**
  * Fixed-time signal design: Webster's optimum cycle and green split, with
- * Indo-HCM width-based saturation flow and IRC:93 lost times.
+ * Indo-HCM width-based saturation flow and L = 2n + R lost times.
  *
  * Sources (all opened and checked, see docs/CALIBRATION.md):
  *  - Webster, F. V. (1958) Traffic Signal Settings, Road Research Technical
@@ -10,9 +10,15 @@
  *    Webster's Formula for Optimum Cycle Length" (q = 400, 250 veh/h,
  *    s = 1250, 1000 veh/h, L = 16 s -> C0 = 67.44 s),
  *    https://www.apsed.in/post/traffic-signal-design-webster-s-formula-for-optimum-cycle-length
- *  - IRC:93 practice as taught in Indian texts: total lost time L = 2n + R
- *    (2 s start-up lost time per phase, R = all-red time per cycle); quoted
- *    e.g. in IJERA 9(4) 2019 (Gandimaisamma intersection, Hyderabad).
+ *  - Total lost time L = 2n + R (2 s per phase, R = all-red time per cycle),
+ *    the form used in Indian Webster designs, e.g. Nikhil et al., IJERA 9(4)
+ *    2019 pp. 23-28 (Gandimaisamma intersection, Hyderabad; opened and checked:
+ *    pp. 25 and 27), https://www.ijera.com/papers/vol9no4/Series-2/D0904022328.pdf.
+ *    Note: IRC:93-1985 itself (Appendix 3, p. 37 of the scanned copy at
+ *    law.resource.org) does not state 2n + R; its worked example takes the
+ *    lost time as the amber time per cycle plus a 4 s first-vehicle reaction
+ *    time per phase. The 2 s per phase used here is therefore the IJERA /
+ *    textbook value, not an IRC:93 figure (see docs/CALIBRATION.md).
  *  - Effective green g = G + amber - start-up lost time (T. V. Mathew, IIT
  *    Bombay, "Design Principles of Traffic Signal", NPTEL, eq. 4),
  *    https://www.civil.iitb.ac.in/tvm/nptel/571_TrSignal.pdf
@@ -27,7 +33,7 @@
  * its flow ratios, and is reported as oversaturated.
  */
 
-/** Start-up lost time per phase (s); IRC:93 L = 2n + R. */
+/** Start-up lost time per phase (s): L = 2n + R as in IJERA 9(4) 2019 (not an IRC:93 figure; see header). */
 export const STARTUP_LOST_S = 2;
 export const MAX_CYCLE_S = 150;
 export const MIN_CYCLE_S = 40;
@@ -55,7 +61,7 @@ export interface PhaseDemand {
 export interface WebsterOptions {
   amberS: number;
   allRedS: number;
-  /** Lost time per phase; IRC:93 takes 2 s start-up plus the all-red. */
+  /** Lost time per phase: 2 s start-up (L = 2n + R) plus the all-red. */
   startupLostS?: number;
   maxCycleS?: number;
   minCycleS?: number;

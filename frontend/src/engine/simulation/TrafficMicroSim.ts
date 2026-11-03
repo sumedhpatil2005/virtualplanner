@@ -184,7 +184,7 @@ export interface MicroSimOptions {
   /**
    * Fixed-time signal plans: 'webster' (default) times each signalised junction
    * from its critical flows (Webster's optimum cycle, Indo-HCM width-based
-   * saturation flow, IRC:93 lost times; signalTiming.ts); 'equal' gives every
+   * saturation flow, L = 2n + R lost times; signalTiming.ts); 'equal' gives every
    * phase SIGNAL_GREEN_S (the earlier plan, kept for comparison).
    */
   signalTiming?: 'webster' | 'equal';
