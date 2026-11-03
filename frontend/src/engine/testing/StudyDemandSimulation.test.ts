@@ -48,11 +48,24 @@ describe('repeatable scenario experiments', () => {
     vi.spyOn(mode as any, 'startLoop').mockImplementation(() => {});
     mode.enter(); mode.selectRoad('mid', false);
     const baseline = await mode.captureBaseline(180);
+    if (!baseline) throw new Error('baseline: ' + mode.getState().comparison.staleReason);
     expect(baseline?.metrics.completedTrips).toBeGreaterThan(0);
     expect((await mode.runComparison())?.metrics).toEqual(baseline?.metrics);
-    context = { ...context, buildings: [building('home', 300, 12000), building('work', 900, 0, 6000)] };
-    expect(await mode.runComparison()).toBeNull();
-    expect(mode.getState().comparison.staleReason).toMatch(/demand changed/i);
+    // A land-use change no longer blocks the comparison: the proposal runs on the
+    // baseline's frozen demand (infrastructure effect only) and the change is flagged
+    context = { ...context, buildings: [...context.buildings!, building('mixed', 0, 6000, 6000)] };
+    const frozen = await mode.runComparison();
+    expect(frozen?.metrics).toEqual(baseline?.metrics);
+    const cmp = mode.getState().comparison;
+    expect(cmp.demandChanged).toBe(true);
+    expect(cmp.staleReason).toBeNull();
+    expect(cmp.result?.kind).toBe('infrastructure');
+    expect(cmp.result?.caveats[0]).toMatch(/land use changed/i);
+    // Asking for the new demand is labelled a development scenario, never an infrastructure effect
+    await mode.runComparison({ withNewDemand: true });
+    const dev = mode.getState().comparison.result;
+    expect(dev?.kind).toBe('development');
+    expect(dev?.demandAfter).toBeGreaterThan(dev!.demandBefore);
     mode.selectVehicle(42); expect(mode.getState().selectedVehicleId).toBe(42);
     mode.resetTraffic(); expect(mode.getState().selectedVehicleId).toBeNull();
     mode.dispose();
