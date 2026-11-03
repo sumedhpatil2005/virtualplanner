@@ -210,8 +210,20 @@ At `4f5e11c` congestion feedback was computed on the uncalibrated project demand
 5. Sakharam: confirm on imagery or site whether it is a roundabout.
 6. Re-run the before/after table after each.
 
-## 9. Checks run on the final state
+## 9. Area demand and road analysis (branch `realistic-traffic`, after `c212dc7`)
 
-- Frontend `npx vitest run --config vitest.config.ts`: 41 committed test files, 38 passed and 3 skipped (opt-in harnesses); 331 tests, 328 passed, 3 skipped, 0 failed. (The working tree also holds two uncommitted `*.scratch.test.ts` files, giving 43 files / 333 tests / 329 passed / 4 skipped in the same run.)
-- `tsc -b`: no errors. `oxlint`: 0 errors, 5 warnings (unused variables, pre-existing).
+The calibration above runs single junctions on the counted demand. The road analysis (docs/ROAD_ANALYSIS.md) runs whole study areas on *estimated* demand, and was checked against the same counts:
+
+- **Demand magnitude now matches the counts** at most counted junctions in the regression areas (app-equivalent analysis job on the final code, seed 42, project land use, AM; count / model demand through the junction): Ganraj 8,296 / 5,345; Panchratna 6,315 / 6,217; Infosys Circle Ph. 1 4,243 / 3,939; **Kasturi 6,200 / 10,924 (overestimate**: the edge arterials meeting there each get the class-typical 500 veh/h/lane). Before (internal-only gravity demand, OSM buildings) these were 856 to 2,716.
+- **The simulated junctions serve 20–56% of it** (AM served: Ganraj 2,968; Panchratna 1,860; Infosys 1,288; Kasturi 2,192; PM 26–42%), consistent with §3 (41–68% at single junctions on the counted demand) and §4.4 (modelled Y > 1). The shortfall is junction capacity in the model, not missing demand; the real phase plans are unknown and nothing was tuned (§8 item 1 still applies).
+- **Large areas exceed modelled capacity** (VSG 2 km, Dange Chowk 2 km: 58–69% of routable demand enters, 22–28% of the hour at the 5,000-vehicle limit). The panel states this first, and route feedback is not taken from a jammed run.
+- Full figures and their sources: docs/ROAD_ANALYSIS.md §4 and §6.
+- No calibration fit is applied to area demand; the counts-calibrated plan (§2) remains a separate, opt-in step under Advanced.
+
+## 10. Checks run on the final state
+
+Run at `651fc2f` (branch `realistic-traffic`):
+
+- Frontend `npx vitest run --config vitest.config.ts`: 43 committed test files (40 run, 3 opt-in harnesses skipped); 346 tests, 343 passed, 3 skipped, 0 failed. The working tree also holds six uncommitted `*.scratch.test.ts` probes (five skip unless their environment variables are set), giving 49 files / 352 tests / 344 passed / 8 skipped in the same run.
+- `tsc -b`: no errors. `oxlint src`: 0 errors, 5 warnings (unused variables, pre-existing).
 - Backend `pytest`: 50 passed.
