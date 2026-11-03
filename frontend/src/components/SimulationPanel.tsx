@@ -115,8 +115,8 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
               </button>
             </span>
           </div>
-          <TimeOfDayPanel tod={sim.timeOfDay} />
           <RoadAnalysisView sim={sim} />
+          <TimeOfDayPanel tod={sim.timeOfDay} />
           <div className="space-y-2 pt-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Advanced</p>
             <Advanced title="Live traffic on the map">

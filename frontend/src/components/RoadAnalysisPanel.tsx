@@ -72,7 +72,7 @@ const Summary: React.FC<{ r: RoadAnalysisResult; demandSource: string | null; se
         {r.directions.map(d => (
           <li key={d.label} className="space-y-1">
             <div className="flex items-baseline justify-between gap-2 text-sm">
-              <span className="text-slate-200 capitalize">{d.label}</span>
+              <span className="text-slate-200">{d.label.charAt(0).toUpperCase() + d.label.slice(1)}</span>
               <span className="tabular-nums text-white">{fmt(d.vph)} <span className="text-slate-500 text-xs">veh/h</span></span>
             </div>
             <div className="relative h-2 rounded-full bg-white/5 overflow-hidden" title={`Capacity ${fmt(d.capacityVph)} veh/h (assumed, ${d.lanes} lane${d.lanes === 1 ? '' : 's'})`}>
@@ -87,8 +87,9 @@ const Summary: React.FC<{ r: RoadAnalysisResult; demandSource: string | null; se
           </li>
         ))}
       </ul>
+      {r.load?.message && <div data-testid="overload"><Notice tone="warn" icon={AlertTriangle}>{r.load.message}</Notice></div>}
       <div className="space-y-1.5">
-        {r.reasons.map((x, i) => <p key={i} className="text-sm text-slate-300 leading-snug">{x}</p>)}
+        {r.reasons.filter(x => x !== r.load?.message).map((x, i) => <p key={i} className="text-sm text-slate-300 leading-snug">{x}</p>)}
       </div>
       <p className="text-xs text-slate-500">{formatDistanceM(sectionLength)} section{r.section.carriageways === 2 ? ', both carriageways' : ''}{r.section.endsAt.length ? `, from ${r.section.endsAt.slice(0, 2).join(' to ')}` : ''}. Estimated traffic, not counted on this road.</p>
     </div>
@@ -275,6 +276,8 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
           <li>Inside the area: {fmt(comp.internal)} veh/h</li>
           <li>Between the area and beyond: {fmt(comp.outbound + comp.inbound)} veh/h</li>
           <li>Through on main roads: {fmt(comp.through)} veh/h{comp.throughIncluded ? '' : ' (off)'}</li>
+          {(comp.noEdgeRoute ?? 0) >= 1 && <li className="text-amber-300/80">Left out, no drivable way to the area's edge: {fmt(comp.noEdgeRoute!)} veh/h</li>}
+          {comp.outsideArea >= 1 && <li className="text-slate-500">Left out, beyond reach of the area's roads: {fmt(comp.outsideArea)} veh/h</li>}
         </ul>
       )}
       {d && <p className="leading-snug">{d.label}</p>}
@@ -297,7 +300,7 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
           ))}
         </div>
       </div>
-      {sim.analysis.output && <p className="text-slate-500">Analysis: {Math.round(sim.analysis.output.result.windowS / 60)} min counted after a 5 min warm-up; {Math.round((sim.analysis.output.rerouted.at(-1) ?? 0) * 100)}% of trips changed route after adapting to congestion; {fmt(sim.analysis.output.unroutedVph)} veh/h could not be routed. <CheckCircle2 size={11} className="inline" /> Same inputs give the same result.</p>}
+      {sim.analysis.output && <p className="text-slate-500">Analysis: {Math.round(sim.analysis.output.result.windowS / 60)} min counted after a 5 min warm-up; {sim.analysis.output.adaptation && !sim.analysis.output.adaptation.applied ? `${sim.analysis.output.adaptation.reason ?? 'Routes were not adapted to congestion.'} ` : `${Math.round((sim.analysis.output.rerouted.at(-1) ?? 0) * 100)}% of trips changed route after adapting to congestion; `}{fmt(sim.analysis.output.unroutedVph)} veh/h could not be routed. <CheckCircle2 size={11} className="inline" /> Same inputs give the same result.</p>}
     </div>
   );
 };
