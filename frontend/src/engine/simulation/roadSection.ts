@@ -17,6 +17,9 @@ import type { StudyArea, DrivableObject, StudySegment } from './StudyAreaExplore
  * junctions, both directions.
  */
 export const SECTION_MAX_M = 900;
+/** A placeholder name the importer gives an unnamed way from its OSM class ("Secondary_link Road", "Residential Road"). */
+export const isGenericRoadName = (name: string | undefined) =>
+  !name || /^(unnamed|residential|service|primary|secondary|tertiary|trunk|motorway|living_street|unclassified|road|track)(_link)? road$/i.test(name.trim());
 /** Another carriageway of the same road this close (m) runs alongside the section. */
 const ALONGSIDE_M = 45;
 
@@ -29,7 +32,7 @@ export function roadKeys(road: DrivableObject | undefined): Set<string> {
   const keys = new Set<string>();
   if (!road) return keys;
   const tags = road.type === 'road' ? road.osmProvenance?.originalTags ?? {} : {};
-  const names = [road.name, tags.name, tags.alt_name, tags.official_name, tags.old_name].filter((n): n is string => !!n && !/^(unnamed|residential|service) road$/i.test(n));
+  const names = [road.name, tags.name, tags.alt_name, tags.official_name, tags.old_name].filter((n): n is string => !!n && !isGenericRoadName(n));
   for (const n of names) for (const part of n.split(';')) { const k = normaliseRoadName(part); if (k.length >= 3) keys.add('n:' + k); }
   if (tags.ref) for (const r of tags.ref.split(';')) keys.add('r:' + r.trim().toUpperCase());
   return keys;
@@ -98,7 +101,10 @@ export function roadSection(area: StudyArea, roads: ReadonlyMap<string, Drivable
     if (seen.has(node)) continue;
     seen.add(node);
     if (majorJunction(node)) {
-      for (const s of byNode.get(node) ?? []) if (!same(s)) endNames.add(roads.get(s.roadId)?.name || 'a main road');
+      // Name the junction by a real road name where one meets there
+      const met = (byNode.get(node) ?? []).filter(s => !same(s)).map(s => roads.get(s.roadId)?.name);
+      const real = met.filter(n => !isGenericRoadName(n));
+      for (const n of real.length ? real : met) endNames.add(n || 'a main road');
       continue;
     }
     for (const s of byNode.get(node) ?? []) {
