@@ -15,13 +15,33 @@ export interface SimulationContext {
   period?: TimePeriod;
 }
 export interface DemandProvenance {
-  /** project-estimate: heuristic gravity demand; synthetic: capacity-based; calibrated: either, scaled to observed counts. */
-  source: 'project-estimate' | 'synthetic' | 'calibrated';
+  /** project-estimate: land-use and edge-flow estimate; synthetic: capacity-based; calibrated: either, scaled to observed counts; hypothetical: a user-set multiple, never observed. */
+  source: 'project-estimate' | 'synthetic' | 'calibrated' | 'hypothetical';
   label: string;
   period: TimePeriod;
   vehiclesPerHour: number;
   pairCount: number;
+  /** For area demand (AreaDemand.ts): veh/h by part. */
+  components?: DemandComponents;
 }
+/** Peak-hour vehicles per hour by part of the area demand. */
+export interface DemandComponents {
+  /** Both ends inside the area. */
+  internal: number;
+  /** From the area's activity to beyond its edge, and from beyond the edge to it. */
+  outbound: number;
+  inbound: number;
+  /** Edge to edge on main roads. */
+  through: number;
+  /** Activity in the area's box but beyond reach of its roads (left out). */
+  outsideArea: number;
+  /** Trips of the area's activity that would cross the edge but have no drivable way to or from it (left out, reported). */
+  noEdgeRoute?: number;
+  cordonPoints?: number;
+  throughIncluded?: boolean;
+}
+/** A place that makes or attracts trips: its vehicles per hour by class. */
+export interface ActivityEndpoint { id: string; point: [number, number, number]; flow: number; vehicles: [VehicleKind, number][]; /** A project gateway: its flows already come from or go beyond the area. */ gateway?: boolean; /** A residual zone: the (clipped) polygon its activity is spread over. */ spread?: [number, number, number][] }
 export interface DemandPlan {
   provenance: DemandProvenance;
   /** Coordinates keep the same OD demand when a road edit changes network node IDs. */
@@ -62,23 +82,22 @@ function vehiclesFromSplit(personTrips: number, split: ModeSplit): [VehicleKind,
  * Buildings with their own Activity Profile keep the user's trip numbers and
  * split (as person trips, divided by occupancy). Gateway flows are vehicles.
  */
-export function compileStudyDemand(context: SimulationContext, bounds?: Bounds): DemandPlan | null {
+export function activityEndpoints(context: SimulationContext, bounds?: Bounds): { origins: ActivityEndpoint[]; destinations: ActivityEndpoint[] } {
   const period = context.period ?? 'AM_Peak';
-  type Endpoint = { id: string; point: [number, number, number]; flow: number; vehicles: [VehicleKind, number][] };
-  const origins: Endpoint[] = [], destinations: Endpoint[] = [];
-  const add = (role: 'origin' | 'destination', id: string, point: [number, number, number], vehicles: [VehicleKind, number][]) => {
+  const origins: ActivityEndpoint[] = [], destinations: ActivityEndpoint[] = [];
+  const add = (role: 'origin' | 'destination', id: string, point: [number, number, number], vehicles: [VehicleKind, number][], gateway = false, spread?: [number, number, number][]) => {
     const flow = vehicles.reduce((n, [, v]) => n + v, 0);
-    if (flow > 0 && Number.isFinite(flow)) (role === 'origin' ? origins : destinations).push({ id, point, flow, vehicles });
+    if (flow > 0 && Number.isFinite(flow)) (role === 'origin' ? origins : destinations).push({ id, point, flow, vehicles, ...(gateway ? { gateway } : {}), ...(spread ? { spread } : {}) });
   };
   const peak = period === 'AM_Peak' || period === 'PM_Peak';
   const share = PUNE_TRIP_RATES.peakHourShare;
   /** Residents leave in the AM peak and return in the PM peak; jobs the reverse. */
-  const addActivity = (id: string, point: [number, number, number], residents: number, employees: number) => {
+  const addActivity = (id: string, point: [number, number, number], residents: number, employees: number, spread?: [number, number, number][]) => {
     if (!peak) return;
     const home = vehicleTripsByClass(residents * PUNE_TRIP_RATES.motorisedTripsPerResident * share);
     const work = vehicleTripsByClass(employees * EMPLOYEE_MOTORISED_DAILY * share);
-    add(period === 'AM_Peak' ? 'origin' : 'destination', id, point, home);
-    add(period === 'AM_Peak' ? 'destination' : 'origin', id, point, work);
+    add(period === 'AM_Peak' ? 'origin' : 'destination', id, point, home, false, spread);
+    add(period === 'AM_Peak' ? 'destination' : 'origin', id, point, work, false, spread);
   };
   const inBounds = (p: readonly number[]) => !bounds || (p[0] >= bounds.minLng && p[0] <= bounds.maxLng && p[1] >= bounds.minLat && p[1] <= bounds.maxLat);
   const buildings = (context.buildings ?? []).filter(b => b.coordinates.length && inBounds(centroid(b.coordinates)));
@@ -102,15 +121,21 @@ export function compileStudyDemand(context: SimulationContext, bounds?: Bounds):
     const contained = (context.buildings ?? []).filter(b => b.coordinates.length && inside(centroid(b.coordinates), z.boundaryPolygon));
     const population = Math.max(0, z.totalPopulation - contained.reduce((n, b) => n + (b.residents ?? 0), 0)) * fraction;
     const employment = Math.max(0, z.totalEmployment - contained.reduce((n, b) => n + (b.employees ?? 0), 0)) * fraction;
-    addActivity(z.id, centroid(clipped), population, employment);
+    addActivity(z.id, centroid(clipped), population, employment, clipped);
   }
   for (const g of context.gateways ?? []) {
     if (!inBounds(g.coordinates)) continue;
     // Gateway flows are vehicles per hour; the split is read as a vehicle mix ("other" = autos)
     const mix = (vph: number): [VehicleKind, number][] => [['two_wheeler', vph * g.modeSplit.twoWheeler], ['car', vph * g.modeSplit.car], ['bus', vph * g.modeSplit.bus], ['auto', vph * g.modeSplit.other]];
-    add('origin', g.id, g.coordinates, mix(g.inboundFlows[period]));
-    add('destination', g.id, g.coordinates, mix(g.outboundFlows[period]));
+    add('origin', g.id, g.coordinates, mix(g.inboundFlows[period]), true);
+    add('destination', g.id, g.coordinates, mix(g.outboundFlows[period]), true);
   }
+  return { origins, destinations };
+}
+
+export function compileStudyDemand(context: SimulationContext, bounds?: Bounds): DemandPlan | null {
+  const period = context.period ?? 'AM_Peak';
+  const { origins, destinations } = activityEndpoints(context, bounds);
   if (!origins.length && !destinations.length) return null;
   const trips: DemandPlan['trips'] = [];
   for (const origin of origins) {
