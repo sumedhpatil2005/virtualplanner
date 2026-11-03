@@ -7,6 +7,7 @@ import { snapDemandPlan } from '../simulation/StudyDemand';
 import { TrafficMicroSim, STEP_S } from '../simulation/TrafficMicroSim';
 import { runAnalysisJob, type AnalysisJob } from '../simulation/analysisJob';
 import { compareAnalyses } from '../simulation/ScenarioComparison';
+import { loadCheck } from '../simulation/RoadAnalysis';
 
 const pt = (x: number, y = 0, z = 0): [number, number, number] => [73.8 + x / (111320 * Math.cos(18.5 * Math.PI / 180)), 18.5 + y / 111320, z];
 const road = (id: string, a: [number, number], b: [number, number], extra: Partial<RoadObject> = {}) =>
@@ -172,5 +173,35 @@ describe('scenario comparison on frozen demand', () => {
     const dev = compareAnalyses(before, after, { before: roadMap, after: closedMap }, { before: 1000, after: 1500 });
     expect(dev.kind).toBe('development');
     expect(dev.caveats[0]).toMatch(/land use changed/i);
+  });
+});
+
+describe('demand beyond modelled capacity', () => {
+  it('states plainly when the network could not take the demand', () => {
+    const ok = loadCheck(1000, { releasedVehicles: 240, capShare: 0, gridlockRemovals: 0 }, 900, 3);
+    expect(ok.overloaded).toBe(false); expect(ok.message).toBeNull();
+    const over = loadCheck(10000, { releasedVehicles: 1000, capShare: 0.4, gridlockRemovals: 100 }, 900, 4800);
+    expect(over.overloaded).toBe(true);
+    expect(over.servedShare).toBeCloseTo(0.4, 6);
+    expect(over.message).toMatch(/exceeds what the modelled network can carry/);
+    expect(over.message).toMatch(/4,800 vehicles were still waiting/);
+    expect(over.message).toMatch(/5,000-vehicle limit/);
+  });
+  it('flags an overloaded run in the analysis and its comparison, and not a light one', async () => {
+    const area = explore();
+    const base = compileAreaDemand({ buildings: [building('home', 10, 5, 3000), building('work', 790, 5, 0, 3000)] }, area, roadMap)!;
+    const heavy = { ...base, trips: base.trips.map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * 8 })), provenance: { ...base.provenance, vehiclesPerHour: base.provenance.vehiclesPerHour * 8 } };
+    const job = (plan: typeof base): AnalysisJob => ({ area, roads: roadMap, options: { demandLevel: 0.12, seed: 42 }, plan, section: roadSection(area, roadMap, ['m1']), hourFactor: 1, feedbackIterations: 1, warmupS: 120, measureS: 300 });
+    const light = await runAnalysisJob(job(base), undefined, 1e9);
+    const jam = await runAnalysisJob(job(heavy), undefined, 1e9);
+    expect(light.result.load.overloaded).toBe(false);
+    expect(jam.result.load.overloaded).toBe(true);
+    expect(jam.result.reasons[0]).toBe(jam.result.load.message);
+    // Delays measured in a jammed run are not used to re-route drivers, and the panel says so
+    expect(light.adaptation.applied).toBe(true);
+    expect(jam.adaptation.applied).toBe(false);
+    expect(jam.adaptation.reason).toMatch(/past its modelled capacity/);
+    const cmp = compareAnalyses(light, jam, { before: roadMap, after: roadMap }, { before: 1, after: 1 });
+    expect(cmp.caveats.some(c => /exceeds what the modelled network can carry/.test(c))).toBe(true);
   });
 });
