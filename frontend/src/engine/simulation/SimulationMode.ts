@@ -15,7 +15,7 @@ import { StudyAreaVisualizer } from '../rendering/renderers/StudyAreaVisualizer'
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
-import { compileStudyDemand, snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
+import { snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
 import { apiGet } from '../../lib/api';
@@ -24,6 +24,11 @@ import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, ju
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
 import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
+import { compileAreaDemand } from './AreaDemand';
+import { roadSection, type RoadSection } from './roadSection';
+import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
+import { DEFAULT_ANALYSIS, type AnalysisJob, type AnalysisOutput } from './analysisJob';
+import { compareAnalyses, type ComparisonResult } from './ScenarioComparison';
 
 export type TrafficStatus = 'idle' | 'running' | 'paused';
 
@@ -47,15 +52,45 @@ export interface TrafficRunSnapshot {
   seed: number;
   demandLevel: number;
   focus: boolean;
+  /** Clock hour and demand multiplier the run used. */
+  hour: number;
+  hourFactor: number;
   demandKey: string;
   networkKey: string;
   metrics: MicroSimMetrics;
+  /** Planned demand (veh/h at the run's hour) and the road analysis of the run. */
+  demandVph: number;
+  analysis: AnalysisOutput;
 }
 export interface TrafficComparisonState {
   baseline: TrafficRunSnapshot | null;
   current: TrafficRunSnapshot | null;
+  /** Existing city (baseline) against the proposal (current), same frozen demand. */
+  result: ComparisonResult | null;
   staleReason: string | null;
   running: boolean;
+  progress: number;
+  /** The land use (and so the demand) differs from the baseline's: a development scenario. */
+  demandChanged: boolean;
+}
+
+/** Road analysis of the selected section, from a fixed repeatable run. */
+export interface RoadAnalysisState {
+  status: 'idle' | 'running' | 'ready' | 'error';
+  progress: number;
+  output: AnalysisOutput | null;
+  error: string | null;
+  /** Settings the result is for (hour, demand options); a change re-runs it. */
+  hour: number | null;
+  demandVph: number | null;
+}
+
+/** Demand options the user can change. */
+export interface DemandSettings {
+  /** Include traffic crossing the area on its main roads (default on). */
+  through: boolean;
+  /** Hypothetical demand multiplier (null = the estimate as is). Always labelled hypothetical. */
+  hypotheticalScale: number | null;
 }
 
 export const TRAFFIC_SPEEDS = [1, 5, 20] as const;
@@ -143,6 +178,10 @@ export interface SimulationModeState {
   selectedVehicleId: number | null;
   calibration: CalibrationState;
   timeOfDay: TimeOfDayState;
+  /** The road section the click stands for (both carriageways, between main junctions). */
+  section: RoadSection | null;
+  analysis: RoadAnalysisState;
+  demandSettings: DemandSettings;
 }
 
 /** Clock for the run: which hour's demand is simulated, from the real Pune hour-of-day profile. */
@@ -193,14 +232,20 @@ export class SimulationMode {
     direction: 'both',
     area: null,
     error: null,
-    traffic: { status: 'idle', speed: 1, demandLevel: DEFAULT_DEMAND_LEVEL, focus: true, seed: DEFAULT_TRAFFIC_SEED, metrics: null, error: null, demand: null },
+    traffic: { status: 'idle', speed: 1, demandLevel: DEFAULT_DEMAND_LEVEL, focus: false, seed: DEFAULT_TRAFFIC_SEED, metrics: null, error: null, demand: null },
     osmRoads: { status: 'idle', added: null, error: null },
     signals: { status: 'off', count: null },
-    comparison: { baseline: null, current: null, staleReason: null, running: false },
+    comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false },
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.PM, day: 'weekday', countPeak: 'PM', playback: false, factor: 1 },
+    section: null,
+    analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null },
+    demandSettings: { through: true, hypotheticalScale: null },
   };
+  private analysisRun: RunningAnalysis | null = null;
+  private analysisTimer: ReturnType<typeof setTimeout> | null = null;
+  private comparisonRun: RunningAnalysis | null = null;
   private readonly signalSource: TrafficSignalSource | null;
   private signalLoad: AbortController | null = null;
   /** Signals for `signalBoundsKey`, or null to estimate them. */
@@ -299,6 +344,8 @@ export class SimulationMode {
   }
 
   public dispose() {
+    this.cancelAnalysis();
+    this.comparisonRun?.cancel();
     this.comparisonGeneration++;
     this.osmLoad?.abort();
     this.signalLoad?.abort();
@@ -318,6 +365,7 @@ export class SimulationMode {
 
   public exit() {
     if (!this.state.active) return;
+    this.cancelAnalysis();
     this.cancelPendingRecompute();
     this.resetTraffic();
     this.visualizer.clear();
@@ -360,8 +408,9 @@ export class SimulationMode {
     this.autoRun = false;
     this.cancelPendingRecompute();
     this.resetTraffic();
-    this.visualizer.clear();
-    this.setState({ seedRoadIds: [], area: null, error: null });
+    this.visualizer.reset();
+    this.cancelAnalysis();
+    this.setState({ seedRoadIds: [], area: null, section: null, error: null, analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null } });
     this.forgetOsmResult();
   }
 
@@ -446,6 +495,8 @@ export class SimulationMode {
 
   private recompute(fly: boolean, reveal: boolean) {
     if (!this.state.active) return;
+    this.analysisStale = true;
+    this.cancelAnalysis();
     // A run belongs to one area and network: any change starts over
     this.resetTraffic();
     try {
@@ -455,14 +506,16 @@ export class SimulationMode {
         direction: this.state.direction,
       });
       // Seeds deleted from the network drop out here
-      this.setState({ area, error: null, seedRoadIds: area.seedRoadIds });
+      const section = area.seedRoadIds.length ? roadSection(area, new Map(this.getRoads().map(r => [r.id, r])), area.seedRoadIds) : null;
+      this.setState({ area, error: null, seedRoadIds: area.seedRoadIds, section });
       this.refreshCountedJunctions();
-      this.visualizer.render(area, reveal);
+      this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
       // The selected road is the subject: the camera goes to it, not the whole area
       if (fly) this.focusView();
     } catch (err: any) {
       this.visualizer.clear();
-      this.setState({ area: null, error: err?.message || String(err) });
+      this.cancelAnalysis();
+      this.setState({ area: null, section: null, error: err?.message || String(err), analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null } });
     }
     this.ensureOsmRoads();
     this.ensureSignals();
@@ -471,11 +524,14 @@ export class SimulationMode {
 
   /** Starts traffic when a road has been picked and its area is fully mapped. */
   private maybeAutoStart() {
-    if (!this.autoRun || !this.state.area || this.state.traffic.status !== 'idle') return;
-    if (this.osmLoad) return; // roads still arriving; the area re-maps when they do
-    if (this.signalLoad) return; // starts when the signals are in
+    if (!this.state.area || this.osmLoad || this.signalLoad || this.recomputeTimer) return; // roads or signals still arriving
+    // The analysis answers "what is happening on this road"; it runs whenever the area is complete
+    if (this.state.analysis.status !== 'running' && (this.state.analysis.status !== 'ready' || this.analysisStale)) { this.analysisStale = false; this.scheduleAnalysis(); }
+    if (!this.autoRun || this.state.traffic.status !== 'idle') return;
     this.startTraffic();
   }
+  /** The area, network or demand changed since the last analysis. */
+  private analysisStale = true;
 
   // ── Real traffic signals ──────────────────────────────────────────────────
 
@@ -577,23 +633,17 @@ export class SimulationMode {
     this.setState({ traffic: { ...this.state.traffic, ...patch } });
   }
 
-  private demandBounds(area: StudyArea): Bounds {
-    const padLat = 250 / 111320;
-    const padLng = padLat / Math.cos((area.bounds.minLat + area.bounds.maxLat) / 2 * Math.PI / 180);
-    return { minLng: area.bounds.minLng - padLng, maxLng: area.bounds.maxLng + padLng, minLat: area.bounds.minLat - padLat, maxLat: area.bounds.maxLat + padLat };
-  }
-
   /** Starts traffic on the current study area. */
   public startTraffic() {
     const area = this.state.area;
     if (!area || this.state.traffic.status !== 'idle') return;
     const roads = new Map(this.getRoads().map(r => [r.id, r]));
     const context = this.getContext();
-    const plan = this.calibratedPlan ?? compileStudyDemand(context, this.demandBounds(area));
+    const plan = this.studyPlan(area);
     const sim = new TrafficMicroSim(area, roads, {
       demandLevel: this.state.traffic.demandLevel,
       seed: this.state.traffic.seed,
-      watchRoadIds: area.seedRoadIds,
+      watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
       focusLoad: focusLoadFor(this.state.traffic),
       signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
       junctions: context.junctions,
@@ -684,33 +734,8 @@ export class SimulationMode {
     this.invalidateCalibration(reason);
     this.comparisonGeneration++;
     if (!this.state.comparison.baseline && !this.state.comparison.running) return;
-    this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: reason, running: false } });
-  }
-
-  /** Replays a fixed horizon from an empty network; live simulation speed never changes the result. */
-  private async snapshot(plan: DemandPlan, durationS: number, generation: number): Promise<TrafficRunSnapshot> {
-    const area = this.state.area;
-    if (!area) throw new Error('Select a study road before capturing a run.');
-    const roads = structuredClone(this.getRoads()), context = structuredClone(this.getContext());
-    const traffic = this.state.traffic;
-    const sim = new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), {
-      demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-      junctions: context.junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
-      demandTrips: snapDemandPlan(plan, area.network, 250, new Set(area.segments.map(s => s.key))),
-    });
-    const steps = Math.round(durationS / STEP_S);
-    let yieldedAt = performance.now();
-    for (let i = 0; i < steps; i++) {
-      sim.step();
-      if (performance.now() - yieldedAt > 20) {
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-        if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
-        yieldedAt = performance.now();
-      }
-    }
-    return { scenarioId: context.scenarioId ?? 'current', durationS: steps * STEP_S,
-      seed: traffic.seed, demandLevel: traffic.demandLevel, focus: traffic.focus,
-      demandKey: contentKey(plan), networkKey: contentKey({ roads, junctions: context.junctions, signalPoints: this.signalPoints }), metrics: sim.getMetrics() };
+    if (this.state.comparison.running) this.comparisonRun?.cancel();
+    this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason, running: false } });
   }
 
   /** A trial must run on the area mapped from the current roads, not one still waiting out its debounce. */
@@ -720,35 +745,178 @@ export class SimulationMode {
     this.recompute(false, false);
   }
 
-  public async captureBaseline(durationS = 300): Promise<TrafficRunSnapshot | null> {
+  // ── Demand for the area ─────────────────────────────────────────────────
+
+  /** Land-use peak the clock falls in: morning before noon, else evening. */
+  private landUsePeriod(): 'AM_Peak' | 'PM_Peak' {
+    return this.state.timeOfDay.hour < 12 ? 'AM_Peak' : 'PM_Peak';
+  }
+
+  private planCache: { key: string; plan: DemandPlan | null } | null = null;
+
+  /**
+   * The OD demand the area runs on: the counts-calibrated plan when applied,
+   * else the area estimate (AreaDemand.ts: the area's own trips, trips across
+   * its edge and through traffic on its main roads) for the land-use peak of
+   * the clock hour; the hypothetical multiplier, if set, on top (labelled so).
+   */
+  public studyPlan(area: StudyArea | null = this.state.area): DemandPlan | null {
+    if (!area) return null;
+    const settings = this.state.demandSettings;
+    let plan: DemandPlan | null;
+    if (this.calibratedPlan) plan = this.calibratedPlan;
+    else {
+      const period = this.landUsePeriod();
+      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled });
+      if (this.planCache?.key !== key) {
+        const ctx = { ...this.getContext(), period };
+        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through }) };
+      }
+      plan = this.planCache.plan;
+    }
+    if (!plan) return null;
+    const scale = settings.hypotheticalScale;
+    if (scale === null || scale === 1) return plan;
+    return { trips: plan.trips.map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * scale })),
+      provenance: { ...plan.provenance, source: 'hypothetical', vehiclesPerHour: plan.provenance.vehiclesPerHour * scale,
+        label: `HYPOTHETICAL: ${Math.round(scale * 100)}% of the estimate below. Not observed and not forecast; for exploring what more or less traffic would do. ${plan.provenance.label}` } };
+  }
+
+  public setDemandSettings(patch: Partial<DemandSettings>) {
+    const next = { ...this.state.demandSettings, ...patch };
+    if (next.hypotheticalScale !== null && (!Number.isFinite(next.hypotheticalScale) || next.hypotheticalScale <= 0)) next.hypotheticalScale = null;
+    this.invalidateComparison('Demand settings changed. Restore them or save a new baseline.');
+    this.setState({ demandSettings: next });
+    if (this.state.traffic.status !== 'idle') this.restartTraffic();
+    this.scheduleAnalysis();
+  }
+
+  // ── Road analysis ───────────────────────────────────────────────────────
+
+  private simOptions(): AnalysisJob['options'] {
+    const traffic = this.state.traffic;
+    return { demandLevel: traffic.demandLevel, seed: traffic.seed, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming, junctions: structuredClone(this.getContext().junctions) };
+  }
+
+  private analysisJob(plan: DemandPlan, area: StudyArea, section: RoadSection, measureS: number = DEFAULT_ANALYSIS.measureS): AnalysisJob {
+    const ds = this.state.calibration.dataset;
+    return { area, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), plan: structuredClone(plan), section,
+      hourFactor: this.state.timeOfDay.factor, feedbackIterations: DEFAULT_ANALYSIS.feedbackIterations, warmupS: DEFAULT_ANALYSIS.warmupS, measureS,
+      countJunctions: ds ? junctionsIn(ds, area.bounds) : undefined };
+  }
+
+  /** Re-runs the road analysis shortly (settings settle first). Not during 24-hour playback. */
+  private scheduleAnalysis(delayMs = 500) {
+    if (this.analysisTimer) clearTimeout(this.analysisTimer);
+    this.analysisTimer = null;
+    if (!this.state.active || !this.state.area || this.state.timeOfDay.playback) return;
+    this.analysisTimer = setTimeout(() => { this.analysisTimer = null; void this.runAnalysis(); }, delayMs);
+  }
+
+  private cancelAnalysis() {
+    if (this.analysisTimer) clearTimeout(this.analysisTimer);
+    this.analysisTimer = null;
+    this.analysisRun?.cancel();
+    this.analysisRun = null;
+  }
+
+  /**
+   * Analyses the selected section in a fixed, repeatable run (analysisJob.ts):
+   * the planned demand at the clock hour, one round of route adaptation, then
+   * a measured run from an empty network. Live traffic is for watching; this
+   * run is what the figures in the panel come from.
+   */
+  public async runAnalysis(): Promise<AnalysisOutput | null> {
+    this.flushPendingRecompute();
+    const area = this.state.area, section = this.state.section;
+    this.cancelAnalysis();
+    if (!area || !section) return null;
+    await this.ensureCountData().catch(() => {});
+    const plan = this.studyPlan(area);
+    if (!plan?.trips.length) {
+      this.setState({ analysis: { status: 'error', progress: 0, output: null, error: 'No traffic can be estimated for this area: no roads cross its edge and it holds no buildings or zones with activity.', hour: this.state.timeOfDay.hour, demandVph: 0 } });
+      return null;
+    }
+    const hour = this.state.timeOfDay.hour, demandVph = plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor;
+    this.setState({ analysis: { ...this.state.analysis, status: 'running', progress: 0, error: null, hour, demandVph } });
+    const run = startAnalysisJob(this.analysisJob(plan, area, section), progress => {
+      if (this.analysisRun === run) this.setState({ analysis: { ...this.state.analysis, progress } });
+    });
+    this.analysisRun = run;
+    try {
+      const output = await run.promise;
+      if (this.analysisRun !== run) return null;
+      this.analysisRun = null;
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph } });
+      return output;
+    } catch (err) {
+      if (this.analysisRun !== run) return null;
+      this.analysisRun = null;
+      this.setState({ analysis: { ...this.state.analysis, status: 'error', error: err instanceof Error ? err.message : String(err) } });
+      return null;
+    }
+  }
+
+  /** Shows (or hides) where the section's traffic comes from and goes to on the map. */
+  public showSelectLink(on: boolean) {
+    const out = this.state.analysis.output;
+    this.visualizer.showSelectLink(on && out ? out.result.selectLinkVph : null);
+  }
+
+  // ── Existing city against a proposal ────────────────────────────────────
+
+  private baselineRoads: Map<string, DrivableObject> | null = null;
+
+  private snapshotOf(output: AnalysisOutput, plan: DemandPlan, measureS: number): TrafficRunSnapshot {
+    const traffic = this.state.traffic, context = this.getContext();
+    return { scenarioId: context.scenarioId ?? 'current', durationS: measureS, seed: traffic.seed, demandLevel: traffic.demandLevel, focus: traffic.focus,
+      hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
+      demandKey: contentKey(plan), networkKey: contentKey({ roads: this.getRoads(), junctions: context.junctions, signalPoints: this.signalPoints }),
+      metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output };
+  }
+
+  private async runJob(plan: DemandPlan, measureS: number, generation: number): Promise<AnalysisOutput> {
+    const area = this.state.area, section = this.state.section;
+    if (!area || !section) throw new Error('Select a study road before running a trial.');
+    this.comparisonRun?.cancel();
+    const run = startAnalysisJob(this.analysisJob(plan, area, section, measureS), progress => {
+      if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, progress } });
+    });
+    this.comparisonRun = run;
+    try {
+      const out = await run.promise;
+      if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+      return out;
+    } finally {
+      if (this.comparisonRun === run) this.comparisonRun = null;
+    }
+  }
+
+  /**
+   * Saves the existing city as the baseline: the demand is frozen (as
+   * coordinates, so it survives road edits), with the seed, volume and clock
+   * hour, and the network is analysed on it.
+   */
+  public async captureBaseline(durationS: number = DEFAULT_ANALYSIS.measureS): Promise<TrafficRunSnapshot | null> {
     this.flushPendingRecompute();
     const generation = ++this.comparisonGeneration;
-    this.setState({ comparison: { ...this.state.comparison, running: true, staleReason: null } });
+    this.setState({ comparison: { ...this.state.comparison, running: true, progress: 0, staleReason: null, result: null, current: null, demandChanged: false } });
     try {
       const area = this.state.area;
       if (!area) throw new Error('Select a study road before capturing a baseline.');
-      let plan = compileStudyDemand(this.getContext(), this.demandBounds(area));
-      if (!plan) {
-        const traffic = this.state.traffic;
-        const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
-          demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-          focusLoad: focusLoadFor(traffic), junctions: this.getContext().junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
-        });
-        const trips = sim.getDemandTrips().flatMap(t => {
-          const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
-          return from && to ? [{ from: [...from.coordinates] as [number, number, number], to: [...to.coordinates] as [number, number, number], vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId }] : [];
-        });
-        plan = { trips, provenance: { source: 'synthetic', label: 'Frozen synthetic capacity-based OD arrivals', period: this.getContext().period ?? 'AM_Peak', vehiclesPerHour: trips.reduce((n, t) => n + t.vehiclesPerHour, 0), pairCount: trips.length } };
-      }
-      if (!plan.trips.length) throw new Error('This study area has no OD demand to compare.');
-      const duration = Number.isFinite(durationS) ? Math.max(STEP_S, Math.min(3600, durationS)) : 300;
+      await this.ensureCountData().catch(() => {});
+      const plan = this.studyPlan(area);
+      if (!plan?.trips.length) throw new Error('This study area has no OD demand to compare.');
+      const duration = Number.isFinite(durationS) ? Math.max(STEP_S, Math.min(3600, durationS)) : DEFAULT_ANALYSIS.measureS;
       const contextKey = this.demandContextKey(), studyKey = this.studyKey();
-      const baseline = await this.snapshot(plan, duration, generation);
+      const output = await this.runJob(plan, duration, generation);
       if (generation !== this.comparisonGeneration) return null;
+      const baseline = this.snapshotOf(output, plan, duration);
       this.baselinePlan = structuredClone(plan);
+      this.baselineRoads = new Map(structuredClone(this.getRoads()).map(r => [r.id, r]));
       this.baselineContextKey = contextKey;
       this.baselineStudyKey = studyKey;
-      this.setState({ comparison: { baseline, current: null, staleReason: null, running: false } });
+      this.setState({ comparison: { baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false } });
       return baseline;
     } catch (err) {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: err instanceof Error ? err.message : String(err), running: false } });
@@ -756,27 +924,41 @@ export class SimulationMode {
     }
   }
 
-  public async runComparison(): Promise<TrafficRunSnapshot | null> {
+  /**
+   * Runs the proposal (the network as it is now) on the baseline's frozen
+   * demand, seed, volume and hour, and compares it with the baseline. When the
+   * land use changed since the baseline, the demand is still held at the
+   * baseline's unless `withNewDemand` asks for a development scenario, which
+   * is labelled as such.
+   */
+  public async runComparison(opts: { withNewDemand?: boolean } = {}): Promise<TrafficRunSnapshot | null> {
     this.flushPendingRecompute();
-    const baseline = this.state.comparison.baseline, plan = this.baselinePlan;
+    const baseline = this.state.comparison.baseline, frozen = this.baselinePlan;
+    const demandChanged = !!baseline && this.baselineContextKey !== this.demandContextKey();
     let reason: string | null = null;
-    if (!baseline || !plan) reason = 'Capture a baseline before comparing.';
-    else if (this.baselineContextKey !== this.demandContextKey()) reason = 'Project demand changed. Capture a new baseline to compare equal OD demand.';
-    else if (this.baselineStudyKey !== this.studyKey()) reason = 'The study area changed. Capture a new baseline.';
-    else if (baseline.seed !== this.state.traffic.seed || baseline.demandLevel !== this.state.traffic.demandLevel || baseline.focus !== this.state.traffic.focus) reason = 'Restore the baseline seed, volume and focus settings before comparing.';
+    if (!baseline || !frozen) reason = 'Save the existing city as a baseline before comparing.';
+    else if (this.baselineStudyKey !== this.studyKey()) reason = 'The study road or range changed. Save a new baseline.';
+    else if (baseline.seed !== this.state.traffic.seed || baseline.demandLevel !== this.state.traffic.demandLevel || baseline.focus !== this.state.traffic.focus) reason = 'Restore the baseline seed and volume before comparing.';
+    else if (baseline.hour !== this.state.timeOfDay.hour || Math.abs(baseline.hourFactor - this.state.timeOfDay.factor) > 1e-9) reason = `Set the clock back to ${String(baseline.hour).padStart(2, '0')}:00, the baseline's hour, to compare like with like.`;
     if (reason) {
-      this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: reason, running: false } });
+      this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason, running: false, demandChanged } });
       return null;
     }
     const generation = ++this.comparisonGeneration;
-    this.setState({ comparison: { ...this.state.comparison, running: true, staleReason: null } });
+    this.setState({ comparison: { ...this.state.comparison, running: true, progress: 0, staleReason: null, demandChanged } });
     try {
-      const current = await this.snapshot(plan!, baseline!.durationS, generation);
+      const plan = opts.withNewDemand && demandChanged ? this.studyPlan() : frozen!;
+      if (!plan?.trips.length) throw new Error('The proposal has no OD demand to run.');
+      const output = await this.runJob(plan, baseline!.durationS, generation);
       if (generation !== this.comparisonGeneration) return null;
-      this.setState({ comparison: { baseline, current, staleReason: null, running: false } });
+      const current = this.snapshotOf(output, plan, baseline!.durationS);
+      const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
+        { before: baseline!.demandVph, after: current.demandVph });
+      if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
+      this.setState({ comparison: { baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
       return current;
     } catch (err) {
-      if (generation === this.comparisonGeneration) this.invalidateComparison(err instanceof Error ? err.message : String(err));
+      if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, result: null, running: false, staleReason: err instanceof Error ? err.message : String(err) } });
       return null;
     }
   }
@@ -784,11 +966,20 @@ export class SimulationMode {
   // ── Time of day ──────────────────────────────────────────────────────────
 
   private setTimeOfDay(patch: Partial<TimeOfDayState>) {
-    const next = { ...this.state.timeOfDay, ...patch };
-    next.factor = next.profile ? hourFactor(next.profile, next.hour, COUNT_HOURS[next.countPeak], next.day) : 1;
+    const prev = this.state.timeOfDay;
+    const next = { ...prev, ...patch };
+    // Calibrated demand is the counted peak hour; the area estimate is the peak of the clock's half of the day
+    const reference = this.calibratedPlan ? COUNT_HOURS[next.countPeak] : COUNT_HOURS[next.hour < 12 ? 'AM' : 'PM'];
+    next.factor = next.profile ? hourFactor(next.profile, next.hour, reference, next.day) : 1;
+    const periodFlip = (prev.hour < 12) !== (next.hour < 12) && !this.calibratedPlan;
     this.setState({ timeOfDay: next });
-    this.sim?.setHourFactor(next.factor);
-    if (this.sim) this.setTraffic({ metrics: this.sim.getMetrics() });
+    // Morning and evening land-use trips run opposite ways: a new plan, so live traffic starts again
+    if (periodFlip && this.sim) { this.restartTraffic(); }
+    else {
+      this.sim?.setHourFactor(next.factor);
+      if (this.sim) this.setTraffic({ metrics: this.sim.getMetrics() });
+    }
+    if (next.hour !== prev.hour || next.day !== prev.day || next.factor !== prev.factor) { this.analysisStale = true; this.scheduleAnalysis(700); }
   }
 
   /** Loads the hour-of-day profile (once; again after an error). */
@@ -876,7 +1067,11 @@ export class SimulationMode {
   /** The uncalibrated demand for the area: the project estimate, or frozen synthetic arrivals when there is none. */
   private basePlan(area: StudyArea): DemandPlan {
     const context = this.getContext();
-    const plan = compileStudyDemand(context, this.demandBounds(area));
+    // The uncalibrated area estimate, whatever is applied now
+    const applied = this.calibratedPlan;
+    this.calibratedPlan = null;
+    const plan = this.studyPlan(area);
+    this.calibratedPlan = applied;
     if (plan) return plan;
     const traffic = this.state.traffic;
     const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
@@ -981,7 +1176,9 @@ export class SimulationMode {
   public clearBaseline() {
     this.comparisonGeneration++;
     this.baselinePlan = null;
-    this.setState({ comparison: { baseline: null, current: null, staleReason: null, running: false } });
+    this.comparisonRun?.cancel();
+    this.baselineRoads = null;
+    this.setState({ comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false } });
   }
 
   public getVehicleViews(): VehicleView[] {
