@@ -7,7 +7,7 @@ import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import type { RoadAnalysisResult, RoadStatus, JunctionUse } from '../engine/simulation/RoadAnalysis';
 import { improvementsFor } from '../engine/simulation/improvements';
 import type { ComparisonResult, Verdict } from '../engine/simulation/ScenarioComparison';
-import { DeltaRows } from './ScenarioDeltaTable';
+import { DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { formatDistanceM } from '../lib/format';
 import { Section, Button, Notice } from './ui/kit';
@@ -39,6 +39,12 @@ export const RoadAnalysisView: React.FC<{ sim: SimulationModeState }> = ({ sim }
   return (
     <>
       <Section title="What's happening" aside={analysis.hour !== null ? `${hourLabel(analysis.hour)} · ${peakName(analysis.hour)}` : undefined}>
+        {r && sim.comparison.showingProposal && (
+          <div className="flex items-center gap-2" data-testid="proposal-notice">
+            <ProposalBadge />
+            <span className="text-xs text-slate-400">Network as edited in Build, not the existing city</span>
+          </div>
+        )}
         {running && (
           <div role="status" className="space-y-1.5">
             <p className="flex items-center gap-2 text-sm text-cyan-200"><Loader2 size={15} className="animate-spin" /> {r ? 'Updating the analysis…' : 'Analysing an hour of traffic on this road…'}</p>

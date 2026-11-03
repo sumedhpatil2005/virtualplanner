@@ -36,3 +36,11 @@ export const DeltaRows: React.FC<{ rows: Delta[] }> = ({ rows }) => (
     </tbody>
   </table>
 );
+
+/** Marks figures that come from the network as edited in Build, not the existing city. */
+export const ProposalBadge: React.FC = () => (
+  <span data-testid="proposal-badge" title="These figures are for the network as edited in Build, not the existing city saved as the baseline."
+    className="inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-500/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-200">
+    Proposal
+  </span>
+);

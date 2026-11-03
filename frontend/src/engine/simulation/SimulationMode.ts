@@ -72,6 +72,11 @@ export interface TrafficComparisonState {
   progress: number;
   /** The land use (and so the demand) differs from the baseline's: a development scenario. */
   demandChanged: boolean;
+  /**
+   * The road analysis on show ran on a network that differs from the saved
+   * baseline's (the city as edited in Build), so the panel labels it a proposal.
+   */
+  showingProposal: boolean;
 }
 
 /** Road analysis of the selected section, from a fixed repeatable run. */
@@ -235,7 +240,7 @@ export class SimulationMode {
     traffic: { status: 'idle', speed: 1, demandLevel: DEFAULT_DEMAND_LEVEL, focus: false, seed: DEFAULT_TRAFFIC_SEED, metrics: null, error: null, demand: null },
     osmRoads: { status: 'idle', added: null, error: null },
     signals: { status: 'off', count: null },
-    comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false },
+    comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false, showingProposal: false },
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.PM, day: 'weekday', countPeak: 'PM', playback: false, factor: 1 },
@@ -280,6 +285,8 @@ export class SimulationMode {
   private baselineContextKey = '';
   private baselineStudyKey = '';
   private comparisonGeneration = 0;
+  /** Network the road analysis on show ran on, to tell the existing city from a proposal. */
+  private analysisNetworkKey: string | null = null;
   /** Demand fitted to observed counts; used by live traffic while set. */
   private calibratedPlan: DemandPlan | null = null;
   private calibrationGeneration = 0;
@@ -410,7 +417,8 @@ export class SimulationMode {
     this.resetTraffic();
     this.visualizer.reset();
     this.cancelAnalysis();
-    this.setState({ seedRoadIds: [], area: null, section: null, error: null, analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null } });
+    this.analysisNetworkKey = null;
+    this.setState({ seedRoadIds: [], area: null, section: null, error: null, analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null }, comparison: { ...this.state.comparison, showingProposal: false } });
     this.forgetOsmResult();
   }
 
@@ -515,7 +523,8 @@ export class SimulationMode {
     } catch (err: any) {
       this.visualizer.clear();
       this.cancelAnalysis();
-      this.setState({ area: null, section: null, error: err?.message || String(err), analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null } });
+      this.analysisNetworkKey = null;
+      this.setState({ area: null, section: null, error: err?.message || String(err), analysis: { status: 'idle', progress: 0, output: null, error: null, hour: null, demandVph: null }, comparison: { ...this.state.comparison, showingProposal: false } });
     }
     this.ensureOsmRoads();
     this.ensureSignals();
@@ -839,6 +848,7 @@ export class SimulationMode {
     }
     const hour = this.state.timeOfDay.hour, demandVph = plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor;
     this.setState({ analysis: { ...this.state.analysis, status: 'running', progress: 0, error: null, hour, demandVph } });
+    const networkKey = this.currentNetworkKey();
     const run = startAnalysisJob(this.analysisJob(plan, area, section), progress => {
       if (this.analysisRun === run) this.setState({ analysis: { ...this.state.analysis, progress } });
     });
@@ -847,7 +857,9 @@ export class SimulationMode {
       const output = await run.promise;
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
-      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph } });
+      this.analysisNetworkKey = networkKey;
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph },
+        comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       return output;
     } catch (err) {
       if (this.analysisRun !== run) return null;
@@ -871,8 +883,17 @@ export class SimulationMode {
     const traffic = this.state.traffic, context = this.getContext();
     return { scenarioId: context.scenarioId ?? 'current', durationS: measureS, seed: traffic.seed, demandLevel: traffic.demandLevel, focus: traffic.focus,
       hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
-      demandKey: contentKey(plan), networkKey: contentKey({ roads: this.getRoads(), junctions: context.junctions, signalPoints: this.signalPoints }),
+      demandKey: contentKey(plan), networkKey: this.currentNetworkKey(),
       metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output };
+  }
+
+  private currentNetworkKey() {
+    return contentKey({ roads: this.getRoads(), junctions: this.getContext().junctions, signalPoints: this.signalPoints });
+  }
+
+  /** Whether the analysis on show ran on a network other than the baseline's. */
+  private showsProposal(baseline: TrafficRunSnapshot | null) {
+    return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey;
   }
 
   private async runJob(plan: DemandPlan, measureS: number, generation: number): Promise<AnalysisOutput> {
@@ -916,7 +937,7 @@ export class SimulationMode {
       this.baselineRoads = new Map(structuredClone(this.getRoads()).map(r => [r.id, r]));
       this.baselineContextKey = contextKey;
       this.baselineStudyKey = studyKey;
-      this.setState({ comparison: { baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false } });
+      this.setState({ comparison: { baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false, showingProposal: this.showsProposal(baseline) } });
       return baseline;
     } catch (err) {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: err instanceof Error ? err.message : String(err), running: false } });
@@ -955,7 +976,7 @@ export class SimulationMode {
       const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
         { before: baseline!.demandVph, after: current.demandVph });
       if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
-      this.setState({ comparison: { baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
+      this.setState({ comparison: { ...this.state.comparison, baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
       return current;
     } catch (err) {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, result: null, running: false, staleReason: err instanceof Error ? err.message : String(err) } });
@@ -1178,7 +1199,7 @@ export class SimulationMode {
     this.baselinePlan = null;
     this.comparisonRun?.cancel();
     this.baselineRoads = null;
-    this.setState({ comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false } });
+    this.setState({ comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false, showingProposal: false } });
   }
 
   public getVehicleViews(): VehicleView[] {
