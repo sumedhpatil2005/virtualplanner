@@ -25,7 +25,11 @@ export interface DemandProvenance {
 export interface DemandPlan {
   provenance: DemandProvenance;
   /** Coordinates keep the same OD demand when a road edit changes network node IDs. */
-  trips: { from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string }[];
+  trips: {
+    from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string;
+    /** Links (simulator link ids) the trip must use in this order: a count-seeded trip's stop-line approach and exit. */
+    viaLinkIds?: string[];
+  }[];
 }
 const DEFAULT_SPLIT: ModeSplit = { car: .25, twoWheeler: .35, bus: .2, metro: .1, walking: .08, other: .02 };
 const centroid = (points: [number, number, number][]): [number, number, number] => points.length
@@ -142,7 +146,7 @@ export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAcc
     cache.set(key, id);
     return id;
   };
-  return plan.trips.map(t => ({ fromNodeId: nearest(t.from), toNodeId: nearest(t.to), vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId }));
+  return plan.trips.map(t => ({ fromNodeId: nearest(t.from), toNodeId: nearest(t.to), vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId, ...(t.viaLinkIds ? { viaLinkIds: t.viaLinkIds } : {}) }));
 }
 
 function polygonArea(points: readonly (readonly number[])[]): number {

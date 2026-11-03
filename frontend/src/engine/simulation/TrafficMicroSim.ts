@@ -218,9 +218,26 @@ export interface MicroSimOptions {
    * cost (length over class-weighted speed) by how congested it was.
    */
   linkCostFactors?: ReadonlyMap<string, number>;
+  /**
+   * Count movements at the junction's stop lines (default true): a movement is
+   * the link a vehicle enters the junction core by and the link it leaves by,
+   * as a manual count at the junction records it. false: the older zone-edge
+   * counting, where any road crossing the count circle is an arm.
+   */
+  stopLineCounting?: boolean;
 }
 
-export interface MicroDemandTrip { fromNodeId: string; toNodeId: string; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string }
+export interface MicroDemandTrip {
+  fromNodeId: string; toNodeId: string; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string;
+  /**
+   * Links the trip must take, in order (link ids). A count-seeded trip stands for
+   * vehicles counted making one movement, so it is routed through that movement's
+   * stop-line approach and exit whatever the link costs; only how it reaches the
+   * approach and leaves after the exit is chosen by route cost. Ignored when a
+   * listed link is not in the network (e.g. after a road edit).
+   */
+  viaLinkIds?: readonly string[];
+}
 
 /** Traffic on the watched roads. */
 export interface WatchedRoadMetrics {
@@ -493,6 +510,7 @@ export class TrafficMicroSim {
   private linkTimeSum = new Float64Array(0);
   private linkTimeN = new Uint32Array(0);
   private readonly abreastEnabled: boolean;
+  private readonly stopLineCounting: boolean;
   /** Design flows (PCU/h) per inbound link index set from observed counts; others come from assigned demand. */
   private designFlows = new Map<number, number>();
   /** Time-of-day multiplier on all arrivals: demand at the chosen hour / demand at the hour the plan represents. */
@@ -537,6 +555,7 @@ export class TrafficMicroSim {
     this.demandLevel = Math.max(0, Math.min(1, options.demandLevel));
     this.signalTimingMode = options.signalTiming ?? 'webster';
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
+    this.stopLineCounting = options.stopLineCounting ?? true;
     this.focusLoad = Math.max(0, options.focusLoad ?? 0);
     const net = area.network;
     this.areaNodes = net.nodes;
@@ -2149,7 +2168,50 @@ export class TrafficMicroSim {
 
   /** Both ends of every link, for laying out count zones. */
   public linkEnds(): LinkEnds[] {
-    return this.links.map(l => ({ index: l.index, from: l.pts[0], to: l.pts[l.pts.length - 1], pts: l.pts }));
+    return this.links.map(l => ({ index: l.index, id: l.id, from: l.pts[0], to: l.pts[l.pts.length - 1], pts: l.pts, fromNode: l.from, toNode: l.to, roadId: l.roadId, rank: l.rank, lanes: l.lanes.length }));
+  }
+
+  /**
+   * The core of a counted junction, whose stop lines the survey counts at: the
+   * ring of a roundabout inside the zone (every node of the roundabout links
+   * connected to it), else the controlled junction (three or more arms; a
+   * joined node cluster counts as one) nearest the zone centre. Empty when
+   * neither lies in the zone.
+   */
+  private zoneCore(zone: CountZone): Set<string> {
+    const pos = (id: string) => {
+      const members = this.junctionMembers.get(id) ?? [id];
+      const cs = members.map(m => this.areaNodes.get(m)?.coordinates).filter((x): x is [number, number, number] => !!x);
+      return cs.length ? [cs.reduce((a, p) => a + p[0], 0) / cs.length, cs.reduce((a, p) => a + p[1], 0) / cs.length] : null;
+    };
+    const dist = (id: string) => {
+      const p = pos(id);
+      if (!p) return Infinity;
+      return Math.hypot((p[0] - zone.lng) * mPerDegLng(zone.lat), (p[1] - zone.lat) * M_PER_DEG_LAT);
+    };
+    const ring = this.links.filter(l => l.roundabout);
+    const core = new Set<string>();
+    for (const l of ring) if (dist(l.from) <= zone.radiusM && dist(l.to) <= zone.radiusM) { core.add(l.from); core.add(l.to); }
+    if (core.size) {
+      // The whole ring, also where it bulges past the zone edge
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const l of ring) if (core.has(l.from) !== core.has(l.to)) { core.add(l.from); core.add(l.to); grew = true; }
+      }
+      return core;
+    }
+    // A junction of the counted roads: three or more arms of collector class or above
+    // meet there (a side street joining one main road is not the counted junction)
+    const majorArms = (id: string) => new Set(this.links.filter(l => (l.to === id || l.from === id) && l.rank >= 2)
+      .map(l => { const far = l.to === id ? l.pts[0] : l.pts[l.pts.length - 1]; const p = pos(id)!; return Math.round(headingOf(p, far) / (Math.PI / 6)); })).size;
+    let best: string | null = null, bestD = Infinity;
+    this.controls.forEach((_c, id) => {
+      const d = dist(id);
+      if (d <= MAX_JUNCTION_SPAN_M) { if (majorArms(id) >= 3) core.add(id); }
+      if (d <= zone.radiusM && d < bestD) { bestD = d; best = id; }
+    });
+    if (!core.size && best) core.add(best);
+    return core;
   }
 
   /**
@@ -2173,7 +2235,7 @@ export class TrafficMicroSim {
   /** Starts counting turning movements at these junctions (replacing any earlier zones). */
   public setCountZones(zones: readonly CountZone[]): ZoneLayout[] {
     const ends = this.linkEnds();
-    this.countLayouts = zones.map(z => layoutZone(z, ends));
+    this.countLayouts = zones.map(z => layoutZone(z, ends, this.stopLineCounting ? this.zoneCore(z) : undefined));
     this.startCounting();
     return this.countLayouts;
   }

@@ -172,6 +172,15 @@ export interface SeedTrip { junctionId: string; approach: Cardinal; turn: Turn; 
 export function seedTrips(junctions: readonly CountJunction[], layouts: readonly ZoneLayout[], links: readonly LinkEnds[], reachable: ReadonlySet<string>):
   { trips: DemandPlan['trips']; seeds: SeedTrip[] } {
   const byIndex = new Map(links.map(l => [l.index, l]));
+  const principal = (ids: readonly number[] | undefined) => {
+    if (!ids?.length) return -1;
+    let best = 0;
+    ids.forEach((id, k) => {
+      const a = byIndex.get(id), b = byIndex.get(ids[best]);
+      if (((a?.rank ?? 0) - (b?.rank ?? 0) || (a?.lanes ?? 0) - (b?.lanes ?? 0)) > 0) best = k;
+    });
+    return best;
+  };
   const trips: DemandPlan['trips'] = [], seeds: SeedTrip[] = [];
   for (const layout of layouts) {
     if (layout.problem) continue;
@@ -181,13 +190,19 @@ export function seedTrips(junctions: readonly CountJunction[], layouts: readonly
       if (reachable.has(movementKey(j.id, m.approach, m.turn))) continue;
       const exit = CARDINALS[(CARDINALS.indexOf(m.approach) + (m.turn === 'left' ? 1 : m.turn === 'straight' ? 2 : 3)) % 4];
       const inArm = layout.arms.find(a => a.cardinal === m.approach), outArm = layout.arms.find(a => a.cardinal === exit);
-      const inLink = inArm?.inbound[0], outLink = outArm?.outbound[0];
-      if (inLink === undefined || outLink === undefined) continue; // that arm has no road in that direction in the model
-      const from = byIndex.get(inLink)!.from, to = byIndex.get(outLink)!.to;
+      // The arm's principal carriageway (highest class, then most lanes), from where
+      // its road enters the zone (stop-line layouts trace it back), so seeded traffic
+      // arrives on the counted road and not on a side street that joins it
+      const k = principal(inArm?.inbound), e = principal(outArm?.outbound);
+      if (!inArm || !outArm || k < 0 || e < 0) continue; // that arm has no road in that direction in the model
+      const from = byIndex.get(inArm.origins?.[k] ?? inArm.inbound[k])!.from, to = byIndex.get(outArm.destinations?.[e] ?? outArm.outbound[e])!.to;
+      // Pinned to the counted movement: through its stop-line approach and exit
+      const inId = byIndex.get(inArm.inbound[k])?.id, outId = byIndex.get(outArm.outbound[e])?.id;
+      const viaLinkIds = inId && outId ? [inId, outId] : undefined;
       for (const c of ['LV', 'HV', 'TW'] as VehicleClass[]) {
         const v = m[c] ?? 0;
         if (v <= 0) continue;
-        trips.push({ from: [from[0], from[1], from[2] ?? 0], to: [to[0], to[1], to[2] ?? 0], vehiclesPerHour: v, kind: KIND_OF[c] });
+        trips.push({ from: [from[0], from[1], from[2] ?? 0], to: [to[0], to[1], to[2] ?? 0], vehiclesPerHour: v, kind: KIND_OF[c], ...(viaLinkIds ? { viaLinkIds } : {}) });
         seeds.push({ junctionId: j.id, approach: m.approach, turn: m.turn, kind: KIND_OF[c], vehiclesPerHour: v });
       }
     }
@@ -212,8 +227,8 @@ export interface CalibrationFit {
  * any seeded trips. Plan flows are scaled so that, at the demand level in
  * `setup`, the routed flows equal the fitted ones.
  */
-export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly CountJunction[], options: IpfOptions & { countDriven?: boolean } = {}): CalibrationFit {
-  const zones = junctions.map(zoneFor);
+export function fitPlan(setup: SimSetup, base: DemandPlan, junctions: readonly CountJunction[], options: IpfOptions & { countDriven?: boolean; zoneOf?: (j: CountJunction) => CountZone } = {}): CalibrationFit {
+  const zones = junctions.map(options.zoneOf ?? zoneFor);
   const observed = observedFlows(junctions);
   let sim = buildSim(setup, base);
   let layouts = sim.setCountZones(zones);
