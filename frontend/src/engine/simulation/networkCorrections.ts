@@ -92,6 +92,20 @@ function setTwoWay(r: RoadObject, fwd: number, bwd: number): RoadObject {
   };
 }
 
+/**
+ * Lanes of a way made one-way: its OSM lanes tag when it has one (on a one-way
+ * way, lanes counts the lanes in its direction: OSM wiki Key:lanes), else the
+ * lane count the importer gave the whole carriageway. The paved carriageway
+ * does not shrink when it turns out to carry one direction: taking only one
+ * direction's share of a two-way default halved an untagged roundabout (Kokane
+ * Chowk's ring became 1 lane), while the importer gives an untagged way that is
+ * explicitly oneway=yes 2 lanes (e.g. the Popatrao Nathuji Kalamkar Path ring).
+ */
+export function oneWayLanes(r: RoadObject): number {
+  const tag = Number((r.osmProvenance?.originalTags as Record<string, string> | undefined)?.lanes);
+  return Math.max(1, Number.isFinite(tag) && tag >= 1 ? Math.round(tag) : r.laneCount ?? r.sections?.[0]?.carriagewayA?.lanes ?? 1);
+}
+
 /** One-way roundabout pieces imported as two-way before the importer honoured junction=roundabout. */
 export function impliesOneWay(tags: Record<string, string> | undefined): boolean {
   if (!tags) return false;
@@ -116,7 +130,7 @@ export function applyNetworkCorrections(roads: readonly DrivableObject[], layer:
     if (r0.type !== 'road') return r0;
     let r = r0 as RoadObject;
     if (!r.isOneWay && impliesOneWay(r.osmProvenance?.originalTags as Record<string, string> | undefined)) {
-      r = setOneWay(r, Math.max(1, r.sections?.[0]?.carriagewayA?.lanes ?? r.laneCount ?? 1));
+      r = setOneWay(r, oneWayLanes(r));
       report.impliedOneWay.push(r.id);
     }
     const way = osmWayOf(r);
@@ -124,7 +138,7 @@ export function applyNetworkCorrections(roads: readonly DrivableObject[], layer:
     if (fixes) for (const c of fixes) {
       switch (c.action) {
         case 'reverse': r = reverseRoad(r); break;
-        case 'set_oneway': r = setOneWay(c.params.reverse ? reverseRoad(r) : r, Math.max(1, r.sections?.[0]?.carriagewayA?.lanes ?? 1)); break;
+        case 'set_oneway': r = setOneWay(c.params.reverse ? reverseRoad(r) : r, c.params.lanes ?? (r.isOneWay ? r.laneCount : oneWayLanes(r))); break;
         case 'set_two_way': r = setTwoWay(r, c.params.lanes_forward!, c.params.lanes_backward!); break;
         case 'set_lanes': r = r.isOneWay ? setOneWay(r, c.params.lanes!) : { ...r, laneCount: c.params.lanes! }; break;
         case 'set_roundabout': r = { ...r, osmProvenance: { ...r.osmProvenance!, roundabout: true } }; break;

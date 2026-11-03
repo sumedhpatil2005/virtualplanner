@@ -74,6 +74,18 @@ describe('network corrections', () => {
     expect((roads[0] as RoadObject).isOneWay).toBe(true);
     expect((roads[0] as RoadObject).sections![0].carriagewayB).toBeUndefined();
     expect(report.impliedOneWay).toEqual(['osm_4']);
+    // The whole carriageway carries the one direction: an untagged ring keeps the importer's
+    // lane count (as an explicitly oneway=yes untagged way gets), not one direction's half of it
+    expect((roads[0] as RoadObject).laneCount).toBe(2);
+    expect((roads[0] as RoadObject).sections![0].carriagewayA!.lanes).toBe(2);
+    // A lanes tag on a roundabout way counts the lanes in its (one) direction
+    const tagged = applyNetworkCorrections([osmRoad(5, [[0, 0], [10, 10]], { junction: 'roundabout', lanes: '3' }, false, 4)], null).roads[0] as RoadObject;
+    expect(tagged.laneCount).toBe(3);
+    // set_oneway on an untagged two-way piece of a ring (infosys-ring-1) keeps its carriageway too
+    const piece = osmRoad(6, [[0, 0], [10, 10]], { junction: 'roundabout', oneway: 'no' }, false);
+    const fixed = applyNetworkCorrections([piece], layerOf([{ osm_way_id: 6, action: 'set_oneway', params: { reverse: true } }])).roads[0] as RoadObject;
+    expect(fixed.isOneWay).toBe(true);
+    expect(fixed.laneCount).toBe(2);
   });
 
   it('ships a valid, evidenced layer', () => {
