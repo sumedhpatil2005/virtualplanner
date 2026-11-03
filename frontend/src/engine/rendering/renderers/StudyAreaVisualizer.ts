@@ -117,6 +117,14 @@ export class StudyAreaVisualizer {
     this.viewer = null;
   }
 
+  /** Forgets the area entirely (another road was picked). */
+  public reset() {
+    this.sectionKeys = new Set();
+    this.selectLink = null;
+    this.lastArea = null;
+    this.clear();
+  }
+
   public clear() {
     this.cancelReveal();
     this.dataSource?.entities.removeAll();
@@ -165,7 +173,37 @@ export class StudyAreaVisualizer {
    * without vehicles fade to grey. The selected road keeps its pulsing glow, in
    * the colour of its traffic. Re-render the area to restore role colours.
    */
+  /** The selected road section (drawn with the selected road's glow). */
+  private sectionKeys: ReadonlySet<string> = new Set();
+  private lastArea: StudyArea | null = null;
+  private selectLink: ReadonlyMap<string, number> | null = null;
+
+  /**
+   * Select-link view: stretches coloured by how many of the selected road's
+   * vehicles use them (veh/h), the rest dimmed. null restores the normal view.
+   */
+  public showSelectLink(vph: ReadonlyMap<string, number> | null) {
+    this.selectLink = vph;
+    if (!vph) {
+      if (this.lastArea) this.render(this.lastArea, false);
+      return;
+    }
+    if (!this.lines?.ready) { this.whenLinesReady(() => this.showSelectLink(this.selectLink)); return; }
+    const max = Math.max(1, ...vph.values());
+    const scratch = new Color();
+    for (const key of this.lineKeys) {
+      const a = this.attributes(key);
+      if (!a) continue;
+      const v = vph.get(key) ?? 0;
+      const t = Math.min(1, v / max);
+      if (v <= 0) { Color.fromCssColorString(EMPTY_STRETCH, scratch); scratch.alpha = 0.12; }
+      else { Color.lerp(Color.fromCssColorString('#a78bfa'), Color.fromCssColorString('#f0abfc'), t, scratch); scratch.alpha = 0.35 + 0.6 * Math.sqrt(t); }
+      a.color = ColorGeometryInstanceAttribute.toValue(scratch, a.color);
+    }
+  }
+
   public setSegmentSpeeds(ratios: ReadonlyMap<string, number>) {
+    if (this.selectLink) return;
     this.seedEntities.forEach((entity, key) => {
       const ratio = ratios.get(key);
       const css = ratio === undefined ? STUDY_ROLE_COLORS.seed : speedColor(ratio);
@@ -204,8 +242,11 @@ export class StudyAreaVisualizer {
   }
 
   /** Draws the area. With `reveal`, stretches appear outward from the seed like a ripple. */
-  public render(area: StudyArea, reveal: boolean) {
+  public render(area: StudyArea, reveal: boolean, sectionKeys?: ReadonlySet<string>) {
     this.clear();
+    if (sectionKeys) this.sectionKeys = sectionKeys;
+    const isSeed = (s: { role: string; key: string }) => s.role === 'seed' || this.sectionKeys.has(s.key);
+    this.lastArea = area;
     const ds = this.dataSource;
     const viewer = this.viewer;
     if (!ds || !viewer) return;
@@ -214,7 +255,7 @@ export class StudyAreaVisualizer {
     ds.entities.suspendEvents();
     const seedColor = Color.fromCssColorString(STUDY_ROLE_COLORS.seed);
     for (const s of area.segments) {
-      if (s.role !== 'seed') continue;
+      if (!isSeed(s)) continue;
       this.seedEntities.set(s.key, ds.entities.add({
         polyline: {
           positions: s.coordinates.map(c => scenePoint(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
@@ -226,7 +267,7 @@ export class StudyAreaVisualizer {
     ds.entities.resumeEvents();
 
     // Every other stretch: one batched primitive, built off the main thread
-    const others = area.segments.filter(s => s.role !== 'seed' && s.coordinates.length >= 2);
+    const others = area.segments.filter(s => !isSeed(s) && s.coordinates.length >= 2);
     this.lineKeys = others.map(s => s.key);
     if (others.length > 0) {
       this.lines = viewer.scene.primitives.add(new Primitive({

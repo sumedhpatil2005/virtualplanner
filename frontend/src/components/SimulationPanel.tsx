@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
-  MousePointerClick, Pause, Play, RotateCcw, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, Target, GitCompareArrows, Flag, X,
+  MousePointerClick, Pause, Play, RotateCcw, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSimulationMode } from '../hooks/useSimulationMode';
 import {
-  STUDY_DISTANCES_M, TRAFFIC_LEVELS, TRAFFIC_SPEEDS, FOCUS_LOAD_PER_LEVEL, type SimulationModeState, type TrafficRunState, type SignalsState,
+  STUDY_DISTANCES_M, TRAFFIC_SPEEDS, type SimulationModeState, type TrafficRunState, type SignalsState,
 } from '../engine/simulation/SimulationMode';
 import type { StudyProblem } from '../engine/simulation/StudyAreaExplorer';
 import {
@@ -18,6 +18,7 @@ import { SourceBadge } from './ui/SourceBadge';
 import { sourceOf } from './ui/dataSource';
 import { CalibrationPanel } from './CalibrationPanel';
 import { TimeOfDayPanel } from './TimeOfDayPanel';
+import { RoadAnalysisView, DemandEvidence } from './RoadAnalysisPanel';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -30,11 +31,6 @@ const formatClock = (s: number) => {
 
 const DISTANCE_OPTIONS = STUDY_DISTANCES_M.map(m => ({ value: m, label: formatDistanceM(m) }));
 const SPEED_OPTIONS = TRAFFIC_SPEEDS.map(s => ({ value: s, label: `${s}×` }));
-const LEVEL_OPTIONS = TRAFFIC_LEVELS.map(l => ({ value: l.value, label: l.label }));
-const ROUTE_OPTIONS = [
-  { value: 'focus', label: 'Through this road' },
-  { value: 'natural', label: 'Natural' },
-] as const;
 
 /**
  * Simulate mode: choose how far around the road to look, click a road, and
@@ -48,17 +44,19 @@ export const SimulationPanel: React.FC = () => {
   return (
     <SidePanel label="Simulate traffic">
       <PanelHeader
-        title={hasRoad ? sim.seedRoadIds.map(roadName).join(' + ') : 'Traffic lab'}
-        subtitle={hasRoad ? `Traffic within ${formatDistanceM(sim.rangeMeters)} along the roads` : 'Pick a distance, then click a road'}
+        title={hasRoad ? (sim.section?.name ?? sim.seedRoadIds.map(roadName).join(' + ')) : 'Road analysis'}
+        subtitle={hasRoad ? `${sim.section ? `${formatDistanceM(sim.section.lengthM)} section${sim.section.carriageways === 2 ? ', both carriageways' : ''} · ` : ''}area ${formatDistanceM(sim.rangeMeters)} around it` : 'Pick a distance, then click a road'}
         onBack={hasRoad ? () => mode.clearSeeds() : undefined}
         backLabel="Choose another road"
         onClose={() => engineInstance.setAppMode('view')}
         closeLabel="Leave Simulate"
       />
       <PanelBody>
-        <Section title="Distance around the road">
-          <Segmented label="Distance around the road" options={DISTANCE_OPTIONS} value={sim.rangeMeters as (typeof STUDY_DISTANCES_M)[number]} onChange={m => mode.setRange(m)} />
-        </Section>
+        {!hasRoad && (
+          <Section title="Distance around the road">
+            <Segmented label="Distance around the road" options={DISTANCE_OPTIONS} value={sim.rangeMeters as (typeof STUDY_DISTANCES_M)[number]} onChange={m => mode.setRange(m)} />
+          </Section>
+        )}
 
         {!hasRoad ? <PickRoad rangeMeters={sim.rangeMeters} /> : <Study sim={sim} />}
       </PanelBody>
@@ -71,7 +69,7 @@ const PickRoad: React.FC<{ rangeMeters: number }> = ({ rangeMeters }) => (
     <MousePointerClick size={28} className="mx-auto text-cyan-300" />
     <p className="text-base font-semibold text-white">Click a road on the map</p>
     <p className="text-sm text-slate-300 leading-relaxed">
-      Any road, flyover or bridge. Every road within {formatDistanceM(rangeMeters)} is mapped, the places where traffic enters and leaves are found, and traffic starts.
+      Any road, flyover or bridge. You will see how much traffic uses it, where that traffic comes from, what holds it up, and what a change would do. Every road within {formatDistanceM(rangeMeters)} is included.
     </p>
     <p className="text-xs text-slate-500">Shift+click adds more roads, for a corridor.</p>
   </div>
@@ -117,21 +115,48 @@ const Study: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
               </button>
             </span>
           </div>
-          <TrafficControls traffic={traffic} waiting={osmRoads.status === 'loading' ? 'Waiting for roads' : signals.status === 'loading' ? 'Loading signals' : null} />
           <TimeOfDayPanel tod={sim.timeOfDay} />
-          {traffic.demand && <DemandNote demand={traffic.demand} />}
-          <CalibrationPanel sim={sim} />
-          <SignalsNote signals={signals} />
-          <VehicleInspector sim={sim} />
-          <ScenarioExperiment sim={sim} />
-          {traffic.metrics && <LiveFigures traffic={traffic} seedRoadIds={sim.seedRoadIds} />}
-          <NetworkChecks problems={area.problems} provisional={osmRoads.status === 'loading'} />
-          <Assumptions seed={traffic.seed} />
+          <RoadAnalysisView sim={sim} />
+          <div className="space-y-2 pt-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Advanced</p>
+            <Advanced title="Live traffic on the map">
+              <TrafficControls traffic={traffic} waiting={osmRoads.status === 'loading' ? 'Waiting for roads' : signals.status === 'loading' ? 'Loading signals' : null} />
+              <VehicleInspector sim={sim} />
+              {traffic.metrics && <LiveFigures traffic={traffic} seedRoadIds={sim.seedRoadIds} />}
+            </Advanced>
+            <Advanced title="Demand, evidence and what-if">
+              {traffic.demand && <DemandNote demand={traffic.demand} />}
+              <DemandEvidence sim={sim} />
+            </Advanced>
+            <Advanced title="Calibrate to traffic counts">
+              <CalibrationPanel sim={sim} />
+            </Advanced>
+            <Advanced title="Study area and network checks">
+              <Section title="Distance around the road">
+                <Segmented label="Distance around the road" options={DISTANCE_OPTIONS} value={sim.rangeMeters as (typeof STUDY_DISTANCES_M)[number]} onChange={m => mode.setRange(m)} />
+              </Section>
+              <SignalsNote signals={signals} />
+              <NetworkChecks problems={area.problems} provisional={osmRoads.status === 'loading'} />
+            </Advanced>
+            <Advanced title="How the model works">
+              <Assumptions seed={traffic.seed} />
+            </Advanced>
+          </div>
         </>
       )}
     </>
   );
 };
+
+/** An optional section, closed until opened. */
+const Advanced: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <details className="group rounded-xl border border-white/10 bg-white/[0.02]">
+    <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-300 hover:text-white list-none">
+      {title}<ChevronDown size={15} className="transition group-open:rotate-180" />
+    </summary>
+    <div className="space-y-3 border-t border-white/5 px-3 py-3">{children}</div>
+  </details>
+);
 
 /** What the traffic demand is based on, labelled by data source. */
 const DemandNote: React.FC<{ demand: NonNullable<TrafficRunState['demand']> }> = ({ demand }) => {
@@ -176,25 +201,17 @@ const TrafficControls: React.FC<{ traffic: TrafficRunState; waiting: string | nu
       </div>
       {traffic.error && <Notice tone="warn" icon={AlertTriangle}>{traffic.error}</Notice>}
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 pt-1">
-        <span className="text-sm text-slate-400">Routes</span>
-        {traffic.demand?.source === 'project-estimate' || traffic.demand?.source === 'calibrated' ? <span className="text-xs text-indigo-300">{traffic.demand.source === 'calibrated' ? 'Calibrated origins and destinations' : 'Project origins and destinations'}</span> : <Segmented label="Where traffic goes" options={ROUTE_OPTIONS} value={traffic.focus ? 'focus' : 'natural'} onChange={v => mode.setFocus(v === 'focus')} />}
-        <span className="text-sm text-slate-400">Volume</span>
-        <Segmented label="Traffic volume" options={LEVEL_OPTIONS} value={nearestLevel(traffic.demandLevel)} onChange={v => mode.setDemandLevel(v)} />
         <span className="text-sm text-slate-400">Speed</span>
         <Segmented label="Playback speed" options={SPEED_OPTIONS} value={traffic.speed as (typeof TRAFFIC_SPEEDS)[number]} onChange={s => mode.setTrafficSpeed(s)} />
       </div>
       {m && (
         <p className="text-xs text-slate-500">
-          About {m.inflowVph.toLocaleString()} vehicles an hour enter the area
-          {m.focusVph > 0 ? `, ${m.focusVph.toLocaleString()} of them sent through the selected road` : ''}.
+          About {m.inflowVph.toLocaleString()} vehicles an hour are planned in the area at this hour. The figures above come from a separate repeatable run; this animation is for watching.
         </p>
       )}
     </Section>
   );
 };
-
-const nearestLevel = (v: number) =>
-  TRAFFIC_LEVELS.reduce((best, l) => (Math.abs(l.value - v) < Math.abs(best.value - v) ? l : best)).value;
 
 const VehicleInspector: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   if (sim.selectedVehicleId === null) return <p className="text-xs text-slate-500">Click a moving vehicle to inspect it. Shift+click adds a road to the study.</p>;
@@ -203,46 +220,6 @@ const VehicleInspector: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   return <section className="rounded-xl border border-cyan-400/25 bg-cyan-500/5 p-3 space-y-2">
     <div className="flex justify-between items-center"><span className="text-sm font-semibold text-cyan-100">{vehicle ? vehicle.kind.replaceAll('_', ' ') : 'Vehicle'} #{sim.selectedVehicleId}</span><button aria-label="Close vehicle inspector" onClick={() => mode.selectVehicle(null)} className="cursor-pointer text-slate-400 hover:text-white"><X size={15} /></button></div>
     {vehicle ? <><p className="text-xs text-slate-300">{Math.round(vehicle.speedKmh)} km/h · {Math.round(vehicle.speedRatio * 100)}% of road speed limit · {vehicle.focus ? 'Uses selected road' : 'Area traffic'}</p><Button size="sm" variant="ghost" icon={Crosshair} onClick={() => mode.flyTo([vehicle.lng, vehicle.lat, vehicle.z])}>Locate vehicle</Button></> : <p className="text-xs text-slate-400">This vehicle has left the active simulation.</p>}
-  </section>;
-};
-
-/** Both columns come from fresh, equal-duration runs with the same frozen trips. */
-const ScenarioExperiment: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
-  const mode = engineInstance.simMode;
-  const { baseline, current, staleReason, running } = sim.comparison;
-  const [error, setError] = useState<string | null>(null);
-  const run = async (baselineRun: boolean) => {
-    setError(null);
-    try { await (baselineRun ? mode.captureBaseline(300) : mode.runComparison()); }
-    catch (e) { setError(e instanceof Error ? e.message : 'The experiment could not finish.'); }
-  };
-  const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
-  const before = baseline?.metrics, after = current?.metrics;
-  const delayReduction = before?.meanDelayS != null && after?.meanDelayS != null && before.meanDelayS > 0.1
-    ? (before.meanDelayS - after.meanDelayS) / before.meanDelayS * 100 : null;
-  const complete = !!before && !!after && delayReduction !== null && delayReduction >= 10 && after.completedTrips >= before.completedTrips && after.onNetwork + after.waitingToEnter <= before.onNetwork + before.waitingToEnter && after.gridlockRemovals <= before.gridlockRemovals && after.unroutable <= before.unroutable;
-  const scenarioName = (id: string) => engineInstance.scenarios.getAll().find(s => s.id === id)?.name ?? id;
-  const rows: [string, string, string][] = before && after ? [
-    ['Trips completed', String(before.completedTrips), String(after.completedTrips)],
-    ['Mean trip time', before.meanTravelTimeS === null ? '—' : `${before.meanTravelTimeS.toFixed(1)} s`, after.meanTravelTimeS === null ? '—' : `${after.meanTravelTimeS.toFixed(1)} s`],
-    ['Mean delay', before.meanDelayS === null ? '—' : `${before.meanDelayS.toFixed(1)} s`, after.meanDelayS === null ? '—' : `${after.meanDelayS.toFixed(1)} s`],
-    ['Travel-time ratio', before.delayIndex === null ? '—' : `${before.delayIndex.toFixed(2)}×`, after.delayIndex === null ? '—' : `${after.delayIndex.toFixed(2)}×`],
-    ['Stops per trip', before.stopsPerTrip === null ? '—' : before.stopsPerTrip.toFixed(1), after.stopsPerTrip === null ? '—' : after.stopsPerTrip.toFixed(1)],
-    ['Unfinished trips', String(before.onNetwork + before.waitingToEnter), String(after.onNetwork + after.waitingToEnter)],
-    ['Removed / unroutable', String(before.gridlockRemovals + before.unroutable), String(after.gridlockRemovals + after.unroutable)],
-  ] : [];
-  return <section className="overflow-hidden rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/10 to-slate-900/50">
-    <div className="p-3 space-y-3">
-      <div className="flex items-center gap-2"><Target size={17} className="text-indigo-300" /><h3 className="text-sm font-semibold text-white">Make the city flow</h3><span className="ml-auto text-[10px] uppercase tracking-wide text-indigo-300">5-minute trial</span></div>
-      <p className="text-xs text-slate-300 leading-relaxed">Reduce excess travel time by 10% while completing at least as many trips. Save a baseline, improve the roads or signals in Build, then test the change.</p>
-      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className={`h-full transition-all ${complete ? 'bg-emerald-400' : 'bg-indigo-400'}`} style={{ width: `${delayReduction === null ? 0 : Math.max(0, Math.min(100, delayReduction * 10))}%` }} /></div>
-      <p className={`text-xs ${complete ? 'text-emerald-300' : 'text-slate-400'}`}>{complete ? 'Objective achieved in this modelled trial' : delayReduction === null ? 'Run both trials to measure progress' : `${delayReduction.toFixed(1)}% less excess travel time · check trip totals below`}</p>
-      <div className="flex gap-2"><Button size="sm" icon={running ? Loader2 : Flag} spin={running} disabled={busy} onClick={() => void run(true)}>{baseline ? 'Replace baseline' : 'Save baseline'}</Button><Button size="sm" variant="primary" icon={GitCompareArrows} disabled={busy || !baseline} onClick={() => void run(false)}>Test change</Button></div>
-      {running && <p role="status" className="text-xs text-cyan-300">Running a repeatable trial…</p>}
-      {baseline && <p className="text-xs text-slate-400">Baseline: {scenarioName(baseline.scenarioId)} · {baseline.durationS / 60} min · seed {baseline.seed}</p>}
-      {(error || staleReason) && <p role="status" className="text-xs text-amber-300">{error || staleReason}</p>}
-    </div>
-    {rows.length > 0 && <div className="border-t border-white/10 p-3"><table className="w-full text-xs tabular-nums"><caption className="text-left mb-2 text-slate-400">Same demand, duration and random seed</caption><thead><tr className="text-slate-500"><th className="text-left pb-2 font-medium">Result</th><th className="text-right pb-2 font-medium">Before</th><th className="text-right pb-2 font-medium">After</th></tr></thead><tbody>{rows.map(([label, a, b]) => <tr key={label} className="border-t border-white/5"><th className="py-2 text-left font-normal text-slate-400">{label}</th><td className="text-right text-slate-300">{a}</td><td className="text-right text-white">{b}</td></tr>)}</tbody></table><p className="mt-2 text-[11px] text-slate-500">Travel results cover completed trips. Always compare unfinished and removed trips too.</p></div>}
   </section>;
 };
 
@@ -275,10 +252,7 @@ const LiveFigures: React.FC<{ traffic: TrafficRunState; seedRoadIds: string[] }>
           <Figure label="Vehicles using it" value={perHour === null ? m.watched.passed.toLocaleString() : `${perHour.toLocaleString()}/h`} hint={perHour === null ? 'so far' : `${m.watched.passed.toLocaleString()} so far`} />
           <Figure label="Speed on it now" value={m.watched.meanSpeedKmh === null ? '—' : `${Math.round(m.watched.meanSpeedKmh)} km/h`} hint={`${m.watched.onRoad} on it now`} />
         </div>
-        {traffic.focus && (
-          <p className="text-xs text-slate-500">Includes the traffic sent through it. Switch Routes to Natural to see how much uses it by itself.</p>
-        )}
-        {!traffic.focus && m.timeS > 180 && m.watched.passed === 0 && (
+        {m.timeS > 180 && m.watched.passed === 0 && (
           <p className="text-sm text-slate-400">No traffic uses it: routes through the area are faster without it. Check how it connects in View mode.</p>
         )}
       </Section>
@@ -292,7 +266,7 @@ const LiveFigures: React.FC<{ traffic: TrafficRunState; seedRoadIds: string[] }>
 
       {m.gridlockRemovals > 0 && (
         <Notice tone="warn" icon={AlertTriangle}>
-          {m.gridlockRemovals} vehicle{m.gridlockRemovals > 1 ? 's were' : ' was'} removed after being stuck for {GRIDLOCK_S / 60} minutes. Try a lower volume.
+          {m.gridlockRemovals} vehicle{m.gridlockRemovals > 1 ? 's were' : ' was'} removed after being stuck for {GRIDLOCK_S / 60} minutes: the network is jammed at this hour.
         </Notice>
       )}
     </>
@@ -351,12 +325,13 @@ const Assumptions: React.FC<{ seed: number }> = ({ seed }) => {
     <details className="text-sm text-slate-400">
       <summary className="cursor-pointer text-slate-300 hover:text-white">How the traffic is modelled</summary>
       <ul className="list-disc pl-5 mt-2 space-y-1.5 text-xs leading-relaxed">
-        <li>Project demand estimates trips from buildings, zones and gateways. When those inputs are absent, synthetic arrivals use a share of road capacity ({Object.entries(LANE_CAPACITY_VPH).map(([k, v]) => `${k} ${v}`).join(', ')} vehicles/h per lane): Light 5%, Normal 12%, Heavy 25%. These are planning estimates, not measured traffic counts.</li>
+        <li>Capacity per lane, used for the % of capacity figures (assumed): {Object.entries(LANE_CAPACITY_VPH).map(([k, v]) => `${k} ${v}`).join(', ')} vehicles/h. When an area has no roads crossing its edge and no buildings, synthetic arrivals at 12% of road capacity are used instead.</li>
         <li>Fleet: {fleet}. Traffic keeps left and follows the car-following model used in research simulators (IDM).</li>
         <li>Your placed junctions control signals and cycle length. Other mapped signals use {SIGNAL_GREEN_S} s green, {SIGNAL_AMBER_S} s amber, {SIGNAL_ALL_RED_S} s all-red per direction. If the map cannot be reached, signals are estimated where two main roads cross. Elsewhere the smaller road gives way.</li>
         <li>OpenStreetMap bridges and flyovers are raised to deck height with ramps, so they pass over the roads below. Roads you build join any road their ends stop within 25 m of.</li>
         <li>The roads around the study area are checked against OpenStreetMap (once a fortnight per place) and any that are missing are loaded, so the study runs on every mapped road.</li>
-        <li>With Routes set to Through this road, extra trips enter at the area edge, drive along the selected road and leave by another edge. Their volume is {Math.round(FOCUS_LOAD_PER_LEVEL * 100) / 100}× the volume share of the selected road's capacity (Light {Math.round(TRAFFIC_LEVELS[0].value * FOCUS_LOAD_PER_LEVEL * 100)}%, Normal {Math.round(TRAFFIC_LEVELS[1].value * FOCUS_LOAD_PER_LEVEL * 100)}%, Heavy {Math.round(TRAFFIC_LEVELS[2].value * FOCUS_LOAD_PER_LEVEL * 100)}%). Entries and exits for which the road is on or near the fastest way through are used most.</li>
+        <li>No traffic is sent through the selected road on purpose: it carries what the estimated trips choose to drive on it. Demand: the area's own trips at Pune rates and trip lengths (CMP 2018), trips crossing its edge, and through traffic on its main roads at counted Pune arterial flows; see Demand, evidence and what-if.</li>
+        <li>The selected road is the clicked road followed to the next main junctions, both carriageways. The figures are from a 15-minute counted run after a 5-minute warm-up, after drivers adapt their routes to congestion once.</li>
         <li>Drivers take the fastest route and prefer main roads. The same settings always give the same run (seed {seed}).</li>
       </ul>
     </details>

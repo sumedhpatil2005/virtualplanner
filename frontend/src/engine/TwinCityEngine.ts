@@ -849,6 +849,15 @@ export class TwinCityEngine {
   }
 
   /** Leaves Simulate for Build with the problem's road selected and in view. */
+  /** Leaves Simulate for Build with a road selected (or none) and the camera at `location`: "try an improvement". */
+  public editInBuild(roadIds: readonly string[], location: [number, number, number] | null): void {
+    this.exitSimulationMode();
+    this.setPlanningModeActive(true);
+    const roadId = roadIds.find(id => this.objects.getById(id));
+    if (roadId) this.selection.selectSingle(roadId);
+    if (location) this.simMode.flyTo(location);
+  }
+
   public editProblemInPlanMode(problem: StudyProblem): void {
     this.exitSimulationMode();
     this.setPlanningModeActive(true);

@@ -10,6 +10,7 @@ import type { DataSource } from './dataSource';
  *  - synthetic:  generated from road capacity only
  *  - calibrated: an estimate scaled to observed counts
  *  - simulated:  produced by the traffic model
+ *  - hypothetical: a what-if value the user set, never observed or forecast
  */
 
 
@@ -19,6 +20,7 @@ const STYLE: Record<DataSource, { label: string; cls: string; title: string }> =
   estimated: { label: 'Estimated', cls: 'bg-amber-500/15 text-amber-300 border-amber-400/30', title: 'Heuristic estimate (population, gravity model or defaults), not a measurement.' },
   synthetic: { label: 'Synthetic', cls: 'bg-slate-500/20 text-slate-300 border-slate-400/30', title: 'Generated from road capacity only; no demand data.' },
   calibrated: { label: 'Calibrated', cls: 'bg-violet-500/15 text-violet-300 border-violet-400/30', title: 'An estimate scaled to match observed counts.' },
+  hypothetical: { label: 'Hypothetical', cls: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/40', title: 'A what-if value set by the user: neither observed nor forecast.' },
   simulated: { label: 'Simulated', cls: 'bg-indigo-500/15 text-indigo-300 border-indigo-400/30', title: 'Output of the traffic simulation.' },
 };
 
