@@ -1,6 +1,7 @@
 import type { RoadAnalysisResult } from './RoadAnalysis';
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
+import { isGenericRoadName } from './roadSection';
 
 /**
  * Existing city against a proposal, both run on the same frozen OD demand,
@@ -63,6 +64,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   section[0].good = null;
   const m = (r: RoadAnalysisResult) => r.network;
   const network: Delta[] = [
+    delta('Share of demand that got onto the roads', a.load ? 100 * a.load.servedShare : null, b.load ? 100 * b.load.servedShare : null, '%', false, 0.03),
     delta('Trips completed', m(a).completedTrips, m(b).completedTrips, 'trips', false, 0.03),
     delta('Mean trip time', m(a).meanTravelTimeS, m(b).meanTravelTimeS, 's', true, 0.03),
     delta('Mean delay per trip', m(a).meanDelayS, m(b).meanDelayS, 's', true, 0.05),
@@ -76,7 +78,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     r.linkVph.forEach((vph, linkId) => {
       const roadId = linkId.replace(/_seg_\d+_(fwd|bwd)$/, '');
       const name = rs.get(roadId)?.name || 'Unnamed road';
-      if (/^(unnamed|residential|service) road$/i.test(name)) return;
+      if (isGenericRoadName(name)) return;
       out.set(name, Math.max(out.get(name) ?? 0, vph));
     });
     return out;
@@ -92,6 +94,9 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   if (sv === 'worse' && nv === 'better') summary = 'The wider area gets better at the expense of the selected road.';
   const caveats: string[] = [];
   if (kind === 'development') caveats.push(`Land use changed too: demand went from ${Math.round(demand.before).toLocaleString()} to ${Math.round(demand.after).toLocaleString()} veh/h, so differences mix the new demand with any road changes. Compare road changes on their own with the land use as in the baseline.`);
+  if (a.load?.overloaded || b.load?.overloaded) caveats.push('Demand exceeds what the modelled network can carry in at least one run, so part of the demand never entered: compare the share of demand served and the waiting vehicles, not only speeds.');
+  if (before.adaptation && after.adaptation && before.adaptation.applied !== after.adaptation.applied)
+    caveats.push(`Routes were adapted to congestion in ${after.adaptation.applied ? 'the proposal' : 'the existing city'} only (the other run was past its modelled capacity), so part of the difference is drivers choosing routes differently.`);
   caveats.push('One seed and one simulated hour: differences under about 5% (10% for junction delay) are within run-to-run noise and are shown as no change.');
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, rerouting, verdict: { section: sv, network: nv, summary }, caveats };

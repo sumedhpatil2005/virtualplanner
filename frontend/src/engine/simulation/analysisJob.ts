@@ -1,5 +1,5 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
-import { TrafficMicroSim, STEP_S, type MicroSimOptions } from './TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, MAX_VEHICLES, type MicroSimOptions } from './TrafficMicroSim';
 import { snapDemandPlan, type DemandPlan } from './StudyDemand';
 import { analyseRoad, countChecks, type RoadAnalysisResult, type CountCheck } from './RoadAnalysis';
 import type { RoadSection } from './roadSection';
@@ -36,6 +36,8 @@ export interface AnalysisOutput {
   counts: CountCheck[];
   /** Share of OD flow on a different route after route adaptation, per iteration. */
   rerouted: number[];
+  /** Whether drivers' routes were adapted to the congestion of a first run, and why not when they were not. */
+  adaptation: { applied: boolean; reason: string | null };
   /** Planned vehicles per hour actually given a route (the rest cannot reach their destination on this network). */
   routedVph: number;
   unroutedVph: number;
@@ -67,6 +69,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
 
   const factors = new Map<string, number>();
   const rerouted: number[] = [];
+  let adaptation: AnalysisOutput['adaptation'] = { applied: job.feedbackIterations > 0, reason: null };
   let lastRoutes: Map<number, string> | null = null;
   for (let k = 1; k <= job.feedbackIterations; k++) {
     const sim = build(factors);
@@ -79,6 +82,14 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
     }
     lastRoutes = routes;
     for (let i = 0; i < runSteps; i++) { sim.step(); await tick(); }
+    // Travel times from a network past its capacity measure gridlock, not route choice: routes on jammed links would
+    // all get the maximum cost and traffic would be pushed onto side streets to no purpose. Keep the routes then, and say so.
+    const m = sim.getMetrics(), tripsInRun = m.inflowVph * (job.warmupS + job.measureS) / 3600;
+    const overloaded = m.onNetwork >= 0.98 * MAX_VEHICLES || (tripsInRun > 0 && (m.gridlockRemovals > 0.05 * tripsInRun || m.waitingToEnter > 0.1 * tripsInRun));
+    if (overloaded) {
+      adaptation = { applied: false, reason: 'Routes were not adapted to congestion: the network was past its modelled capacity, so measured delays reflect gridlock rather than route choice. Drivers take the fastest free-flow routes.' };
+      break;
+    }
     const measured = new Map<string, number>();
     sim.linkTravelTimes().forEach((t, id) => measured.set(id, Math.min(MAX_COST_FACTOR, Math.max(1, t.meanS / Math.max(t.freeFlowS, 0.1)))));
     new Set([...factors.keys(), ...measured.keys()]).forEach(id => {
@@ -88,7 +99,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   }
   const sim = build(factors);
   const flows = sim.demandRouteFlows();
-  if (lastRoutes) {
+  if (lastRoutes && adaptation.applied) {
     let changed = 0, sum = 0;
     for (const f of flows) { sum += f.vehiclesPerHour; if (lastRoutes.get(f.index) !== f.route.join(',')) changed += f.vehiclesPerHour; }
     rerouted.push(sum ? changed / sum : 0);
@@ -102,5 +113,5 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   for (let i = warm; i < runSteps; i++) { sim.step(); await tick(); }
   const result = analyseRoad(sim, job.area, job.roads, job.section, job.plan.provenance);
   onProgress?.(1);
-  return { result, counts: job.countJunctions?.length ? countChecks(sim, layouts, job.countJunctions) : [], rerouted, routedVph, unroutedVph, elapsedMs: Date.now() - t0 };
+  return { result, counts: job.countJunctions?.length ? countChecks(sim, layouts, job.countJunctions) : [], rerouted, adaptation, routedVph, unroutedVph, elapsedMs: Date.now() - t0 };
 }

@@ -1,6 +1,6 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
-import { LANE_CAPACITY_VPH, STEP_S, type TrafficMicroSim, type MicroSimMetrics } from './TrafficMicroSim';
-import type { RoadSection } from './roadSection';
+import { LANE_CAPACITY_VPH, MAX_VEHICLES, STEP_S, type TrafficMicroSim, type MicroSimMetrics } from './TrafficMicroSim';
+import { isGenericRoadName, type RoadSection } from './roadSection';
 import type { DemandProvenance } from './StudyDemand';
 import { routeMovements, movementKey, type ZoneLayout } from '../calibration/junctionMovements';
 import type { CountJunction } from '../calibration/observedCounts';
@@ -62,7 +62,47 @@ export interface RoadAnalysisResult {
   /** All link volumes by stretch and direction (veh/h), for comparisons. */
   linkVph: Map<string, number>;
   network: MicroSimMetrics;
+  /**
+   * Whether the modelled network could take the demand in the counting
+   * window: vehicles that got onto it against the demand, time spent at the
+   * simulator's vehicle limit, gridlock removals. When it could not, volumes
+   * are what got through, not the demand.
+   */
+  load: LoadCheck;
   evidence: { demand: DemandProvenance | null; notes: string[] };
+}
+
+export interface LoadCheck {
+  demandVph: number;
+  enteredVph: number;
+  /** enteredVph / demandVph (1 when there is no demand). */
+  servedShare: number;
+  waitingToEnter: number;
+  /** Share of the window the network was at the simulator's vehicle limit (MAX_VEHICLES). */
+  atVehicleLimit: number;
+  gridlockRemovalsVph: number;
+  overloaded: boolean;
+  /** Plain-language statement when overloaded, else null. */
+  message: string | null;
+}
+
+/** Below this share of the demand getting onto the network, the run is reported as capacity-limited. */
+export const SERVED_SHARE_OK = 0.85;
+
+export function loadCheck(demandVph: number, load: { releasedVehicles: number; capShare: number; gridlockRemovals: number }, windowS: number, waitingToEnter: number): LoadCheck {
+  const perH = 3600 / Math.max(STEP_S, windowS);
+  const enteredVph = load.releasedVehicles * perH, gridlockRemovalsVph = load.gridlockRemovals * perH;
+  const servedShare = demandVph > 0 ? Math.min(1, enteredVph / demandVph) : 1;
+  const overloaded = demandVph > 0 && (servedShare < SERVED_SHARE_OK || load.capShare > 0.05 || gridlockRemovalsVph > 0.05 * demandVph);
+  let message: string | null = null;
+  if (overloaded) {
+    const parts = [`${Math.round(enteredVph).toLocaleString()} of the ${Math.round(demandVph).toLocaleString()} veh/h of routable demand (${Math.round(100 * servedShare)}%) got onto its roads in the simulated hour`];
+    if (waitingToEnter > 0) parts.push(`${waitingToEnter.toLocaleString()} vehicles were still waiting to enter at the end`);
+    if (load.capShare > 0.05) parts.push(`the run spent ${Math.round(100 * load.capShare)}% of the time at the simulator's ${MAX_VEHICLES.toLocaleString()}-vehicle limit`);
+    if (gridlockRemovalsVph > 0.05 * demandVph) parts.push(`${Math.round(gridlockRemovalsVph).toLocaleString()} veh/h were removed after gridlock`);
+    message = `Demand exceeds what the modelled network can carry: ${parts.join('; ')}. Volumes shown are what got through, not the demand. Junctions in the model pass fewer vehicles than the counted Pune junctions do, so part of this is a model limit, not only a real one.`;
+  }
+  return { demandVph, enteredVph, servedShare, waitingToEnter, atVehicleLimit: load.capShare, gridlockRemovalsVph, overloaded, message };
 }
 
 export const NEARBY_M = 700;
@@ -152,8 +192,8 @@ export function analyseRoad(sim: TrafficMicroSim, area: StudyArea, roads: Readon
   const sectionLines = section.segmentKeys.map(k => segCoords.get(k) ?? []).filter(c => c.length);
   const near = (p: readonly number[]) => Math.min(...sectionLines.map(l => pointToLineM(p, l)));
   const roadNamesAt = new Map<string, Set<string>>();
-  for (const l of counts.links) for (const n of [l.from, l.to]) { const s = roadNamesAt.get(n) ?? roadNamesAt.set(n, new Set()).get(n)!; const nm = roads.get(l.roadId)?.name; if (nm && !/^(unnamed|residential|service) road$/i.test(nm)) s.add(nm); }
-  const junctionLabel = (id: string) => { const names = [...(roadNamesAt.get(id) ?? [])].filter(n => n !== section.name).slice(0, 2); return names.length ? `${section.name} / ${names.join(' / ')}`.replace(/^ \/ /, '') : 'Junction'; };
+  for (const l of counts.links) for (const n of [l.from, l.to]) { const s = roadNamesAt.get(n) ?? roadNamesAt.set(n, new Set()).get(n)!; const nm = roads.get(l.roadId)?.name; if (nm && !isGenericRoadName(nm)) s.add(nm); }
+  const junctionLabel = (id: string) => { const names = [...(roadNamesAt.get(id) ?? [])].filter(n => n !== section.name).slice(0, 2); return names.length ? `${section.name} / ${names.join(' / ')}`.replace(/^ \/ /, '') : `${section.name} / an unnamed road`; };
   const sectionNodes = new Set(watched.flatMap(l => [l.from, l.to]));
   const junctions: JunctionUse[] = sim.junctionStats().map(j => ({ id: j.id, label: junctionLabel(j.id), coordinates: [j.lng, j.lat] as [number, number], delayS: j.meanControlDelayS, los: j.los, maxQueueM: j.maxQueueM, vehicles: j.vehicles, signalised: j.signalised,
     distanceM: near([j.lng, j.lat]), atSection: sectionNodes.has(j.id) })).filter(j => j.distanceM <= NEARBY_M).sort((a, b) => b.delayS * b.vehicles - a.delayS * a.vehicles).slice(0, 8);
@@ -256,6 +296,11 @@ export function analyseRoad(sim: TrafficMicroSim, area: StudyArea, roads: Readon
     linkVph.set(l.id, l.entries * perH);
   }
 
+  const network = sim.getMetrics();
+  // Trips with no route are reported apart (unroutedVph); the load check is about the trips that can drive
+  const load = loadCheck(Math.max(0, network.inflowVph - counts.load.unroutable * perH), counts.load, counts.windowS, network.waitingToEnter);
+  // Said first: every other number on the panel reads differently when the network is overloaded
+  if (load.message) reasons.unshift(load.message);
   const notes: string[] = [];
   if (demand?.source !== 'calibrated') notes.push('No traffic count on this road: volumes are model estimates from land use and counted Pune arterial flows, not measurements.');
   if (demand?.components && !demand.components.throughIncluded) notes.push('Through traffic is switched off: only trips made by the area\'s own buildings are shown.');
@@ -267,7 +312,7 @@ export function analyseRoad(sim: TrafficMicroSim, area: StudyArea, roads: Readon
     directions, totalVph, status, reasons, bottleneck,
     origins: aggregate('from'), destinations: aggregate('to'),
     composition: { throughShare: totalSelect ? through / totalSelect : 0, localShare: totalSelect ? 1 - through / totalSelect : 0 },
-    feeders, nearby, junctions, selectLinkVph, linkVph, network: sim.getMetrics(),
+    feeders, nearby, junctions, selectLinkVph, linkVph, network, load,
     evidence: { demand, notes },
   };
 }

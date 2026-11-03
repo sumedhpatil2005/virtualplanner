@@ -132,7 +132,8 @@ export function timeToCover(dist: number, v: number, a: number, vMax: number): n
   return (top - v) / a + (dist - dAcc) / top;
 }
 /** Beyond this many vehicles, new arrivals wait at the area edge. */
-const MAX_VEHICLES = 5000;
+/** Vehicles on the network at once; beyond it arrivals wait at their entry (reported by road analysis as a capacity limit). */
+export const MAX_VEHICLES = 5000;
 /**
  * OSM junctions are often clusters of nodes a few metres apart. Road stretches
  * shorter than this are folded into one junction (like SUMO's junction joining),
@@ -510,7 +511,7 @@ export class TrafficMicroSim {
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
   /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
-  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array } | null = null;
+  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number } | null = null;
   private linkTimeSum = new Float64Array(0);
   private linkTimeN = new Uint32Array(0);
   private readonly abreastEnabled: boolean;
@@ -1241,6 +1242,7 @@ export class TrafficMicroSim {
 
   private insertQueued() {
     let onNetwork = this.onNetworkCount;
+    if (this.analysis && onNetwork >= MAX_VEHICLES) this.analysis.capSteps++;
     for (const s of this.sources) {
       while (s.queue.length > 0 && onNetwork < MAX_VEHICLES) {
         const veh = s.queue[0];
@@ -1252,6 +1254,7 @@ export class TrafficMicroSim {
         const needed = veh.type.minGapM + entryV * veh.type.headwayS * 0.5;
         if (this.backSpace(link.lanes[lane]) < needed) break;
         s.queue.shift();
+        if (this.analysis) this.analysis.released++;
         veh.lane = lane;
         veh.v = entryV;
         veh.wasMoving = entryV > 2;
@@ -1358,7 +1361,7 @@ export class TrafficMicroSim {
     this.junctionPerf.forEach(p => { p.controlDelayS = 0; p.vehicles = 0; p.pcu = 0; p.queueSumM = 0; p.queueMaxM = 0; p.samples = 0; });
     this.startCounting();
     this.analysis = { fromT: this.t, entries: new Uint32Array(this.links.length), selectEntries: new Uint32Array(this.links.length), selectOd: new Map(),
-      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN) };
+      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN), released: 0, capSteps: 0, steps0: Math.round(this.t / STEP_S), gridlock0: this.gridlockRemovals, unroutable0: this.unroutable };
   }
 
   /**
@@ -1366,7 +1369,7 @@ export class TrafficMicroSim {
    * those of them routed over a watched link (select-link), and the mean
    * traversal time of vehicles that left it in the window.
    */
-  public analysisCounts(): { windowS: number; links: { id: string; segmentKey: string; roadId: string; from: string; to: string; lengthM: number; lanes: number; freeFlowS: number; watched: boolean; entries: number; selectEntries: number; meanTimeS: number | null; onLinkNow: number; queuedNow: number }[]; selectOd: Map<string, number> } | null {
+  public analysisCounts(): { windowS: number; links: { id: string; segmentKey: string; roadId: string; from: string; to: string; lengthM: number; lanes: number; freeFlowS: number; watched: boolean; entries: number; selectEntries: number; meanTimeS: number | null; onLinkNow: number; queuedNow: number }[]; selectOd: Map<string, number>; load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; unroutable: number } } | null {
     const a = this.analysis;
     if (!a) return null;
     const links = this.links.map(l => {
@@ -1377,7 +1380,9 @@ export class TrafficMicroSim {
       return { id: l.id, segmentKey: l.segmentKey, roadId: l.roadId, from: l.from, to: l.to, lengthM: l.length, lanes: l.lanes.length, freeFlowS: l.length / l.speed,
         watched: this.watchedLinks.has(l.index), entries: a.entries[l.index], selectEntries: a.selectEntries[l.index], meanTimeS: n > 0 ? sum / n : null, onLinkNow, queuedNow };
     });
-    return { windowS: this.t - a.fromT, links, selectOd: new Map(a.selectOd) };
+    const steps = Math.max(1, Math.round(this.t / STEP_S) - a.steps0);
+    return { windowS: this.t - a.fromT, links, selectOd: new Map(a.selectOd),
+      load: { releasedVehicles: a.released, capShare: Math.min(1, a.capSteps / steps), gridlockRemovals: this.gridlockRemovals - a.gridlock0, unroutable: this.unroutable - a.unroutable0 } };
   }
 
   /** The simulated junction a network node belongs to (nodes a few metres apart are joined). */
