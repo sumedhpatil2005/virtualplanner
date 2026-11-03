@@ -189,6 +189,8 @@ export interface MicroSimOptions {
   seed: number;
   /** Roads whose traffic is reported separately (the roads being studied). */
   watchRoadIds?: readonly string[];
+  /** Study-area stretches (segment keys) watched as well: a road section rather than whole OSM ways (roadSection.ts). */
+  watchSegmentKeys?: readonly string[];
   /**
    * Real traffic signal positions (OpenStreetMap). When given, a junction is
    * signalised exactly when a signal stands at it; otherwise signals are
@@ -507,6 +509,8 @@ export class TrafficMicroSim {
   private readonly rng: () => number;
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
+  /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
+  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array } | null = null;
   private linkTimeSum = new Float64Array(0);
   private linkTimeN = new Uint32Array(0);
   private readonly abreastEnabled: boolean;
@@ -608,7 +612,8 @@ export class TrafficMicroSim {
     this.signalLinks = this.links.filter(l => this.controls.get(l.to)?.kind === 'signal').map(l => l.index);
     this.buildSourcesAndSinks(net, included, roads);
     const watch = new Set(options.watchRoadIds ?? []);
-    for (const l of this.links) if (watch.has(l.roadId)) this.watchedLinks.add(l.index);
+    const watchSegs = new Set(options.watchSegmentKeys ?? []);
+    for (const l of this.links) if (watch.has(l.roadId) || watchSegs.has(l.segmentKey)) this.watchedLinks.add(l.index);
     this.buildFocusDemand(roads);
     if (options.demandTrips !== undefined) {
       this.explicitDemand = true;
@@ -690,6 +695,18 @@ export class TrafficMicroSim {
 
   /** Counts a vehicle the first time it drives onto a watched road. */
   private noteLink(veh: Vehicle, linkIndex: number) {
+    if (this.analysis) {
+      const a = this.analysis;
+      a.entries[linkIndex]++;
+      if (veh.focus) {
+        a.selectEntries[linkIndex]++;
+        // Select-link origin and destination: counted once per vehicle, when it enters the area
+        if (linkIndex === veh.route[0]) {
+          const key = `${this.links[veh.route[0]].from}>${this.links[veh.route[veh.route.length - 1]].to}`;
+          a.selectOd.set(key, (a.selectOd.get(key) ?? 0) + 1);
+        }
+      }
+    }
     if (!veh.watched && this.watchedLinks.has(linkIndex)) {
       veh.watched = true;
       this.watchedPassed++;
@@ -903,7 +920,9 @@ export class TrafficMicroSim {
       const inVph = outsideVph(nodeId, 'incomingSegments');
       const outVph = outsideVph(nodeId, 'outgoingSegments');
       if (inVph > 0 && node.outgoingSegments.length > 0) {
-        this.sources.push({ nodeId, ratePerS: inVph / 3600, nextT: 0, queue: [], sinks: [] });
+        const src: Source = { nodeId, ratePerS: inVph / 3600, nextT: 0, queue: [], sinks: [] };
+        this.sources.push(src);
+        this.sourceByNode.set(nodeId, src);
       }
       if (outVph > 0 && node.incomingSegments.length > 0) this.sinks.push({ nodeId, weight: outVph });
     });
@@ -1024,6 +1043,7 @@ export class TrafficMicroSim {
     this.demandLevel = Math.max(0, Math.min(1, level));
     for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
     for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
+    this.arrivalHeapDirty = true;
     this.retimeSignals();
   }
 
@@ -1035,6 +1055,7 @@ export class TrafficMicroSim {
     this.hourFactor = Math.max(0, Number.isFinite(factor) ? factor : 1);
     for (const s of this.sources) s.nextT = this.nextArrival(s, this.t);
     for (const arrival of this.odArrivals) arrival.nextT = this.nextOdArrival(arrival.trip, this.t, arrival.rng);
+    this.arrivalHeapDirty = true;
     this.focusNextT = this.nextFocusArrival(this.t);
     this.retimeSignals();
   }
@@ -1119,6 +1140,7 @@ export class TrafficMicroSim {
   private addSource(nodeId: string): Source {
     const s: Source = { nodeId, ratePerS: 0, nextT: Infinity, queue: [], sinks: [] };
     this.sources.push(s);
+    this.sourceByNode.set(nodeId, s);
     return s;
   }
 
@@ -1133,15 +1155,62 @@ export class TrafficMicroSim {
     return options[options.length - 1].nodeId;
   }
 
+  /**
+   * OD arrivals by next arrival time (binary min-heap of indices into
+   * odArrivals). Scanning every OD stream each step cost most of a step on
+   * large areas (tens of thousands of streams); the heap visits only those due.
+   * Rebuilt when arrival times are reset (demand level or hour changes).
+   */
+  private arrivalHeap: number[] = [];
+  private arrivalHeapDirty = true;
+  private heapLess(a: number, b: number) {
+    const x = this.odArrivals[a].nextT, y = this.odArrivals[b].nextT;
+    return x < y || (x === y && a < b);
+  }
+  private heapPush(i: number) {
+    const h = this.arrivalHeap;
+    h.push(i);
+    let k = h.length - 1;
+    while (k > 0) { const p = (k - 1) >> 1; if (!this.heapLess(h[k], h[p])) break; [h[k], h[p]] = [h[p], h[k]]; k = p; }
+  }
+  private heapPop(): number {
+    const h = this.arrivalHeap, top = h[0], last = h.pop()!;
+    if (h.length) {
+      h[0] = last;
+      let k = 0;
+      for (;;) {
+        const l = 2 * k + 1, r = l + 1;
+        let m = k;
+        if (l < h.length && this.heapLess(h[l], h[m])) m = l;
+        if (r < h.length && this.heapLess(h[r], h[m])) m = r;
+        if (m === k) break;
+        [h[k], h[m]] = [h[m], h[k]]; k = m;
+      }
+    }
+    return top;
+  }
+  private readonly sourceByNode = new Map<string, Source>();
+
   private spawnDue() {
-    for (const arrival of this.odArrivals) {
+    if (this.arrivalHeapDirty) {
+      this.arrivalHeap = [];
+      this.odArrivals.forEach((a, i) => { if (Number.isFinite(a.nextT)) this.heapPush(i); });
+      this.arrivalHeapDirty = false;
+    }
+    // Due streams in index order, as a scan over all of them would visit them
+    const due: number[] = [];
+    while (this.arrivalHeap.length && this.odArrivals[this.arrivalHeap[0]].nextT <= this.t) due.push(this.heapPop());
+    due.sort((a, b) => a - b);
+    for (const i of due) {
+      const arrival = this.odArrivals[i];
       while (arrival.nextT <= this.t) {
         if (arrival.route.length) {
-          const source = this.sources.find(s => s.nodeId === arrival.trip.fromNodeId) ?? this.addSource(arrival.trip.fromNodeId);
+          const source = this.sourceByNode.get(arrival.trip.fromNodeId) ?? this.addSource(arrival.trip.fromNodeId);
           this.queueVehicle(source, arrival.route, arrival.freeFlowS, VEHICLE_TYPES.find(t => t.kind === arrival.trip.kind)!);
         } else this.unroutable++;
         arrival.nextT = this.nextOdArrival(arrival.trip, arrival.nextT, arrival.rng);
       }
+      if (Number.isFinite(arrival.nextT)) this.heapPush(i);
     }
     for (const s of this.sources) {
       while (s.nextT <= this.t) {
@@ -1281,6 +1350,45 @@ export class TrafficMicroSim {
     }
     for (const l of this.links) if (n[l.index]) out.set(l.id, { meanS: sum[l.index] / n[l.index], samples: n[l.index], freeFlowS: l.length / l.speed });
     return out;
+  }
+
+  /** Starts (or restarts) the road-analysis counters: link volumes, select-link volumes and origins/destinations. */
+  public startAnalysis() {
+    // Junction delay and queues over the same window
+    this.junctionPerf.forEach(p => { p.controlDelayS = 0; p.vehicles = 0; p.pcu = 0; p.queueSumM = 0; p.queueMaxM = 0; p.samples = 0; });
+    this.startCounting();
+    this.analysis = { fromT: this.t, entries: new Uint32Array(this.links.length), selectEntries: new Uint32Array(this.links.length), selectOd: new Map(),
+      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN) };
+  }
+
+  /**
+   * Road-analysis counts since startAnalysis(), per link: vehicles entering it,
+   * those of them routed over a watched link (select-link), and the mean
+   * traversal time of vehicles that left it in the window.
+   */
+  public analysisCounts(): { windowS: number; links: { id: string; segmentKey: string; roadId: string; from: string; to: string; lengthM: number; lanes: number; freeFlowS: number; watched: boolean; entries: number; selectEntries: number; meanTimeS: number | null; onLinkNow: number; queuedNow: number }[]; selectOd: Map<string, number> } | null {
+    const a = this.analysis;
+    if (!a) return null;
+    const links = this.links.map(l => {
+      const n = this.linkTimeN[l.index] - a.timeN0[l.index];
+      const sum = this.linkTimeSum[l.index] - a.timeSum0[l.index];
+      let onLinkNow = 0, queuedNow = 0;
+      for (const lane of l.lanes) for (const v of lane) { onLinkNow++; if (v.v < 1) queuedNow++; }
+      return { id: l.id, segmentKey: l.segmentKey, roadId: l.roadId, from: l.from, to: l.to, lengthM: l.length, lanes: l.lanes.length, freeFlowS: l.length / l.speed,
+        watched: this.watchedLinks.has(l.index), entries: a.entries[l.index], selectEntries: a.selectEntries[l.index], meanTimeS: n > 0 ? sum / n : null, onLinkNow, queuedNow };
+    });
+    return { windowS: this.t - a.fromT, links, selectOd: new Map(a.selectOd) };
+  }
+
+  /** The simulated junction a network node belongs to (nodes a few metres apart are joined). */
+  public junctionOfNode(nodeId: string): string {
+    return this.junction(nodeId);
+  }
+
+  /** Coordinates of a junction of the simulated network (joined junctions: their first node). */
+  public nodeCoordinates(nodeId: string): [number, number, number] | null {
+    const n = this.subnet.nodes.get(nodeId) ?? this.areaNodes.get(nodeId);
+    return n ? [...n.coordinates] as [number, number, number] : null;
   }
 
   /** Webster designs in force, per signalised junction (for reports and tests). */
