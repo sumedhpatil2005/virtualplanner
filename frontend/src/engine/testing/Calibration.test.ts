@@ -257,6 +257,16 @@ describe('calibration in Simulate mode', () => {
     expect(c.applied).toBe(true);
     expect(c.fit!.assignedAfter.share).toBe(1);
     expect(mode.getCalibratedPlan()!.provenance.source).toBe('calibrated');
+    // The calibrated demand is labelled with the peak the counts are said to be (default PM 19:00), not the
+    // project estimate's period; switching the counts' peak relabels it
+    expect(mode.getState().timeOfDay.countPeak).toBe('PM');
+    expect(mode.getCalibratedPlan()!.provenance.period).toBe('PM_Peak');
+    mode.setCountPeak('AM');
+    expect(mode.getCalibratedPlan()!.provenance.period).toBe('AM_Peak');
+    mode.restartTraffic();
+    expect(mode.getState().traffic.demand?.period).toBe('AM_Peak');
+    mode.setCountPeak('PM');
+    expect(mode.getState().traffic.demand?.period).toBe('PM_Peak');
     // Changing the volume clears the calibration rather than silently keeping a fit made at another level
     mode.setDemandLevel(0.12);
     expect(mode.getState().calibration.applied).toBe(false);

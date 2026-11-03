@@ -182,6 +182,9 @@ const MAX_STEPS_PER_FRAME = 200;
  * and the resulting area. The road network is read-only while this is active;
  * TwinCityEngine enforces that when entering and leaving.
  */
+/** Demand period of a counted peak hour (the counts' AM or PM peak, as the user sets it). */
+export const countPeakPeriod = (peak: 'AM' | 'PM'): 'AM_Peak' | 'PM_Peak' => (peak === 'PM' ? 'PM_Peak' : 'AM_Peak');
+
 export class SimulationMode {
   private state: SimulationModeState = {
     active: false,
@@ -810,6 +813,13 @@ export class SimulationMode {
   /** Which peak hour the counts represent (AM 09:00 or PM 19:00); the calibrated demand is that hour's. */
   public setCountPeak(countPeak: 'AM' | 'PM') {
     this.setTimeOfDay({ countPeak });
+    // A calibrated plan represents the counted hour: relabel it (and the live demand card) with the chosen peak
+    if (this.calibratedPlan) {
+      const period = countPeakPeriod(countPeak);
+      this.calibratedPlan = { ...this.calibratedPlan, provenance: { ...this.calibratedPlan.provenance, period } };
+      const demand = this.state.traffic.demand;
+      if (demand?.source === 'calibrated') this.setTraffic({ demand: { ...demand, period } });
+    }
   }
 
   public setPlayback(on: boolean) {
@@ -934,7 +944,8 @@ export class SimulationMode {
       const rows = compareRows(junctions, before.layouts, before.flows, after.flows);
       const observed = observedFlows(junctions.filter(j => !checks.find(c => c.id === j.id)?.problem));
       const fitted = result.ipf.factors.length ? result.ipf.factors : [1];
-      this.calibratedPlan = result.plan;
+      // The calibrated demand is the counted peak hour, whichever peak the user says the counts are
+      this.calibratedPlan = { ...result.plan, provenance: { ...result.plan.provenance, period: countPeakPeriod(this.state.timeOfDay.countPeak) } };
       this.setCalibration({
         status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: summarize(rows, 'gehAfter'), windowS: after.windowS, applied: true, runMetrics: { before: before.metrics, after: after.metrics },
         fit: {
