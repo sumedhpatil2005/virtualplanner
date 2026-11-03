@@ -6,7 +6,8 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import type { RoadAnalysisResult, RoadStatus, JunctionUse } from '../engine/simulation/RoadAnalysis';
 import { improvementsFor } from '../engine/simulation/improvements';
-import type { ComparisonResult, Delta, Verdict } from '../engine/simulation/ScenarioComparison';
+import type { ComparisonResult, Verdict } from '../engine/simulation/ScenarioComparison';
+import { DeltaRows } from './ScenarioDeltaTable';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { formatDistanceM } from '../lib/format';
 import { Section, Button, Notice } from './ui/kit';
@@ -186,23 +187,6 @@ const VERDICT: Record<Verdict, { label: string; cls: string; icon: typeof Trendi
   mixed: { label: 'Mixed', cls: 'text-amber-200 bg-amber-500/15 border-amber-400/30', icon: Route },
   no_change: { label: 'No clear change', cls: 'text-slate-200 bg-slate-500/20 border-slate-400/30', icon: Minus },
 };
-
-const fmtDelta = (d: Delta) => (v: number | null) => (v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : ''}`);
-
-const DeltaRows: React.FC<{ rows: Delta[] }> = ({ rows }) => (
-  <table className="w-full text-xs tabular-nums">
-    <thead><tr className="text-slate-500"><th className="text-left font-medium pb-1">Measure</th><th className="text-right font-medium pb-1">Existing</th><th className="text-right font-medium pb-1">Proposal</th></tr></thead>
-    <tbody>
-      {rows.map(d => (
-        <tr key={d.label} className="border-t border-white/5">
-          <th className="py-1.5 text-left font-normal text-slate-400">{d.label}</th>
-          <td className="text-right text-slate-300">{fmtDelta(d)(d.before)}</td>
-          <td className={`text-right ${d.good === true ? 'text-emerald-300' : d.good === false ? 'text-rose-300' : 'text-white'}`}>{fmtDelta(d)(d.after)}{d.change !== null && Math.abs(d.change) >= 0.005 ? <span className="text-slate-500"> ({d.change > 0 ? '+' : ''}{Math.round(d.change * 100)}%)</span> : null}</td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
-);
 
 /** Existing city against a proposal on the same frozen demand. */
 export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
