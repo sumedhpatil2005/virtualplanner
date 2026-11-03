@@ -11,7 +11,11 @@
  *    implication), equal-split signals, no two-wheeler pairs, free-flow routes.
  *  - after: correction layer + OSM implications, Webster signals from the
  *    observed approach flows, two-wheelers abreast, and VAL_ASSIGN feedback
- *    iterations of congested link times into route choice (default 0).
+ *    iterations of congested link times into route choice (default 0), in the
+ *    order fit -> feedback on the fitted plan -> refit (VAL_ORDER=feedback-first
+ *    for the earlier order: feedback on the project demand, then fit).
+ *  - VAL_STOPLINE=off counts movements at the zone edge (the earlier layout)
+ *    instead of at the junction's stop lines.
  * Each seed: count-driven OD + bounded IPF (fitPlan), then a run of
  * WARMUP_S + MEASURE_S, reporting simulated flow per counted movement and the
  * junction's delay, queues, LOS, speeds and gridlock removals.
@@ -25,7 +29,7 @@ import { fitPlan, junctionsIn, zoneFor, compareRows, buildSim, timeSignalsFromCo
 import type { CountDataset } from '../calibration/observedCounts';
 import { STEP_S, VEHICLE_TYPES } from '../simulation/TrafficMicroSim';
 import { applyNetworkCorrections, validateCorrectionLayer } from '../simulation/networkCorrections';
-import { assignWithFeedback } from '../simulation/assignment';
+import { assignWithFeedback, fitWithFeedback } from '../simulation/assignment';
 import { distanceM } from '../calibration/junctionMovements';
 
 const DUMP = process.env.VAL_DUMP;
@@ -43,7 +47,10 @@ describe.skipIf(!DUMP)('junction before/after validation (opt-in)', () => {
     const junction = ds.junctions.find(j => j.id === jid)!;
     const after = config !== 'before';
     const layerFile = path.resolve(__dirname, '../../../../backend/data/network_corrections/pune_west_v1.json');
-    const layer = validateCorrectionLayer(JSON.parse(fs.readFileSync(layerFile, 'utf8')));
+    const layer0 = validateCorrectionLayer(JSON.parse(fs.readFileSync(layerFile, 'utf8')));
+    // VAL_DISABLE=id,id: run with those corrections switched off (to test one correction's effect)
+    const disabled = new Set((process.env.VAL_DISABLE ?? '').split(',').filter(Boolean));
+    const layer = { ...layer0, corrections: layer0.corrections.map(c => (disabled.has(c.id) ? { ...c, enabled: false } : c)) };
     const corrected = after ? applyNetworkCorrections(d.roads as DrivableObject[], layer, process.env.VAL_CORRECTIONS !== 'off') : null;
     const roads: DrivableObject[] = corrected ? corrected.roads : d.roads;
     const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: [per.seedRoad], rangeMeters: per.range, direction: 'both' });
@@ -54,23 +61,38 @@ describe.skipIf(!DUMP)('junction before/after validation (opt-in)', () => {
     const plan0 = compileStudyDemand(context, bounds) ?? empty;
     // Only the junction under test is fitted and reported
     const junctions = junctionsIn(ds, area.bounds).filter(j => j.id === jid);
-    const zones = junctions.map(zoneFor);
+    // Sensitivity runs only (VAL_LABEL_SHIFT / VAL_MAX_CARD_ERR): other compass labellings of the arms
+    const zoneOf = (j: CountJunction) => ({ ...zoneFor(j),
+      ...(process.env.VAL_LABEL_SHIFT ? { labelShift: Number(process.env.VAL_LABEL_SHIFT) } : {}),
+      ...(process.env.VAL_MAX_CARD_ERR ? { maxCardinalErrorDeg: Number(process.env.VAL_MAX_CARD_ERR) } : {}) });
+    const zones = junctions.map(zoneOf);
     const results: unknown[] = [];
     for (const seed of seeds) {
       const t0 = Date.now();
       const setup: SimSetup = {
         area, roads: new Map(roads.map(r => [r.id, r])),
         options: { demandLevel: 0.12, seed, watchRoadIds: area.seedRoadIds, junctions: context.junctions, signalPoints: per.signalPoints,
-          signalTiming: after && process.env.VAL_SIGNALS !== 'equal' ? 'webster' : 'equal', twoWheelersAbreast: after && process.env.VAL_ABREAST !== 'off' },
+          signalTiming: after && process.env.VAL_SIGNALS !== 'equal' ? 'webster' : 'equal', twoWheelersAbreast: after && process.env.VAL_ABREAST !== 'off',
+          stopLineCounting: process.env.VAL_STOPLINE !== 'off' },
         signalDesignCounts: after && process.env.VAL_SIGNALS !== 'equal' ? junctions : undefined,
       };
       let assignment: unknown = null;
-      if (after && assignIters > 0) {
+      let fit: ReturnType<typeof fitPlan>;
+      let firstUnreachable: string[] | null = null;
+      if (after && assignIters > 0 && process.env.VAL_ORDER === 'feedback-first') {
+        // Earlier order: feedback on the uncalibrated project demand, then one fit
         const a = await assignWithFeedback(setup, plan0, { iterations: assignIters, warmupS: WARMUP_S, measureS: MEASURE_S });
         setup.options = { ...setup.options, linkCostFactors: a.linkCostFactors };
         assignment = a.history;
-      }
-      const fit = fitPlan(setup, plan0, junctions);
+        fit = fitPlan(setup, plan0, junctions, { zoneOf });
+      } else if (after && assignIters > 0) {
+        // fit -> feedback on the fitted plan -> refit
+        const r = await fitWithFeedback(setup, plan0, junctions, { iterations: assignIters, warmupS: WARMUP_S, measureS: MEASURE_S, zoneOf });
+        setup.options = { ...setup.options, linkCostFactors: r.assignment.linkCostFactors };
+        assignment = r.assignment.history;
+        firstUnreachable = r.first.unreachable;
+        fit = r.fit;
+      } else fit = fitPlan(setup, plan0, junctions, { zoneOf });
       const sim = buildSim(setup, fit.plan);
       const layouts = sim.setCountZones(zones);
       if (setup.signalDesignCounts) timeSignalsFromCounts(sim, junctions, layouts);
@@ -141,7 +163,7 @@ describe.skipIf(!DUMP)('junction before/after validation (opt-in)', () => {
       results.push({
         seed, seconds: (Date.now() - t0) / 1000,
         layout: layouts.map(l => ({ problem: l.problem, arms: l.arms.map(a => ({ c: a.cardinal, bearing: Math.round(a.bearing), in: a.inbound.length, out: a.outbound.length })) })),
-        fit: { iterations: fit.ipf.iterations, converged: fit.ipf.converged, seeds: fit.seeds.length, unreachable: fit.unreachable, planVph: fit.plan.provenance.vehiclesPerHour },
+        fit: { iterations: fit.ipf.iterations, converged: fit.ipf.converged, seeds: fit.seeds.length, unreachable: fit.unreachable, firstUnreachable, planVph: fit.plan.provenance.vehiclesPerHour },
         rows, metrics: sim.getMetrics(), junction: node, deadlocks: sim.deadlockReport(),
         signal: node ? plans.find(p => p.nodeId === node.id) ?? null : null,
         assignment,

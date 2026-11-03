@@ -7,8 +7,10 @@
 import { describe, it, expect } from 'vitest';
 import type { RoadObject, RoadClassification, JunctionObject } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
-import { OD_REFERENCE_LEVEL, type TrafficMicroSim } from '../simulation/TrafficMicroSim';
-import { assignWithFeedback, MAX_COST_FACTOR } from '../simulation/assignment';
+import { OD_REFERENCE_LEVEL, TrafficMicroSim } from '../simulation/TrafficMicroSim';
+import { snapDemandPlan } from '../simulation/StudyDemand';
+import { assignWithFeedback, fitWithFeedback, MAX_COST_FACTOR } from '../simulation/assignment';
+import type { CountJunction } from '../calibration/observedCounts';
 import type { DemandPlan } from '../simulation/StudyDemand';
 import type { SimSetup } from '../calibration/calibration';
 
@@ -115,4 +117,45 @@ describe('assignment with congestion feedback (MSA)', () => {
     const fin = (id: string) => result.linkCostFactors.get(id) ?? 1;
     expect(Math.abs(cost(shortR, fin) - cost(longR, fin))).toBeLessThan(free);
   }, 300_000);
+});
+
+describe('count fit with congestion feedback: fit, feedback on the fitted plan, refit', () => {
+  it('measures congestion on the counted traffic, then refits with those costs', async () => {
+    const { area, roads, j } = toyNetwork();
+    const setup: SimSetup = { area, roads, options: { demandLevel: OD_REFERENCE_LEVEL, seed: 3, junctions: [j], signalTiming: 'equal' } };
+    // Counted through-traffic at the signalised crossroads, far above the project's 50 veh/h
+    const counted: CountJunction = { id: 'x', name: 'X', location: { lon: pt(0, 0)[0], lat: pt(0, 0)[1], method: 'test', matched: { kind: 'intersection', arms: 4 } },
+      movements: [{ approach: 'W', turn: 'straight', LV: 900 }, { approach: 'S', turn: 'straight', LV: 300 }] };
+    const flowsSeen: number[] = [];
+    const r = await fitWithFeedback(setup, plan(50), [counted], { iterations: 2, warmupS: 120, measureS: 480,
+      onIteration: (_k, _m, sim) => flowsSeen.push(sim.demandRouteFlows().reduce((n, f) => n + f.vehiclesPerHour, 0)) });
+    // Feedback ran on the fitted plan (counted volumes, seeded trips included), not on the 50 veh/h project demand
+    expect(r.first.seeds.length).toBeGreaterThan(0);
+    expect(Math.min(...flowsSeen)).toBeGreaterThan(1000);
+    expect(r.assignment.history).toHaveLength(2);
+    // The signal approach was priced up by the feedback, and the refit used those costs
+    expect(Math.max(...r.assignment.linkCostFactors.values())).toBeGreaterThan(1);
+    expect(r.fit.unreachable).toEqual([]);
+    expect(r.fit.plan.provenance.source).toBe('calibrated');
+  }, 300_000);
+});
+
+describe('trips pinned to links', () => {
+  it('a trip with viaLinkIds takes those links in order even when a cheaper route exists, and routes freely when a link is missing', () => {
+    const { area, roads } = toyNetwork();
+    const mk = (viaLinkIds?: string[]) => {
+      const p = plan(100);
+      p.trips = p.trips.map(t => ({ ...t, ...(viaLinkIds ? { viaLinkIds } : {}) }));
+      return new TrafficMicroSim(area, roads, { demandLevel: OD_REFERENCE_LEVEL, seed: 1, demandTrips: snapDemandPlan(p, area.network) });
+    };
+    const free = mk();
+    expect(viaShort(routeIds(free))).toBe(true);
+    const longLink = [...free.debugLanes().keys()].find(id => id.startsWith('long_n') && id.endsWith('fwd'))!;
+    const pinned = mk([longLink]);
+    const r = routeIds(pinned);
+    expect(r).toContain(longLink);
+    expect(viaShort(r)).toBe(false);
+    // A pinned link that is not in the network (e.g. after a road edit) is ignored
+    expect(viaShort(routeIds(mk(['no_such_link'])))).toBe(true);
+  });
 });

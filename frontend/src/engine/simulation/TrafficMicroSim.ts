@@ -614,6 +614,7 @@ export class TrafficMicroSim {
       this.explicitDemand = true;
       for (const s of this.sources) { s.ratePerS = 0; s.nextT = Infinity; }
       this.focusNextT = Infinity;
+      const linkIndexById = new Map(this.links.map(l => [l.id, l.index]));
       for (const [index, trip] of options.demandTrips.entries()) {
         if (trip.vehiclesPerHour <= 0) continue;
         // A stream per frozen OD pair keeps arrivals equal when a network edit changes routing.
@@ -629,6 +630,25 @@ export class TrafficMicroSim {
             return before && after ? [{ route: [...before.route, l.index, ...after.route], freeFlowS: before.freeFlowS + l.length / l.speed + after.freeFlowS }] : [];
           });
           path = paths.sort((a, b) => a.freeFlowS - b.freeFlowS)[0] ?? null;
+        }
+        if (trip.viaLinkIds?.length) {
+          const via = trip.viaLinkIds.map(id => linkIndexById.get(id));
+          if (via.every((i): i is number => i !== undefined)) {
+            // Through each listed link in turn; the legs between them by route cost
+            const route: number[] = [];
+            let at = from, ok = true;
+            for (const i of via) {
+              const leg = at === this.links[i].from ? { route: [] as number[] } : this.route(at, this.links[i].from);
+              if (!leg) { ok = false; break; }
+              route.push(...leg.route, i);
+              at = this.links[i].to;
+            }
+            const last = ok ? (at === to ? { route: [] as number[] } : this.route(at, to)) : null;
+            if (ok && last) {
+              route.push(...last.route);
+              path = { route, freeFlowS: route.reduce((n, i) => n + this.links[i].length / this.links[i].speed, 0) };
+            } else path = null;
+          }
         }
         this.odArrivals.push({ index, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
       }

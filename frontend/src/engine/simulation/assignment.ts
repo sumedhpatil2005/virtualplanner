@@ -11,7 +11,9 @@
  */
 import type { DemandPlan } from './StudyDemand';
 import { STEP_S, type TrafficMicroSim } from './TrafficMicroSim';
-import { buildSim, type SimSetup } from '../calibration/calibration';
+import { buildSim, fitPlan, type SimSetup, type CalibrationFit } from '../calibration/calibration';
+import type { CountJunction } from '../calibration/observedCounts';
+import type { CountZone } from '../calibration/junctionMovements';
 
 export interface AssignmentIteration {
   iteration: number;
@@ -65,4 +67,25 @@ export async function assignWithFeedback(setup: SimSetup, plan: DemandPlan, o: {
     history.push({ iteration: k, meanCongestion: n ? sum / n : 1, rerouted: total ? changed / total : 0, completedTrips: m.completedTrips, meanSpeedKmh: m.meanSpeedKmh });
   }
   return { linkCostFactors: factors, history };
+}
+
+/**
+ * Count fit with congestion feedback, in the order fit -> feedback -> refit:
+ *  1. fit the demand to the counts on free-flow route costs (count-seeded trips
+ *     through every counted movement, bounded IPF);
+ *  2. run congestion feedback (MSA) on that *fitted* plan, so the link costs
+ *     reflect the traffic the counts imply;
+ *  3. fit again with those link costs, so routes and trip factors agree.
+ * Feeding back first (on the uncalibrated project demand) measures congestion
+ * from traffic that is not the counted traffic: at Ganraj Chowk it priced the
+ * west approach so high that the refit found no route for two counted
+ * movements (CALIBRATION.md section 4.5).
+ */
+export async function fitWithFeedback(setup: SimSetup, base: DemandPlan, junctions: readonly CountJunction[],
+  o: { iterations: number; warmupS: number; measureS: number; onIteration?: (k: number, measured: ReadonlyMap<string, number>, sim: TrafficMicroSim) => void; zoneOf?: (j: CountJunction) => CountZone }):
+  Promise<{ fit: CalibrationFit; first: CalibrationFit; assignment: AssignmentResult }> {
+  const first = fitPlan(setup, base, junctions, { zoneOf: o.zoneOf });
+  const assignment = await assignWithFeedback(setup, first.plan, o);
+  const fed: SimSetup = { ...setup, options: { ...setup.options, linkCostFactors: assignment.linkCostFactors } };
+  return { fit: fitPlan(fed, base, junctions, { zoneOf: o.zoneOf }), first, assignment };
 }
