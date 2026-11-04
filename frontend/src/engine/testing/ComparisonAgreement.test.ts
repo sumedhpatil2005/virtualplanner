@@ -51,3 +51,14 @@ describe('scenario comparison: the overall verdict never hides a consistent loss
     expect(c.verdict.overall).toBe('better');
   });
 });
+
+describe('scenario comparison: a measure missing on one side says why', () => {
+  it('explains a junction delay the proposal did not record', () => {
+    const before = output([100, 100, 100], 20), after = output([80, 80, 85], 24);
+    after.result.perSeed.forEach((p: any) => { p.endDelayS = null; });
+    const c = compareAnalyses(before, after, { before: new Map(), after: new Map() }, { before: 1000, after: 1000 });
+    const d = c.section.find(x => x.label === 'Worst junction delay at its ends')!;
+    expect(d.after).toBeNull();
+    expect(d.note).toMatch(/Not measured in the proposal/);
+  });
+});

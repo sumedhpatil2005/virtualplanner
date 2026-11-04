@@ -6,7 +6,7 @@ import { urbanSpeeds, applyUrbanSpeeds, midblockCapacityPcu, speedLos, URBAN_SPE
 import { assignTraffic, bprTime, selectLink, subareaDemand } from '../simulation/staticAssignment';
 import { TrafficMicroSim, STEP_S } from '../simulation/TrafficMicroSim';
 import { roadSection } from '../simulation/roadSection';
-import { sectionDirections, readCorridorRun } from '../simulation/RoadAnalysis';
+import { sectionDirections, readCorridorRun, areaContext, combineAnalysis } from '../simulation/RoadAnalysis';
 import { SimulationMode } from '../simulation/SimulationMode';
 
 /**
@@ -152,6 +152,20 @@ describe('delay attribution and queue tracing', () => {
     const chain = run.chains.find(c => c?.root);
     expect(chain?.root?.cause).toBe('signal');
     expect(chain!.segmentKeys.some(k => k.startsWith('b_'))).toBe(true);
+
+    // The cause is named only when most runs trace the queue to the same junction
+    const trips = [{ fromNodeId: west.nodeId, toNodeId: east.nodeId, vehiclesPerHour: 1400, kind: 'car' as const }, { fromNodeId: south.nodeId, toNodeId: north.nodeId, vehiclesPerHour: 900, kind: 'car' as const }];
+    const ctx = areaContext(assignTraffic(area, map, trips), area, map, section, dirs, 2300);
+    const info = { roads: 1, demandVph: 2300, rangeM: 700 };
+    const untraced = { ...run, seed: 4, chains: run.chains.map(() => null) };
+    const one = combineAnalysis(ctx, [run], dirs, section, info, null);
+    expect(one.cause.kind).toBe('spillback');
+    expect(one.cause.text).toMatch(/in the one run analysed/);
+    expect(combineAnalysis(ctx, [run, { ...run, seed: 5 }, untraced], dirs, section, info, null).cause.text).toMatch(/in 2 of 3 runs/);
+    const minority = combineAnalysis(ctx, [run, untraced, { ...untraced, seed: 6 }], dirs, section, info, null);
+    expect(minority.cause.kind).toBe('insufficient');
+    expect(minority.cause.chain).toBeNull();
+    expect(minority.cause.text).toMatch(/only 1 of 3 runs/);
   }, 60000);
 });
 

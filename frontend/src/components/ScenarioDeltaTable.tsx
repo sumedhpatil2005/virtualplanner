@@ -24,7 +24,7 @@ export const DeltaRows: React.FC<{ rows: Delta[] }> = ({ rows }) => (
         const change = fmtChange(d);
         return (
           <tr key={d.label} className="border-t border-white/5 align-top">
-            <th className="py-1.5 pr-3 text-left font-normal text-slate-400">{d.label}{d.agreement && d.change !== null && Math.abs(d.change) >= 0.005 && <span className={`block text-[10px] ${d.agreement.same === d.agreement.of ? 'text-slate-500' : 'text-amber-300/80'}`} data-testid="seed-agreement">{d.agreement.same === d.agreement.of ? `same in all ${d.agreement.of} runs` : `only ${d.agreement.same} of ${d.agreement.of} runs`}</span>}</th>
+            <th className="py-1.5 pr-3 text-left font-normal text-slate-400">{d.label}{d.agreement && d.change !== null && Math.abs(d.change) >= 0.005 && <span className={`block text-[10px] ${d.agreement.same === d.agreement.of ? 'text-slate-500' : 'text-amber-300/80'}`} data-testid="seed-agreement">{d.agreement.same === d.agreement.of ? `same in all ${d.agreement.of} runs` : `only ${d.agreement.same} of ${d.agreement.of} runs`}</span>}{d.note && <span className="block text-[10px] text-slate-500" data-testid="delta-note">{d.note}</span>}</th>
             <td className="py-1.5 px-3 text-right text-slate-300 whitespace-nowrap">{fmtDeltaValue(d, d.before)}</td>
             <td className={`py-1.5 pl-3 text-right whitespace-nowrap ${d.good === true ? 'text-emerald-300' : d.good === false ? 'text-rose-300' : 'text-white'}`}>
               <span className="block">{fmtDeltaValue(d, d.after)}</span>

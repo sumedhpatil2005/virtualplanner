@@ -518,12 +518,15 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     if (d && d.total > 5 && STATUS_RANK[status] >= 2) {
       const chain = chainFor(worst.label);
       const shares = { signal: d.signal / d.total, blocked: d.blocked / d.total, giveWay: (d.giveWay + d.conflict) / d.total, other: d.other / d.total };
-      if (shares.blocked >= 0.35 && chain?.root) {
-        const agree = chain.agreement === n ? `in all ${n} runs` : `in ${chain.agreement} of ${n} runs`;
+      // A cause is named only when most runs trace the queue to the same junction (2 of 3, or the one run)
+      const agreed = !!chain?.root && 2 * chain.agreement > n;
+      if (shares.blocked >= 0.35 && chain?.root && agreed) {
+        const agree = n === 1 ? 'in the one run analysed' : chain.agreement === n ? `in all ${n} runs` : `in ${chain.agreement} of ${n} runs`;
         const why = chain.root.cause === 'signal' ? 'its signal' : chain.root.cause === 'giveWay' ? 'traffic giving way there' : chain.root.cause === 'conflict' ? 'conflicting turns inside it' : chain.root.cause === 'gridlock' ? 'a circular jam (gridlock)' : 'a hold-up';
         cause = { kind: 'spillback', chain, text: `${Math.round(100 * shares.blocked)}% of the delay on it (${fmtS(d.blocked)} of ${fmtS(d.total)} per vehicle) is spent stopped because the road ahead is full. The queue was traced back to ${chain.root.label}, held by ${why}${chain.root.delayS !== null ? ` (vehicles on the approach that starts the queue wait ${fmtS(chain.root.delayS)} each there)` : ''}; found ${agree}. It is marked on the map.` };
       } else if (shares.blocked >= 0.35) {
-        cause = { kind: 'insufficient', chain: null, text: `${Math.round(100 * shares.blocked)}% of the delay is spent stopped behind a full road ahead, but the queue could not be traced to one junction consistently. The evidence is not enough to name a cause.` };
+        const minority = chain?.root ? ` (the most frequent trace, to ${chain.root.label}, was found in only ${chain.agreement} of ${n} runs)` : '';
+        cause = { kind: 'insufficient', chain: null, text: `${Math.round(100 * shares.blocked)}% of the delay is spent stopped behind a full road ahead, but the queue could not be traced to one junction consistently${minority}. The evidence is not enough to name a cause.` };
       } else if (shares.signal >= 0.5) {
         const endJ = junctions.find(j => j.atSection && j.signalised);
         cause = { kind: 'own-signal', chain: null, text: `Most of the delay (${fmtS(d.signal)} of ${fmtS(d.total)} per vehicle) is waiting at the signal at its end${endJ ? `, ${endJ.label}` : ''}. That is ordinary signal delay, not a queue from elsewhere.` };

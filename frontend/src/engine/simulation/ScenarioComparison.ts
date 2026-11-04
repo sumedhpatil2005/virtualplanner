@@ -20,7 +20,9 @@ export type Verdict = 'better' | 'worse' | 'mixed' | 'no_change';
 
 export interface Delta { label: string; before: number | null; after: number | null; unit: string; lowerIsBetter: boolean; change: number | null; good: boolean | null;
   /** Seeds in which the change has the same sign as the mean (for simulated measures). */
-  agreement?: { same: number; of: number } }
+  agreement?: { same: number; of: number };
+  /** Why a value is missing, when one side has none. */
+  note?: string }
 export interface RoadChange { roadName: string; before: number; after: number; change: number; segmentKeys: string[]; vcBefore: number; vcAfter: number }
 
 export interface ComparisonResult {
@@ -85,6 +87,8 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     delta('Speed on it', sectionSpeed(a), sectionSpeed(b), 'km/h', false, 0.05, seeds(s => (s.sectionTimeS ? 1 / s.sectionTimeS : null))),
     delta('Worst junction delay at its ends', mean(a.perSeed.map(s => s.endDelayS)), mean(b.perSeed.map(s => s.endDelayS)), 's', true, 0.1, seeds(s => s.endDelayS)),
   ];
+  const endDelay = section[4];
+  if ((endDelay.before === null) !== (endDelay.after === null)) endDelay.note = `Not measured in the ${endDelay.before === null ? 'existing city' : 'proposal'}: the simulation recorded no junction at the road's ends in any run (an edit can change which junctions count as its ends).`;
   // Volume by itself is neither good nor bad: more vehicles can mean it now relieves a parallel road
   section[0].good = null; section[1].good = null;
   const network: Delta[] = [
