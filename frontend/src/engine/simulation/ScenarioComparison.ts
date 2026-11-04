@@ -131,14 +131,22 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
 
   const sv = verdictOf(section), nv = verdictOf(network), av = verdictOf(area);
   const harm = newBottlenecks.length > 0 || av === 'worse' || av === 'mixed';
+  // Any measure that got worse in every run, at any level, rules out "better": a road that speeds up
+  // while the neighbourhood's trips take 14% longer is a trade-off, not an improvement
+  const worsened = [...section, ...network, ...area].filter(d => d.good === false);
   let overall: Verdict;
-  if ((sv === 'better' || nv === 'better') && sv !== 'worse' && nv !== 'worse' && !harm) overall = 'better';
+  if ((sv === 'better' || nv === 'better') && !worsened.length && !harm) overall = 'better';
   else if ((sv === 'worse' || nv === 'worse' || av === 'worse') && sv !== 'better' && nv !== 'better' && av !== 'better') overall = 'worse';
   else if (sv === 'no_change' && nv === 'no_change' && av === 'no_change' && !newBottlenecks.length) overall = 'no_change';
   else overall = 'mixed';
   const word: Record<Verdict, string> = { better: 'improves', worse: 'worsens', mixed: 'has mixed effects on', no_change: 'makes no clear difference to' };
   let summary = `The change ${word[sv]} the selected road, ${word[nv]} its neighbourhood and ${word[av]} the wider area.`;
   if ((sv === 'better' || nv === 'better') && harm) summary = `The selected road${nv === 'better' ? ' and its neighbourhood' : ''} improve, but ${newBottlenecks.length ? `${newBottlenecks.length} new bottleneck${newBottlenecks.length > 1 ? 's appear' : ' appears'} (${newBottlenecks.map(x => x.roadName).join(', ')})` : 'the wider area gets worse'}: traffic or queues move elsewhere. Not a clear improvement.`;
+  else if (overall === 'mixed' && (sv === 'better' || nv === 'better' || av === 'better') && worsened.length) {
+    const gained = [...section, ...network, ...area].filter(d => d.good === true).map(d => d.label.toLowerCase());
+    const lost = worsened.map(d => `${d.label.toLowerCase()} ${d.change !== null ? `${d.change > 0 ? '+' : ''}${Math.round(d.change * 100)}%` : ''}`.trim());
+    summary = `A trade-off, not a clear improvement: ${gained.join(', ')} improve${gained.length === 1 ? 's' : ''}, but ${lost.join(', ')} get${lost.length === 1 ? 's' : ''} worse in every run.`;
+  }
   if (overall === 'better') summary = `The change improves ${sv === 'better' ? 'the selected road' : 'the neighbourhood'} in every run, without a new bottleneck or more total travel time in the area.`;
 
   const simDeltas = [...section, ...network].filter(d => d.agreement && d.change !== null && Math.abs(d.change) >= 0.05);
