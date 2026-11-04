@@ -1,5 +1,6 @@
 import { scenePoint } from '../../terrain/groundHeight';
 import {
+  NearFarScalar,
   Viewer,
   Entity,
   CustomDataSource,
@@ -68,6 +69,8 @@ const PULSE_MS = 1600;
 /** How long the area takes to spread out from the seed road when first shown. */
 const REVEAL_MS = 700;
 const ALWAYS_ON_TOP = Number.POSITIVE_INFINITY;
+const JUNCTION_SCALE = new NearFarScalar(300, 1, 2500, 0.45);
+const JUNCTION_VISIBLE = new DistanceDisplayCondition(0, 2500);
 const EMPTY_STRETCH = '#64748b';
 
 /**
@@ -121,7 +124,7 @@ export class StudyAreaVisualizer {
   public reset() {
     this.sectionKeys = new Set();
     this.selectLink = null;
-    this.lastArea = null;
+    this.overlay = null;
     this.clear();
   }
 
@@ -141,6 +144,7 @@ export class StudyAreaVisualizer {
     this.seedEntities.clear();
     this.seedColors.clear();
     this.markerEntities = [];
+    this.overlayEntities = [];
   }
 
   /** The selected road's glow breathes, so it reads as the subject of the study. */
@@ -175,7 +179,6 @@ export class StudyAreaVisualizer {
    */
   /** The selected road section (drawn with the selected road's glow). */
   private sectionKeys: ReadonlySet<string> = new Set();
-  private lastArea: StudyArea | null = null;
   private selectLink: ReadonlyMap<string, number> | null = null;
 
   /**
@@ -185,7 +188,9 @@ export class StudyAreaVisualizer {
   public showSelectLink(vph: ReadonlyMap<string, number> | null) {
     this.selectLink = vph;
     if (!vph) {
-      if (this.lastArea) this.render(this.lastArea, false);
+      // Recolour in place: rebuilding the area's lines (thousands of stretches, built off the
+      // main thread) on every overlay switch left the map blank for seconds
+      if (!this.overlay) this.restoreLines();
       return;
     }
     if (!this.lines?.ready) { this.whenLinesReady(() => this.showSelectLink(this.selectLink)); return; }
@@ -202,8 +207,45 @@ export class StudyAreaVisualizer {
     }
   }
 
+  /** An analysis overlay on the stretches (volume/capacity, a traced queue, before/after change); null restores the normal view. */
+  private overlay: { colour: (key: string) => { css: string; alpha: number } | null } | null = null;
+  private overlayEntities: Entity[] = [];
+
+  /** Colours every stretch by `colour` (null: dimmed). Live speed colouring is paused while an overlay is on. */
+  public showOverlay(colour: ((key: string) => { css: string; alpha: number } | null) | null, markers: { coordinates: readonly number[]; label: string; css: string }[] = []) {
+    this.overlay = colour ? { colour } : null;
+    for (const e of this.overlayEntities) this.dataSource?.entities.remove(e);
+    this.overlayEntities = [];
+    if (!colour) {
+      if (!this.selectLink) this.restoreLines();
+      return;
+    }
+    if (!this.lines?.ready) { this.whenLinesReady(() => this.showOverlay(colour, markers)); return; }
+    const scratch = new Color();
+    for (const key of this.lineKeys) {
+      const a = this.attributes(key);
+      if (!a) continue;
+      const c = colour(key);
+      if (!c) { Color.fromCssColorString(EMPTY_STRETCH, scratch); scratch.alpha = 0.12; }
+      else { Color.fromCssColorString(c.css, scratch); scratch.alpha = c.alpha; }
+      a.color = ColorGeometryInstanceAttribute.toValue(scratch, a.color);
+      a.distanceDisplayCondition = DistanceDisplayConditionGeometryInstanceAttribute.toValue(new DistanceDisplayCondition(0, Number.MAX_VALUE), a.distanceDisplayCondition);
+    }
+    const ink = Color.fromCssColorString('#0f172a');
+    for (const m of markers) {
+      const pos = scenePoint(m.coordinates[0], m.coordinates[1], (m.coordinates[2] || 0) + LIFT_M);
+      this.overlayEntities.push(this.dataSource!.entities.add({
+        position: pos,
+        point: { pixelSize: 18, color: Color.fromCssColorString(m.css), outlineColor: Color.WHITE, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP },
+        label: { text: m.label, font: '600 13px sans-serif', fillColor: Color.WHITE, outlineColor: ink, outlineWidth: 4, style: LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cartesian2(0, -24), disableDepthTestDistance: ALWAYS_ON_TOP, showBackground: true, backgroundColor: ink.withAlpha(0.8) },
+      }));
+    }
+  }
+
+  public hasOverlay() { return this.overlay !== null || this.selectLink !== null; }
+
   public setSegmentSpeeds(ratios: ReadonlyMap<string, number>) {
-    if (this.selectLink) return;
+    if (this.selectLink || this.overlay) return;
     this.seedEntities.forEach((entity, key) => {
       const ratio = ratios.get(key);
       const css = ratio === undefined ? STUDY_ROLE_COLORS.seed : speedColor(ratio);
@@ -246,7 +288,6 @@ export class StudyAreaVisualizer {
     this.clear();
     if (sectionKeys) this.sectionKeys = sectionKeys;
     const isSeed = (s: { role: string; key: string }) => s.role === 'seed' || this.sectionKeys.has(s.key);
-    this.lastArea = area;
     const ds = this.dataSource;
     const viewer = this.viewer;
     if (!ds || !viewer) return;
@@ -269,6 +310,7 @@ export class StudyAreaVisualizer {
     // Every other stretch: one batched primitive, built off the main thread
     const others = area.segments.filter(s => !isSeed(s) && s.coordinates.length >= 2);
     this.lineKeys = others.map(s => s.key);
+    this.lineRoles = new Map(others.map(s => [s.key, { css: STUDY_ROLE_COLORS[s.role], alpha: 0.95 * (1 - 0.5 * Math.min(1, s.distanceM / area.rangeMeters)) }]));
     if (others.length > 0) {
       this.lines = viewer.scene.primitives.add(new Primitive({
         geometryInstances: others.map(s => {
@@ -333,6 +375,26 @@ export class StudyAreaVisualizer {
     step();
   }
 
+  /** Each stretch's own colour (its role in the study), as drawn by render. */
+  private lineRoles = new Map<string, { css: string; alpha: number }>();
+
+  /** Back to the role colours of render, in place, after an overlay or the select-link view. */
+  private restoreLines() {
+    if (!this.lines) return;
+    if (!this.lines.ready) { this.whenLinesReady(() => { if (!this.overlay && !this.selectLink) this.restoreLines(); }); return; }
+    const scratch = new Color();
+    for (const key of this.lineKeys) {
+      const a = this.attributes(key), r = this.lineRoles.get(key);
+      if (!a || !r) continue;
+      Color.fromCssColorString(r.css, scratch); scratch.alpha = r.alpha;
+      a.color = ColorGeometryInstanceAttribute.toValue(scratch, a.color);
+    }
+    const seed = Color.fromCssColorString(STUDY_ROLE_COLORS.seed);
+    this.seedEntities.forEach((entity, key) => {
+      if (this.seedColors.has(key)) { this.seedColors.delete(key); entity.polyline!.material = this.pulsingGlow(seed); }
+    });
+  }
+
   private whenLinesReady(then: () => void) {
     const check = () => {
       if (!this.lines) return;
@@ -363,6 +425,10 @@ export class StudyAreaVisualizer {
         outlineColor: ink,
         outlineWidth: 2,
         disableDepthTestDistance: ALWAYS_ON_TOP,
+        // A 2 km area has thousands of junctions: from far away their dots hid the roads (and the
+        // overlays drawn on them), so they shrink with distance and go when the whole area is in view
+        scaleByDistance: JUNCTION_SCALE,
+        distanceDisplayCondition: JUNCTION_VISIBLE,
       });
     }
 
@@ -370,7 +436,7 @@ export class StudyAreaVisualizer {
     const gradeColor = Color.fromCssColorString(STUDY_GRADE_SEPARATION_COLOR);
     for (const g of area.gradeSeparations) {
       const [lng, lat] = g.coordinates;
-      points.add({ position: at([lng, lat], g.upperZ), pixelSize: 11, color: ink, outlineColor: gradeColor, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP });
+      points.add({ position: at([lng, lat], g.upperZ), pixelSize: 11, color: ink, outlineColor: gradeColor, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP, scaleByDistance: JUNCTION_SCALE, distanceDisplayCondition: JUNCTION_VISIBLE });
       if (g.upperZ - g.lowerZ > 0.5) {
         this.markerEntities.push(this.dataSource!.entities.add({
           polyline: {

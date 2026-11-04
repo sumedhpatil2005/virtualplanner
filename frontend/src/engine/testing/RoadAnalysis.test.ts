@@ -152,14 +152,15 @@ describe('select-link and arrival heap', () => {
 describe('scenario comparison on frozen demand', () => {
   const area = explore();
   const plan = compileAreaDemand({ buildings: [building('home', 10, 5, 3000), building('work', 790, 5, 0, 3000)] }, area, roadMap)!;
-  const job = (a = area, rs: ReadonlyMap<string, RoadObject> = roadMap): AnalysisJob => ({ area: a, roads: rs, options: { demandLevel: 0.12, seed: 42 }, plan, section: roadSection(a, rs, ['m1']), hourFactor: 1, feedbackIterations: 0, warmupS: 120, measureS: 300 });
+  const job = (a = area, rs: ReadonlyMap<string, RoadObject> = roadMap): AnalysisJob => ({ area: a, corridor: a, roads: rs, options: { demandLevel: 0.12 }, plan, section: roadSection(a, rs, ['m1']), hourFactor: 1, seeds: [42, 7], warmupS: 120, measureS: 300 });
   it('reports no change for the same network and labels a road change as infrastructure-only', async () => {
     const before = await runAnalysisJob(job(), undefined, 1e9);
     const again = await runAnalysisJob(job(), undefined, 1e9);
     expect(again.result.network).toEqual(before.result.network);
+    expect(again.result.perSeed).toEqual(before.result.perSeed);
     const same = compareAnalyses(before, again, { before: roadMap, after: roadMap }, { before: plan.provenance.vehiclesPerHour, after: plan.provenance.vehiclesPerHour });
     expect(same.kind).toBe('infrastructure');
-    expect(same.verdict).toMatchObject({ section: 'no_change', network: 'no_change' });
+    expect(same.verdict).toMatchObject({ section: 'no_change', network: 'no_change', area: 'no_change', overall: 'no_change' });
     // Close the crossing collector north of the main road: same demand, a different network
     const closedRoads = roads.filter(r => r.id !== 'cross2');
     const closedMap = new Map(closedRoads.map(r => [r.id, r]));
@@ -169,6 +170,8 @@ describe('scenario comparison on frozen demand', () => {
     expect(cmp.kind).toBe('infrastructure');
     expect(cmp.demandAfter).toBe(cmp.demandBefore);
     expect(cmp.caveats.some(c => /seed/.test(c))).toBe(true);
+    // Simulated changes carry how many seeds show them
+    expect(cmp.network.some(d => d.agreement?.of === 2)).toBe(true);
     // A demand change is never passed off as a road effect
     const dev = compareAnalyses(before, after, { before: roadMap, after: closedMap }, { before: 1000, after: 1500 });
     expect(dev.kind).toBe('development');
@@ -183,25 +186,21 @@ describe('demand beyond modelled capacity', () => {
     const over = loadCheck(10000, { releasedVehicles: 1000, capShare: 0.4, gridlockRemovals: 100 }, 900, 4800);
     expect(over.overloaded).toBe(true);
     expect(over.servedShare).toBeCloseTo(0.4, 6);
-    expect(over.message).toMatch(/exceeds what the modelled network can carry/);
-    expect(over.message).toMatch(/4,800 vehicles were still waiting/);
+    expect(over.message).toMatch(/More traffic is routed here than the simulated junctions can pass/);
+    expect(over.message).toMatch(/4,800 vehicles were still queued/);
     expect(over.message).toMatch(/5,000-vehicle limit/);
   });
   it('flags an overloaded run in the analysis and its comparison, and not a light one', async () => {
     const area = explore();
     const base = compileAreaDemand({ buildings: [building('home', 10, 5, 3000), building('work', 790, 5, 0, 3000)] }, area, roadMap)!;
     const heavy = { ...base, trips: base.trips.map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * 8 })), provenance: { ...base.provenance, vehiclesPerHour: base.provenance.vehiclesPerHour * 8 } };
-    const job = (plan: typeof base): AnalysisJob => ({ area, roads: roadMap, options: { demandLevel: 0.12, seed: 42 }, plan, section: roadSection(area, roadMap, ['m1']), hourFactor: 1, feedbackIterations: 1, warmupS: 120, measureS: 300 });
+    const job = (plan: typeof base): AnalysisJob => ({ area, corridor: area, roads: roadMap, options: { demandLevel: 0.12 }, plan, section: roadSection(area, roadMap, ['m1']), hourFactor: 1, seeds: [42], warmupS: 120, measureS: 300 });
     const light = await runAnalysisJob(job(base), undefined, 1e9);
     const jam = await runAnalysisJob(job(heavy), undefined, 1e9);
     expect(light.result.load.overloaded).toBe(false);
     expect(jam.result.load.overloaded).toBe(true);
-    expect(jam.result.reasons[0]).toBe(jam.result.load.message);
-    // Delays measured in a jammed run are not used to re-route drivers, and the panel says so
-    expect(light.adaptation.applied).toBe(true);
-    expect(jam.adaptation.applied).toBe(false);
-    expect(jam.adaptation.reason).toMatch(/past its modelled capacity/);
+    expect(jam.result.reasons.some(r => r === jam.result.load.message)).toBe(true);
     const cmp = compareAnalyses(light, jam, { before: roadMap, after: roadMap }, { before: 1, after: 1 });
-    expect(cmp.caveats.some(c => /exceeds what the modelled network can carry/.test(c))).toBe(true);
+    expect(cmp.confidence.level).toBe('low');
   });
 });

@@ -38,6 +38,7 @@ import { SimulationMode, type SimulationContext } from './simulation/SimulationM
 import type { TimePeriod } from './objects/demandTypes';
 import { TrafficSignalSource } from './simulation/trafficSignals';
 import { LocalOsmIndex } from './editing/LocalOsmIndex';
+import { isSampleObject } from './objects/sampleObjects';
 import { isDrivable, boundsOf, type StudyProblem } from './simulation/StudyAreaExplorer';
 import { roadConnections, type RoadConnections } from './simulation/roadConnections';
 import { isUserBuilt } from './objects/builtBy';
@@ -118,7 +119,8 @@ export class TwinCityEngine {
     // Roads and signals from the backend's OpenStreetMap extract, shared by editing and simulation
     const localOsm = new LocalOsmIndex();
     this.simMode = new SimulationMode(
-      () => filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId()).filter(isDrivable),
+      // The sample objects of an empty project are not part of the city: Simulate leaves them out
+      () => filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId()).filter(isDrivable).filter(o => !isSampleObject(o)),
       // Study areas reaching past the imported map load the OSM roads there through the importer
       {
         load: (boxes, signal) => this.editing.loadOsmRoadsForStudyArea(boxes, signal),
@@ -208,7 +210,7 @@ export class TwinCityEngine {
 
   private getSimulationContext(): SimulationContext {
     const scenarioId = this.scenarios.getActiveScenarioId();
-    const objects = filterObjectsForScenario(this.objects.getAll(), scenarioId);
+    const objects = filterObjectsForScenario(this.objects.getAll(), scenarioId).filter(o => !isSampleObject(o));
     const flows = (values: Record<string, number>) => Object.fromEntries(
       (['AM_Peak', 'PM_Peak', 'Midday', 'Night'] as TimePeriod[]).map(p => [p, Math.max(0, values?.[p] || 0)])
     ) as Record<TimePeriod, number>;

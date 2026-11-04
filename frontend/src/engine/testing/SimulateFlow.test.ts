@@ -44,9 +44,12 @@ describe('Simulate: click a road and traffic runs', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('maps the chosen distance, not one derived from the road, and starts traffic', () => {
+  const until = async (cond: () => boolean, ms = 60000) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise(r => setTimeout(r, 20)); } };
+
+  it('maps the chosen distance, not one derived from the road; the live view starts only when asked', async () => {
     const roads = corridor();
     const mode = new SimulationMode(() => roads);
+    mode.analysisSeeds = [42];
     mode.enter();
     expect(mode.getState().rangeMeters).toBe(DEFAULT_STUDY_DISTANCE_M);
     mode.setRange(500);
@@ -55,16 +58,21 @@ describe('Simulate: click a road and traffic runs', () => {
     const s = mode.getState();
     expect(s.rangeMeters).toBe(500);
     expect(s.area?.stats.entries).toBeGreaterThan(0);
-    expect(s.traffic.status).toBe('running');
+    expect(s.traffic.status).toBe('idle');
+    mode.startTraffic();
+    await until(() => mode.getState().traffic.status === 'running');
     mode.dispose();
-  });
+  }, 120000);
 
-  it('stays paused when the area re-maps, and starts again when the distance changes', async () => {
+  it('a re-map stops the live view, and nothing starts again by itself', async () => {
     const roads = corridor();
     const mode = new SimulationMode(() => roads);
+    mode.analysisSeeds = [42];
     mode.enter();
     mode.setRange(500);
     mode.selectRoad('mid', false);
+    mode.startTraffic();
+    await until(() => mode.getState().traffic.status === 'running');
     mode.pauseTraffic();
 
     mode.networkChanged();
@@ -72,9 +80,11 @@ describe('Simulate: click a road and traffic runs', () => {
     expect(mode.getState().traffic.status).toBe('idle');
 
     mode.setRange(1000);
-    expect(mode.getState().traffic.status).toBe('running');
+    await new Promise(r => setTimeout(r, 300));
+    expect(mode.getState().traffic.status).toBe('idle');
+    expect(mode.resources().liveSim).toBe(false);
     mode.dispose();
-  });
+  }, 120000);
 
   it('going back to choose another road stops the traffic', () => {
     const roads = corridor();

@@ -263,10 +263,10 @@ describe('calibration in Simulate mode', () => {
     expect(mode.getCalibratedPlan()!.provenance.period).toBe('PM_Peak');
     mode.setCountPeak('AM');
     expect(mode.getCalibratedPlan()!.provenance.period).toBe('AM_Peak');
-    mode.restartTraffic();
-    expect(mode.getState().traffic.demand?.period).toBe('AM_Peak');
+    // The analysis (and the live view, which runs on its demand) uses the calibrated plan
+    expect(mode.studyPlan()!.provenance.period).toBe('AM_Peak');
     mode.setCountPeak('PM');
-    expect(mode.getState().traffic.demand?.period).toBe('PM_Peak');
+    expect(mode.studyPlan()!.provenance.period).toBe('PM_Peak');
     // Changing the volume clears the calibration rather than silently keeping a fit made at another level
     mode.setDemandLevel(0.12);
     expect(mode.getState().calibration.applied).toBe(false);

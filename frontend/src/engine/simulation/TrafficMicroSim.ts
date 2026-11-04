@@ -253,6 +253,17 @@ export interface WatchedRoadMetrics {
 }
 
 export type SignalState = 'green' | 'amber' | 'red';
+export type HoldCause = 'signal' | 'blocked' | 'giveWay' | 'conflict';
+export interface AnalysisLinkCounts {
+  id: string; segmentKey: string; roadId: string; from: string; to: string; lengthM: number; lanes: number; freeFlowS: number; watched: boolean;
+  entries: number; pcuEntries: number; selectEntries: number; meanTimeS: number | null; onLinkNow: number; queuedNow: number;
+  /** Queued vehicle-seconds by why the front vehicle was held (see attributeHolds). */
+  hold: Record<HoldCause, number>;
+  /** Links whose lack of room held vehicles here (link id, vehicle-seconds). */
+  blockedBy: [string, number][];
+  /** Ends at a signalised junction; its effective green ratio (green / cycle) for this approach. */
+  signal: boolean; gC: number | null;
+}
 
 export interface MicroSimMetrics {
   timeS: number;
@@ -393,6 +404,10 @@ interface Vehicle {
   abreast?: boolean;
   /** Cleared to cross beside its partner (into the same lane, alongside it). */
   pairCross?: boolean;
+  /** Why its last request to cross was refused (signal, room, room-wait, conflict, give-way), for delay attribution. */
+  hold?: string;
+  /** The link it was waiting to enter. */
+  holdNext?: number;
 }
 
 interface Control {
@@ -511,7 +526,9 @@ export class TrafficMicroSim {
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
   /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
-  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number } | null = null;
+  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number;
+    /** Queued vehicle-seconds behind a stopped front vehicle, by why the front vehicle was held: signal, blocked (no room ahead), give-way, conflict. */
+    hold: Record<HoldCause, Float64Array>; blockedBy: Map<number, Map<number, number>>; pcuEntries: Float64Array } | null = null;
   private linkTimeSum = new Float64Array(0);
   private linkTimeN = new Uint32Array(0);
   private readonly abreastEnabled: boolean;
@@ -699,6 +716,7 @@ export class TrafficMicroSim {
     if (this.analysis) {
       const a = this.analysis;
       a.entries[linkIndex]++;
+      a.pcuEntries[linkIndex] += veh.type.pcu;
       if (veh.focus) {
         a.selectEntries[linkIndex]++;
         // Select-link origin and destination: counted once per vehicle, when it enters the area
@@ -1361,7 +1379,8 @@ export class TrafficMicroSim {
     this.junctionPerf.forEach(p => { p.controlDelayS = 0; p.vehicles = 0; p.pcu = 0; p.queueSumM = 0; p.queueMaxM = 0; p.samples = 0; });
     this.startCounting();
     this.analysis = { fromT: this.t, entries: new Uint32Array(this.links.length), selectEntries: new Uint32Array(this.links.length), selectOd: new Map(),
-      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN), released: 0, capSteps: 0, steps0: Math.round(this.t / STEP_S), gridlock0: this.gridlockRemovals, unroutable0: this.unroutable };
+      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN), released: 0, capSteps: 0, steps0: Math.round(this.t / STEP_S), gridlock0: this.gridlockRemovals, unroutable0: this.unroutable,
+      hold: { signal: new Float64Array(this.links.length), blocked: new Float64Array(this.links.length), giveWay: new Float64Array(this.links.length), conflict: new Float64Array(this.links.length) }, blockedBy: new Map(), pcuEntries: new Float64Array(this.links.length) };
   }
 
   /**
@@ -1369,7 +1388,7 @@ export class TrafficMicroSim {
    * those of them routed over a watched link (select-link), and the mean
    * traversal time of vehicles that left it in the window.
    */
-  public analysisCounts(): { windowS: number; links: { id: string; segmentKey: string; roadId: string; from: string; to: string; lengthM: number; lanes: number; freeFlowS: number; watched: boolean; entries: number; selectEntries: number; meanTimeS: number | null; onLinkNow: number; queuedNow: number }[]; selectOd: Map<string, number>; load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; unroutable: number } } | null {
+  public analysisCounts(): { windowS: number; links: AnalysisLinkCounts[]; selectOd: Map<string, number>; load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; unroutable: number } } | null {
     const a = this.analysis;
     if (!a) return null;
     const links = this.links.map(l => {
@@ -1378,7 +1397,10 @@ export class TrafficMicroSim {
       let onLinkNow = 0, queuedNow = 0;
       for (const lane of l.lanes) for (const v of lane) { onLinkNow++; if (v.v < 1) queuedNow++; }
       return { id: l.id, segmentKey: l.segmentKey, roadId: l.roadId, from: l.from, to: l.to, lengthM: l.length, lanes: l.lanes.length, freeFlowS: l.length / l.speed,
-        watched: this.watchedLinks.has(l.index), entries: a.entries[l.index], selectEntries: a.selectEntries[l.index], meanTimeS: n > 0 ? sum / n : null, onLinkNow, queuedNow };
+        watched: this.watchedLinks.has(l.index), entries: a.entries[l.index], pcuEntries: a.pcuEntries[l.index], selectEntries: a.selectEntries[l.index], meanTimeS: n > 0 ? sum / n : null, onLinkNow, queuedNow,
+        hold: { signal: a.hold.signal[l.index], blocked: a.hold.blocked[l.index], giveWay: a.hold.giveWay[l.index], conflict: a.hold.conflict[l.index] },
+        blockedBy: [...(a.blockedBy.get(l.index) ?? new Map<number, number>())].map(([k, sec]) => [this.links[k].id, sec] as [string, number]),
+        signal: this.controls.get(l.to)?.kind === 'signal', gC: this.greenRatio(l.index) };
     });
     const steps = Math.max(1, Math.round(this.t / STEP_S) - a.steps0);
     return { windowS: this.t - a.fromT, links, selectOd: new Map(a.selectOd),
@@ -1406,6 +1428,17 @@ export class TrafficMicroSim {
         flowRatioSum: c.design?.flowRatioSum ?? null, oversaturated: c.design?.oversaturated ?? false });
     });
     return out;
+  }
+
+  /** Green time over cycle time for the phase serving this approach link (null where unsignalised). */
+  public greenRatio(linkIndex: number): number | null {
+    const link = this.links[linkIndex];
+    const c = this.controls.get(link.to);
+    if (!c || c.kind !== 'signal') return null;
+    const phases = c.phases ?? 2, cycle = c.cycleS ?? SIGNAL_CYCLE_S;
+    const group = c.groups.get(linkIndex) ?? 0;
+    const green = c.greens && c.greens.length === phases ? c.greens[group] : cycle / phases - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
+    return Math.max(0, Math.min(1, green / cycle));
   }
 
   public signalState(linkIndex: number): SignalState | null {
@@ -1437,7 +1470,8 @@ export class TrafficMicroSim {
   /** Test hook: start counting the outcomes of grant requests per approach link id. */
   public traceGrants() { this.grantLog = new Map(); }
   public grantOutcomes(): Map<string, Map<string, number>> { return this.grantLog ?? new Map(); }
-  private refuse(link: Link, reason: string) {
+  private refuse(link: Link, reason: string, veh?: Vehicle, next?: number) {
+    if (veh) { veh.hold = reason === 'granted' ? undefined : reason; veh.holdNext = next; }
     if (!this.grantLog) return;
     let m = this.grantLog.get(link.id);
     if (!m) { m = new Map(); this.grantLog.set(link.id, m); }
@@ -1488,7 +1522,7 @@ export class TrafficMicroSim {
       // its partner may brake hard behind the vehicle ahead), and treating the lane as
       // blocked sent the followers of one lane into the other lane of the next link,
       // across that lane's platoon, so both stalled at the line.
-      if (link.lanes.length === next.lanes.length && rearMoving(next.lanes[lane])) return this.refuse(link, 'room-wait');
+      if (link.lanes.length === next.lanes.length && rearMoving(next.lanes[lane])) return this.refuse(link, 'room-wait', veh, next.index);
       let best = -1, bestRoom = -Infinity;
       for (let k = 0; k < next.lanes.length; k++) {
         if (k === lane) continue;
@@ -1496,7 +1530,7 @@ export class TrafficMicroSim {
         const r = room(k, c.start - veh.pos, c) - need(c);
         if (r > bestRoom) { bestRoom = r; best = k; }
       }
-      if (best < 0 || bestRoom < 0) return this.refuse(link, 'room');
+      if (best < 0 || bestRoom < 0) return this.refuse(link, 'room', veh, next.index);
       lane = best;
       connector = this.connectorFor(link, veh.lane, next, lane);
       dist = connector.start - veh.pos;
@@ -1506,21 +1540,21 @@ export class TrafficMicroSim {
     if (c?.kind === 'signal') {
       const state = this.signalState(link.index);
       const canStop = dist > (veh.v * veh.v) / (2 * veh.type.comfortDecel);
-      if (state === 'red' || (state === 'amber' && canStop)) return this.refuse(link, 'signal');
+      if (state === 'red' || (state === 'amber' && canStop)) return this.refuse(link, 'signal', veh, next.index);
     }
 
-    if (this.conflictingClaim(veh, link, connector, false)) return this.refuse(link, 'conflict');
+    if (this.conflictingClaim(veh, link, connector, false)) return this.refuse(link, 'conflict', veh, next.index);
 
     if (c?.kind === 'signal') {
       // Permissive right turn: give way to opposing green traffic (gap acceptance)
-      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way');
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way', veh, next.index);
     } else if (c?.kind === 'priority') {
       const yields = this.yieldsAt(link, next, c);
       // Traffic that gives way edges up to the line before judging the gap
       if (yields && dist > YIELD_LINE_M) return;
-      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way');
+      if (this.mustGiveWay(veh, link, next, connector, c, dist)) return this.refuse(link, 'give-way', veh, next.index);
     }
-    this.refuse(link, 'granted');
+    this.refuse(link, 'granted', veh);
     veh.pairCross = withPartner;
     this.reserve(veh, lane, connector);
   }
@@ -1874,6 +1908,8 @@ export class TrafficMicroSim {
       }
     }
 
+    if (this.analysis) this.attributeHolds(active, dt);
+
     // 4. Cross junctions, leave the area, clear gridlock
     for (const link of active) {
       for (const lane of link.lanes) {
@@ -1900,6 +1936,32 @@ export class TrafficMicroSim {
     if (this.t >= this.nextSampleT) {
       this.nextSampleT = this.t + 5;
       this.sampleJunctions(active);
+    }
+  }
+
+  /**
+   * Delay attribution (analysis window): every vehicle queued (under 1 m/s, in
+   * an unbroken line from the front) behind a front vehicle that is waiting to
+   * cross is charged to why the front vehicle waits: a red signal, no room on
+   * the link ahead (a queue reaching back from further on: blocked), giving
+   * way, or a conflicting movement in the junction. Blocked time also records
+   * the link that had no room, so a queue can be traced to where it starts.
+   */
+  private attributeHolds(active: Link[], dt: number) {
+    const a = this.analysis!;
+    for (const link of active) {
+      for (const lane of link.lanes) {
+        const front = lane[0];
+        if (!front || front.v >= 0.5 || front.grantLane !== null || front.routeIdx >= front.route.length - 1 || !front.hold) continue;
+        let n = 0;
+        for (const v of lane) { if (v.v >= 1) break; n++; }
+        const cause: HoldCause = front.hold === 'signal' ? 'signal' : front.hold === 'room' || front.hold === 'room-wait' ? 'blocked' : front.hold === 'give-way' ? 'giveWay' : 'conflict';
+        a.hold[cause][link.index] += n * dt;
+        if (cause === 'blocked' && front.holdNext !== undefined) {
+          const m = a.blockedBy.get(link.index) ?? a.blockedBy.set(link.index, new Map()).get(link.index)!;
+          m.set(front.holdNext, (m.get(front.holdNext) ?? 0) + n * dt);
+        }
+      }
     }
   }
 
@@ -2026,6 +2088,7 @@ export class TrafficMicroSim {
   }
 
   private crossJunction(veh: Vehicle, lane: Vehicle[]) {
+    veh.hold = undefined; veh.holdNext = undefined;
     const c = veh.connector!;
     const nextIdx = veh.route[veh.routeIdx + 1];
     const next = this.links[nextIdx];
