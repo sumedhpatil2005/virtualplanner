@@ -74,3 +74,5 @@ backend/data/*
 !backend/data/diurnal/
 # Local OSM network corrections: curated, evidenced overlay (OSM itself is never edited)
 !backend/data/network_corrections/
+# Screen-line (bridge) counts from the PMC CMP 2008: curated, cited source data
+!backend/data/observed_screenlines/

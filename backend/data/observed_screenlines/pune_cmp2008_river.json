@@ -1,0 +1,22 @@
+{
+  "schema": "twincity.observed_screenline/v1",
+  "id": "pune_cmp2008_river",
+  "name": "Mula-Mutha river bridges, peak-hour classified volume counts (both directions)",
+  "source": {
+    "title": "Comprehensive Mobility Plan for Pune City, Pune Municipal Corporation (2008)",
+    "tables": "Table 4.1 'Summary of Screen Line Counts (12hrs)', p. 4-3; annexure 'Summary of CVC collected across Screen line-2' (Table 8), PDF p. 163 (peak hour and its time, vehicles and PCU)",
+    "url": "https://data.opencity.in/dataset/bb6b3dc4-6ff5-42bf-b41f-3d823a4e8ef8/resource/e883b43e-aaa8-4411-bfa8-860f05154f5d/download/9d5dca7b-5ddb-4c91-b9f8-cae4acbef71c.pdf",
+    "surveyYear": 2008,
+    "note": "Mid-block classified volume counts, both directions together, 12 hours (08:00-20:00). The counts are about 18 years old: traffic has very likely grown since, and some bridges have been rebuilt or paired with new ones. They are an order-of-magnitude check on the model, not calibration targets."
+  },
+  "matching": "OSM ways of each bridge in the 2026-11-01 western-zone extract, matched by name; 'comparable: false' where the bridge has changed since 2008 (a parallel bridge now shares its traffic).",
+  "stations": [
+    { "id": "shivaji", "name": "Shivaji Bridge (Nava Pul)", "osmWays": [22841323], "peakHour": "18:00-19:00", "peakStartHour": 18, "peakVehicles": 7470, "peakPcu": 8131, "day12hVehicles": 61385, "twoWheelerShare12h": 0.639, "comparable": true },
+    { "id": "sambhaji", "name": "Sambhaji Bridge (Lakdi Pul)", "osmWays": [207872405, 53088328], "peakHour": "11:00-12:00", "peakStartHour": 11, "peakVehicles": 5042, "peakPcu": 7743, "day12hVehicles": 35960, "twoWheelerShare12h": 0.0, "comparable": true, "note": "No two-wheelers in the count: two-wheelers are not allowed on Lakdi Pul. The model does not apply vehicle-class bans." },
+    { "id": "z_bridge", "name": "Z-Bridge (Kakasaheb Gadgil Bridge)", "osmWays": [53759030], "peakHour": "10:00-11:00", "peakStartHour": 10, "peakVehicles": 3928, "peakPcu": 3503, "day12hVehicles": 34140, "twoWheelerShare12h": 0.745, "comparable": true },
+    { "id": "tilak", "name": "Tilak Bridge (Jayantrao Tilak Bridge)", "osmWays": [53759316, 238567511], "peakHour": "10:00-11:00", "peakStartHour": 10, "peakVehicles": 2213, "peakPcu": 2162, "day12hVehicles": 20794, "twoWheelerShare12h": 0.601, "comparable": true },
+    { "id": "shinde", "name": "Shinde Bridge (Maharshi Vitthal Ramji Shinde Bridge)", "osmWays": [216506273, 23028078], "peakHour": "18:00-19:00", "peakStartHour": 18, "peakVehicles": 4986, "peakPcu": 4484, "day12hVehicles": 39594, "twoWheelerShare12h": 0.672, "comparable": true },
+    { "id": "sm_joshi", "name": "S. M. Joshi Bridge", "osmWays": [23016237], "peakHour": "11:00-12:00", "peakStartHour": 11, "peakVehicles": 4302, "peakPcu": 3491, "day12hVehicles": 35015, "twoWheelerShare12h": 0.686, "comparable": true },
+    { "id": "dengale", "name": "Dengale Bridge (Dagadi Pul)", "osmWays": [216506270], "peakHour": "18:00-19:00", "peakStartHour": 18, "peakVehicles": 7819, "peakPcu": 8288, "day12hVehicles": 71262, "twoWheelerShare12h": 0.594, "comparable": false, "note": "OSM now maps Dengle Bridge one-way, paired with Chhatrapati Shahu Setu; the 2008 count covered both directions on the old bridge." }
+  ]
+}
