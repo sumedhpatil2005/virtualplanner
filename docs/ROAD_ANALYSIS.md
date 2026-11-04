@@ -1,5 +1,7 @@
 # Road analysis: why a selected road ran nearly empty, what changed, what was verified
 
+> **Update (overhaul, November 2026).** The analysis now assigns the whole study area by static user equilibrium and micro-simulates only the selected road's 700 m neighbourhood with 3 seeds; free-flow speeds are capped at 50 km/h on untagged urban roads, capacities follow IRC:106 in PCU, and the fictional sample objects are excluded from Simulate. Figures in §4–§6 below were produced by the earlier whole-area simulation (one seed, 5,000-vehicle limit) and are kept as the record of that stage; they are **superseded** for current behaviour by §7 here and by docs/OVERHAUL.md. Any Shivaji Bridge figure produced before the sample-object exclusion is invalid (its queue was traced to the fictional "Pune Central Boulevard").
+
 Branch `realistic-traffic`. Applies to the Simulate panel's road analysis (select a road, read what is happening on it and test a change).
 
 ## 1. What was wrong
@@ -113,3 +115,15 @@ Tests that cover this work include `RoadAnalysis.test.ts` (section following, ar
 - Earlier, still valid: `before_panel_vsg.png` (the ~96 veh/h before state), `after_vsg_selectlink.png`.
 
 **Not verified**: VSG and Dange Chowk were not re-run in the browser on the final code (the node job is the same code path and seed; an earlier browser VSG run on this branch gave 1,493 NE / 230 SW). One seed only. No junction is calibrated (CALIBRATION.md).
+
+## 7. Current figures (overhaul)
+
+Full detail, sources and caveats: docs/OVERHAUL.md.
+
+**Shivaji Bridge, 2 km area, 09:00, 3 seeds (browser, production build, estimated demand 28,500 veh/h, ~98% through traffic):** north-west 816 veh/h (763–890 over the runs) at 22 km/h against 45 km/h free flow, LOS D; south-east 515 veh/h (418–599) at 5 km/h against 37 km/h, LOS F; *severely congested* in all 3 runs. 87% of the south-east delay is stopped time behind a queue traced to Shivaji Bridge / Bajirao Road (conflicting turns), found in all 3 runs. The bridge itself is at 33–63% of its IRC:106 capacity. The earlier report (482 / 201 veh/h, 44 / 29 km/h against a 100 km/h free flow, "Congested") came from the 100 km/h class default and the uniform 1,800 veh/h/lane capacity, and a mid-overhaul run blamed a queue at a fictional junction from the sample objects.
+
+**Screenline check:** the area assignment puts 1,711 veh/h (both directions) on Shivaji Bridge against 7,470 counted in the 2008 peak hour (PMC CMP 2008), **23%**; 1,331 veh/h got through the simulation (18%). The demand is too low on this central crossing; it is reported, not scaled.
+
+**Comparison verdicts** (same demand, hour and seeds): widening Shivaji Bridge by one lane per carriageway → *no clear change*; widening `osm_282054960` on the traced queue from 1 to 2 lanes → *mixed (trade-off)*: the bridge's travel time −34% in every run, but neighbourhood trip time +14% and delay +18% in every run. Both were reported as "Better" before the agreement and verdict fixes.
+
+**Checks on the final tree:** vitest 361 tests (358 passed, 3 skipped, 0 failed); `tsc -b` clean; oxlint 0 errors (5 pre-existing warnings); backend pytest 52 passed. Browser E2E results per check: docs/OVERHAUL.md §10.

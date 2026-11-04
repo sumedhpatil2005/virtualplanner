@@ -220,10 +220,18 @@ The calibration above runs single junctions on the counted demand. The road anal
 - Full figures and their sources: docs/ROAD_ANALYSIS.md §4 and §6.
 - No calibration fit is applied to area demand; the counts-calibrated plan (§2) remains a separate, opt-in step under Advanced.
 
-## 10. Checks run on the final state
+## 10. Checks run on the final state (at `651fc2f`; superseded by §11)
 
 Run at `651fc2f` (branch `realistic-traffic`):
 
 - Frontend `npx vitest run --config vitest.config.ts`: 43 committed test files (40 run, 3 opt-in harnesses skipped); 346 tests, 343 passed, 3 skipped, 0 failed. The working tree also holds six uncommitted `*.scratch.test.ts` probes (five skip unless their environment variables are set), giving 49 files / 352 tests / 344 passed / 8 skipped in the same run.
 - `tsc -b`: no errors. `oxlint src`: 0 errors, 5 warnings (unused variables, pre-existing).
 - Backend `pytest`: 50 passed.
+
+## 11. Overhaul (November 2026): what changed for calibration
+
+- **Sample objects excluded.** The demo objects an empty project is seeded with (a fictional "Pune Central Boulevard", a side lane, a signalised junction and two blocks, about 230 m south of Shivaji Bridge) were simulated as real roads until this round. Results for central Pune produced before the exclusion (`objects/sampleObjects.ts`) are invalid; the west-Pune junction results in §3–§10 are far from them and unaffected.
+- **Speeds and capacities.** Untagged urban roads now get a class default of at most 50 km/h (was up to 100 km/h); mid-block capacities follow IRC:106-1990 in PCU/h. The single-junction results in §3 used tagged or class speeds on short approaches and are not expected to move materially, but they were not re-run in this round.
+- **Area demand vs an independent count.** A screen-line check against the PMC CMP 2008 river-bridge counts (`backend/data/observed_screenlines/pune_cmp2008_river.json`) is now part of the analysis. On Shivaji Bridge the model's assignment volume is **23% of the 2008 peak-hour count** (1,711 of 7,470 veh/h, both directions; the simulated throughput is 18%). Other bridges in the same run: Sambhaji 18%, Tilak 75%, Shinde 83%. The counts are 18 years old and are a check, not a target; nothing is fitted to them.
+- **Area model.** The road analysis now assigns the area by static user equilibrium and simulates only the selected road's 700 m neighbourhood with 3 seeds; the "large areas reach the 5,000-vehicle limit" finding in §9 applies to the earlier whole-area simulation.
+- **Checks on the final tree:** vitest 46 files (43 passed, 3 skipped), 361 tests (358 passed, 3 skipped, 0 failed); `tsc -b` clean; oxlint 0 errors, 5 pre-existing warnings; backend pytest 52 passed. Details: docs/OVERHAUL.md §10.
