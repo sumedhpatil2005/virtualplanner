@@ -46,6 +46,8 @@ vi.mock('cesium', () => ({
     pack: vi.fn(),
   },
   Cartesian2: vi.fn(),
+  NearFarScalar: vi.fn(),
+  DistanceDisplayCondition: vi.fn(),
   Cartographic: {
     fromDegrees: vi.fn((lng: number, lat: number) => ({ longitude: lng, latitude: lat, height: 0 })),
     fromCartesian: vi.fn(() => ({ longitude: 0, latitude: 0, height: 0 })),
