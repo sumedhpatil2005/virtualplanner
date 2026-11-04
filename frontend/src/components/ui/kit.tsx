@@ -6,10 +6,10 @@ import { ArrowLeft, X, type LucideIcon } from 'lucide-react';
  * 14 px body text, 12 px labels, large figures, one primary action.
  */
 
-export const SidePanel: React.FC<{ children: React.ReactNode; label: string }> = ({ children, label }) => (
+export const SidePanel: React.FC<{ children: React.ReactNode; label: string; wide?: boolean }> = ({ children, label, wide }) => (
   <aside
     aria-label={label}
-    className="w-[22rem] max-h-full flex flex-col rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden pointer-events-auto animate-fade-in"
+    className={`${wide ? 'w-[27rem]' : 'w-[22rem]'} max-h-full flex flex-col rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden pointer-events-auto animate-fade-in`}
   >
     {children}
   </aside>

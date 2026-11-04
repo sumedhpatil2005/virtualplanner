@@ -1,9 +1,9 @@
 import React from 'react';
-import { Clock, Play, Pause } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { TimeOfDayState } from '../engine/simulation/SimulationMode';
 import { periodOf, isMeasured, hourLabel, COUNT_HOURS, type TrafficPeriod } from '../engine/simulation/timeOfDay';
-import { Section, Segmented, Button } from './ui/kit';
+import { Section, Segmented } from './ui/kit';
 import { SourceBadge } from './ui/SourceBadge';
 
 const PERIOD_STYLE: Record<TrafficPeriod, string> = {
@@ -14,7 +14,7 @@ const PERIOD_STYLE: Record<TrafficPeriod, string> = {
 const PERIOD_TEXT: Record<TrafficPeriod, string> = { Peak: 'text-rose-300', Moderate: 'text-amber-300', Low: 'text-emerald-300' };
 
 /**
- * Clock for the simulation: pick the hour (or play the day through) and the
+ * Clock for the simulation: pick the hour and the
  * demand follows the real Pune hour-of-day profile. Each bar is one hour's
  * share of daily traffic; solid bars are measured hours, hatched ones filled.
  */
@@ -58,9 +58,7 @@ export const TimeOfDayPanel: React.FC<{ tod: TimeOfDayState }> = ({ tod }) => {
           <span className="text-sm text-slate-400">Counts are</span>
           <Segmented label="Peak the counts represent" options={[{ value: 'AM', label: `AM peak ${hourLabel(COUNT_HOURS.AM)}` }, { value: 'PM', label: `PM peak ${hourLabel(COUNT_HOURS.PM)}` }]} value={tod.countPeak} onChange={v => mode.setCountPeak(v as 'AM' | 'PM')} />
         </div>
-        <Button icon={tod.playback ? Pause : Play} onClick={() => mode.setPlayback(!tod.playback)} title="Advance the clock one hour every simulated minute">
-          {tod.playback ? 'Stop 24 h playback' : 'Play 24 h'}
-        </Button>
+        <p className="text-[11px] text-slate-400">Click a bar to analyse that hour. To see the road across the day, use "Compare times of day" under Improve &amp; compare.</p>
         <p className="text-[11px] leading-relaxed text-slate-500">
           Hourly demand = calibrated peak-hour demand × profile[hour] ÷ profile[{hourLabel(COUNT_HOURS[tod.countPeak])}]. Peak ≥ 80% of the busiest hour, Low &lt; 40%.
           The count study does not say whether its peak hour was morning or evening; the profile's two peaks differ by under 5%.

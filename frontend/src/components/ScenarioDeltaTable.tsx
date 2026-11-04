@@ -9,7 +9,7 @@ import type { Delta } from '../engine/simulation/ScenarioComparison';
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
 const fmtDeltaValue = (d: Delta, v: number | null) =>
-  v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : ''}`;
+  v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : d.unit === 'veh·h' ? fmt(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : d.unit === '%' ? '%' : d.unit === 'veh·h' ? ' veh·h' : ''}`;
 
 /** Change as a percentage, or null when it is too small to show. */
 const fmtChange = (d: Delta) =>
@@ -24,7 +24,7 @@ export const DeltaRows: React.FC<{ rows: Delta[] }> = ({ rows }) => (
         const change = fmtChange(d);
         return (
           <tr key={d.label} className="border-t border-white/5 align-top">
-            <th className="py-1.5 pr-3 text-left font-normal text-slate-400">{d.label}</th>
+            <th className="py-1.5 pr-3 text-left font-normal text-slate-400">{d.label}{d.agreement && d.change !== null && Math.abs(d.change) >= 0.005 && <span className={`block text-[10px] ${d.agreement.same === d.agreement.of ? 'text-slate-500' : 'text-amber-300/80'}`} data-testid="seed-agreement">{d.agreement.same === d.agreement.of ? `same in all ${d.agreement.of} runs` : `only ${d.agreement.same} of ${d.agreement.of} runs`}</span>}</th>
             <td className="py-1.5 px-3 text-right text-slate-300 whitespace-nowrap">{fmtDeltaValue(d, d.before)}</td>
             <td className={`py-1.5 pl-3 text-right whitespace-nowrap ${d.good === true ? 'text-emerald-300' : d.good === false ? 'text-rose-300' : 'text-white'}`}>
               <span className="block">{fmtDeltaValue(d, d.after)}</span>
