@@ -1,4 +1,5 @@
 import type { RoadObject, RoadSectionProfile } from '../objects/types';
+import { roadKeys, SECTION_MAX_M } from '../simulation/roadSection';
 
 /**
  * The changes a Build properties edit of one field makes to a road (moved here
@@ -126,12 +127,85 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
 
 export type LaneField = 'lanesForward' | 'lanesBackward';
 
+/** Pieces of one carriageway followed at most this far from the edited piece (m), as a road section (roadSection.ts). */
+export const LANE_EDIT_MAX_M = SECTION_MAX_M;
+const RANK: Record<string, number> = { highway: 4, arterial: 3, collector: 2, local: 1 };
+const M_PER_DEG_LAT = 111320;
+const nodeKey = (p: readonly number[]) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+const lengthM = (c: readonly (readonly number[])[]) => {
+  let n = 0;
+  for (let i = 1; i < c.length; i++) n += Math.hypot((c[i][0] - c[i - 1][0]) * M_PER_DEG_LAT * Math.cos(c[i][1] * Math.PI / 180), (c[i][1] - c[i - 1][1]) * M_PER_DEG_LAT);
+  return n;
+};
+/** Lanes a road has in the direction a field edits (the first section's carriageways, as the panel and the traffic network read them). */
+export function directionLanes(r: RoadObject, field: LaneField): number {
+  const sec = r.sections?.[0];
+  if (field === 'lanesForward') return sec?.carriagewayA?.lanes ?? Math.ceil((r.laneCount || 2) / (r.isOneWay ? 1 : 2));
+  return r.isOneWay ? 0 : sec ? sec.carriagewayB?.lanes ?? 0 : Math.floor((r.laneCount || 2) / 2);
+}
+
 /**
- * The roads a Build lane edit changes and how: `[{ id, updates }]`.
- * Today only the road the user selected.
+ * The pieces of the carriageway a lane edit is meant for: the selected road
+ * followed end to end along OpenStreetMap ways of the same road (same name,
+ * alternative name or ref) running the same way, with the same lanes in the
+ * edited direction, up to a junction with a main road of another name, a fork,
+ * or LANE_EDIT_MAX_M. OSM splits one carriageway into many ways (Sangamwadi
+ * Bridge eastbound is a 60 m approach, the 368 m deck and a 136 m approach),
+ * and a road's capacity is that of its narrowest stretch, so widening only the
+ * clicked way left the bridge's capacity where it was (docs/OVERHAUL.md §14).
+ * Returns each piece with the field to edit on it (a two-way way drawn the
+ * other way round has its directions swapped).
+ */
+export function carriagewayPieces(roads: readonly RoadObject[], roadId: string, field: LaneField): { road: RoadObject; field: LaneField }[] {
+  const sel = roads.find(r => r.id === roadId);
+  if (!sel || sel.coordinates.length < 2) return [];
+  const keys = roadKeys(sel);
+  const only = [{ road: sel, field }];
+  if (keys.size === 0) return only;
+  const lanes = directionLanes(sel, field);
+  const pool = roads.filter(r => r.type === 'road' && r.scenarioId === sel.scenarioId && r.coordinates.length >= 2);
+  const byNode = new Map<string, RoadObject[]>();
+  for (const r of pool) for (const p of [r.coordinates[0], r.coordinates[r.coordinates.length - 1]]) {
+    const k = nodeKey(p);
+    (byNode.get(k) ?? byNode.set(k, []).get(k)!).push(r);
+  }
+  const same = (r: RoadObject) => [...roadKeys(r)].some(k => keys.has(k));
+  const out = new Map<string, { road: RoadObject; field: LaneField }>([[sel.id, { road: sel, field }]]);
+  const other = (f: LaneField): LaneField => (f === 'lanesForward' ? 'lanesBackward' : 'lanesForward');
+  // Walk from each end of the selected piece, in its drawn direction (head) and against it (tail)
+  for (const towardsHead of [true, false]) {
+    let cur = sel, curReversed = false, dist = lengthM(sel.coordinates) / 2;
+    for (;;) {
+      const c = cur.coordinates;
+      // The end of `cur` we leave by: its head when walking with the selected piece's direction (accounting for reversal)
+      const leaveAtHead = towardsHead !== curReversed;
+      const node = nodeKey(leaveAtHead ? c[c.length - 1] : c[0]);
+      const meeting = (byNode.get(node) ?? []).filter(r => r.id !== cur.id);
+      // A main road of another name meets here: the carriageway ends at this junction
+      if (meeting.some(r => !same(r) && (RANK[r.roadClass] ?? 1) >= 2)) break;
+      // Same road, same kind (one-way or two-way). It continues the walk when it starts here
+      // (drawn the way we walk) or ends here (drawn against it); a one-way piece must run the selected one's way
+      const next = meeting.filter(r => same(r) && !out.has(r.id) && r.isOneWay === sel.isOneWay)
+        .map(r => ({ r, reversed: (nodeKey(r.coordinates[0]) === node) !== towardsHead }))
+        .filter(x => !(sel.isOneWay && x.reversed));
+      if (next.length !== 1) break; // a fork or the end of the road
+      const { r, reversed } = next[0];
+      const f = reversed ? other(field) : field;
+      if (directionLanes(r, f) !== lanes) break;
+      dist += lengthM(r.coordinates);
+      if (dist > LANE_EDIT_MAX_M) break;
+      out.set(r.id, { road: r, field: f });
+      cur = r; curReversed = reversed;
+    }
+  }
+  return [...out.values()];
+}
+
+/**
+ * The roads a Build lane edit changes and how: `[{ id, updates }]`, the
+ * selected road first, then the other pieces of its carriageway
+ * (carriagewayPieces).
  */
 export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[]): { id: string; updates: Partial<RoadObject> }[] {
-  const road = roads.find(r => r.id === roadId);
-  if (!road) return [];
-  return [{ id: road.id, updates: roadFieldUpdates(road, field, value, synthesize) }];
+  return carriagewayPieces(roads, roadId, field).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
 }

@@ -13,7 +13,7 @@ type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
-import { roadFieldUpdates } from '../engine/editing/roadEdits';
+import { roadFieldUpdates, laneEditPlan } from '../engine/editing/roadEdits';
 
 /** Build mode: edit the selected object. */
 export const PropertiesPanel: React.FC = () => {
@@ -245,6 +245,21 @@ export const PropertiesPanel: React.FC = () => {
         (gwUpdates as any)[field] = value;
       } else if (field === 'inboundFlows' || field === 'outboundFlows' || field === 'modeSplit' || field === 'provenance') {
         (gwUpdates as any)[field] = value;
+      }
+    }
+
+    // A lane edit is for the whole carriageway: the other OSM pieces of the same road running the same way (engine/editing/roadEdits.ts)
+    if (selectedObj.type === 'road' && (field === 'lanesForward' || field === 'lanesBackward')) {
+      const roads = engineInstance.objects.getAll().filter((o): o is RoadObject => o.type === 'road');
+      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r));
+      if (plan.length > 1) {
+        const before = plan.map(p => engineInstance.objects.getById(p.id)!);
+        engineInstance.history.pushDiff({ type: 'batch', description: `Update ${selectedObj.name || selectedObj.id} lanes (${plan.length} pieces)`,
+          diffs: plan.map((p, i) => ({ type: 'update' as const, id: p.id, before: before[i], after: { ...before[i], ...p.updates } as CityObject })) });
+        setSelectedObj({ ...selectedObj, ...plan[0].updates } as CityObject);
+        for (const p of plan) engineInstance.objects.update(p.id, p.updates);
+        (window as any).showToast?.(`Lanes changed on ${plan.length} pieces of ${selectedObj.name || 'this road'} running this way.`, 'info');
+        return;
       }
     }
 

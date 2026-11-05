@@ -4,7 +4,7 @@ import path from 'path';
 import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
-import { laneEditPlan, roadFieldUpdates } from '../editing/roadEdits';
+import { laneEditPlan, roadFieldUpdates, carriagewayPieces } from '../editing/roadEdits';
 import { StudyAreaExplorer, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { applyNetworkCorrections } from '../simulation/networkCorrections';
 import { applyUrbanSpeeds, midblockCapacityPcu } from '../simulation/roadParameters';
@@ -14,6 +14,7 @@ import { sectionDirections, areaContext } from '../simulation/RoadAnalysis';
 import { assignTraffic } from '../simulation/staticAssignment';
 import { snapDemandPlan, networkContentKey } from '../simulation/StudyDemand';
 import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
+import { runAnalysisJob } from '../simulation/analysisJob';
 
 /**
  * Build edits and recompute (docs/OVERHAUL.md §14), on the real OpenStreetMap
@@ -155,4 +156,59 @@ describe('Build lane edits recompute the road analysis', () => {
     expect(Array.from(a1.res.volPcu)).toEqual(Array.from(a0.res.volPcu));
     expect(a1.ctx.directions).toEqual(a0.ctx.directions);
   }, 60000);
+});
+
+describe('which pieces a lane edit covers', () => {
+  const LAT0 = 18.5;
+  const pt = (x: number, y: number): [number, number, number] => [73.8 + x / (111320 * Math.cos(LAT0 * Math.PI / 180)), LAT0 + y / 111320, 0];
+  const road = (id: string, a: [number, number], b: [number, number], extra: Partial<RoadObject> = {}): RoadObject => ({
+    id, type: 'road', name: 'Test Road', layerId: 'roads', scenarioId: 'base', coordinates: [pt(...a), pt(...b)], roadClass: 'arterial', width: 10, laneCount: 2, laneWidth: 3.5,
+    hasDivider: false, dividerWidth: 0, hasFootpath: false, footpathWidth: 0, speedLimit: 40, isOneWay: false, trafficCapacity: 2000, connectedJunctions: [], createdAt: '', updatedAt: '', ...extra,
+  } as RoadObject);
+  const om2 = () => new ObjectManager();
+  const load = (rs: RoadObject[]) => { const m = om2(); m.addMultiple(rs, true); return m.getAll() as RoadObject[]; };
+
+  it('follows a two-way road drawn the other way round with its directions swapped, and stops at a main road of another name', () => {
+    const rs = load([road('a', [0, 0], [200, 0]), road('b', [400, 0], [200, 0]), road('c', [400, 0], [600, 0]),
+      road('x', [400, -200], [400, 0], { name: 'Cross Road', roadClass: 'collector' }), road('y', [400, 0], [400, 200], { name: 'Cross Road', roadClass: 'collector' })]);
+    const p = carriagewayPieces(rs, 'a', 'lanesForward');
+    expect(p.map(x => [x.road.id, x.field])).toEqual([['a', 'lanesForward'], ['b', 'lanesBackward']]);
+  });
+  it('stops where the lanes differ, at a fork, and leaves unnamed roads to the piece clicked', () => {
+    const rs = load([road('a', [0, 0], [200, 0], { isOneWay: true, laneCount: 2 }), road('b', [200, 0], [400, 0], { isOneWay: true, laneCount: 3 }),
+      road('c', [-200, 0], [0, 0], { isOneWay: true }), road('d1', [-400, 50], [-200, 0], { isOneWay: true }), road('d2', [-400, -50], [-200, 0], { isOneWay: true }),
+      road('u1', [0, 500], [200, 500], { name: '' }), road('u2', [200, 500], [400, 500], { name: '' })]);
+    expect(carriagewayPieces(rs, 'a', 'lanesForward').map(x => x.road.id).sort()).toEqual(['a', 'c']);
+    expect(carriagewayPieces(rs, 'u1', 'lanesForward').map(x => x.road.id)).toEqual(['u1']);
+  });
+  it('never takes the other carriageway of a divided road', () => {
+    const rs = fx.roads as RoadObject[];
+    expect(new Set(carriagewayPieces(rs, DECK, 'lanesForward').map(x => x.road.id))).toEqual(new Set(EAST));
+    expect(new Set(carriagewayPieces(rs, 'osm_227095239', 'lanesForward').map(x => x.road.id))).toEqual(new Set(WEST));
+  });
+});
+
+describe('the whole road analysis after a lane edit (assignment and micro-simulation)', () => {
+  it('re-runs on the edited network: the eastbound capacity rises and the westbound one does not; undo gives the first result back', async () => {
+    const job = () => {
+      const roads = simRoads(om), map = new Map(roads.map(r => [r.id, r]));
+      const ex = new StudyAreaExplorer();
+      const area = ex.explore(roads, 1, { seedRoadIds: [DECK], rangeMeters: RANGE_M, direction: 'both' });
+      const corridor = ex.explore(roads, 1, { seedRoadIds: [DECK], rangeMeters: 300, direction: 'both' });
+      return { area, corridor, roads: map, options: { demandLevel: 0.12, signalTiming: 'webster' as const, signalPoints: fx.signalPoints }, plan: compileAreaDemand({ buildings: [] }, area, map)!,
+        section: roadSection(area, map, [DECK]), hourFactor: 1, seeds: [42], warmupS: 60, measureS: 180 };
+    };
+    const pick = (o: Awaited<ReturnType<typeof runAnalysisJob>>) => o.result.directions.map(d => ({ lanes: d.lanes, capacityPcu: d.capacityPcu, midblockPcu: d.midblockPcu, vph: d.vph, speed: d.meanSpeedKmh, label: d.label }));
+    const before = pick(await runAnalysisJob(job(), undefined, 1e9));
+    buildLaneEdit(DECK, 'lanesForward', 3);
+    const after = pick(await runAnalysisJob(job(), undefined, 1e9));
+    history.undo();
+    const undone = pick(await runAnalysisJob(job(), undefined, 1e9));
+    const mids = (x: typeof before) => x.map(d => d.midblockPcu).sort((a, b) => a - b);
+    expect(mids(before)).toEqual([2571, 2571]);
+    expect(mids(after)).toEqual([2571, 3857]);
+    expect(after.find(d => d.midblockPcu === 3857)!.lanes).toBe(3);
+    expect(undone).toEqual(before);
+    if (process.env.EDIT_RECOMPUTE_LOG) console.log(JSON.stringify({ before, after, undone }));
+  }, 120000);
 });

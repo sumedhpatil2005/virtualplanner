@@ -56,7 +56,13 @@ export interface DirectionFlow {
   /** Vehicles per hour the area assignment routes along it (the demand on it). */
   demandVph: number;
   demandPcu: number;
+  /** Lanes of the stretch the mid-block capacity comes from (the direction's narrowest). */
   lanes: number;
+  /** Fewest and most lanes along the direction; differ when only part of it was widened or narrowed. */
+  lanesRange: [number, number];
+  /** Length of the direction at its narrowest (m), and its whole length in the section (m). */
+  narrowestM: number;
+  lengthM: number;
   /** Mid-block capacity (IRC:106-1990) and, at a signalised end, the stop-line capacity (PCU/h). */
   midblockPcu: number;
   stopLinePcu: number | null;
@@ -394,7 +400,7 @@ const nodeLngLat = (sim: TrafficMicroSim, id: string): [number, number] => { con
 // ── Area context from the assignment ────────────────────────────────────────
 
 export interface AreaContext {
-  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; lanes: number }[];
+  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; lanes: number; lanesRange: [number, number]; narrowestM: number; lengthM: number }[];
   origins: Place[]; destinations: Place[];
   composition: { throughShare: number; localShare: number };
   selectLinkVph: Map<string, number>;
@@ -418,8 +424,15 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     const w = (f: (l: (typeof ls)[number]) => number) => ls.reduce((n, l) => n + f(l) * l.lengthM, 0) / len;
     // Capacity of the direction: its tightest stretch, and the stop line at its signalised end if any
     const stop = ls.filter(l => l.stopLinePcu !== null).map(l => l.stopLinePcu!);
-    return { demandVph: w(l => res.volVeh[l.index]), demandPcu: w(l => res.volPcu[l.index]), midblockPcu: ls.length ? Math.min(...ls.map(l => l.midblockPcu)) : 0,
-      stopLinePcu: stop.length ? Math.min(...stop) : null, lanes: Math.round(w(l => l.lanes)) };
+    // Lanes are those of the stretch the mid-block capacity comes from (its narrowest), so the two always agree;
+    // a length-weighted mean read "3 lanes" beside a 2-lane stretch's capacity once part of a carriageway was widened (docs/OVERHAUL.md §14)
+    const midblockPcu = ls.length ? Math.min(...ls.map(l => l.midblockPcu)) : 0;
+    const narrowest = ls.filter(l => l.midblockPcu <= midblockPcu + 1e-6);
+    const laneList = ls.map(l => l.lanes);
+    return { demandVph: w(l => res.volVeh[l.index]), demandPcu: w(l => res.volPcu[l.index]), midblockPcu,
+      stopLinePcu: stop.length ? Math.min(...stop) : null, lanes: narrowest.length ? Math.min(...narrowest.map(l => l.lanes)) : 0,
+      lanesRange: (ls.length ? [Math.min(...laneList), Math.max(...laneList)] : [0, 0]) as [number, number],
+      narrowestM: narrowest.reduce((n, l) => n + l.lengthM, 0), lengthM: ls.reduce((n, l) => n + l.lengthM, 0) };
   });
   // Select-link analysis on the section's links
   const secIdx = new Set(res.links.filter(l => sectionKeys.has(l.segmentKey)).map(l => l.index));
@@ -520,7 +533,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     const delays = rs.map(r => r.delay).filter((x): x is DelayBreakdown => !!x);
     const avgDelay = delays.length ? { signal: mean(delays.map(x => x.signal)), blocked: mean(delays.map(x => x.blocked)), giveWay: mean(delays.map(x => x.giveWay)), conflict: mean(delays.map(x => x.conflict)), other: mean(delays.map(x => x.other)), total: mean(delays.map(x => x.total)) } : null;
     return { label: d.label, bearingDeg: d.bearing, compass: d.compass ?? compassWord(d.labelBearing ?? d.bearing), labelBearingDeg: d.labelBearing ?? d.bearing, towards: d.towards ?? null, paths: d.paths ?? [], vph: Math.round(mean(vphs)), vphRange: [Math.round(Math.min(...vphs)), Math.round(Math.max(...vphs))] as [number, number], pcuph: Math.round(pcuph),
-      demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1,
+      demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1, lanesRange: a.lanesRange, narrowestM: Math.round(a.narrowestM), lengthM: Math.round(a.lengthM),
       midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock',
       vc, servedVc: pcuph / Math.max(1, capacityPcu),
       meanSpeedKmh, speedRange: speeds.length ? [Math.min(...speeds), Math.max(...speeds)] as [number, number] : null, freeSpeedKmh, speedRatio,
@@ -602,7 +615,8 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
       cause = { kind: 'none', chain: null, text: `Delay is small: ${fmtS(d.total)} per vehicle over the ${Math.round(section.lengthM)} m section.` };
     }
     for (const x of directions) {
-      const cap = `${fmt(x.capacityPcu)} PCU/h ${x.capacityBasis === 'signal' ? 'at the signal at its end' : 'mid-block (IRC:106)'}`;
+      const narrow = x.lanesRange[0] !== x.lanesRange[1] ? `, its narrowest stretch: ${x.lanes} lane${x.lanes === 1 ? '' : 's'} on ${fmt(x.narrowestM)} of ${fmt(x.lengthM)} m` : '';
+      const cap = `${fmt(x.capacityPcu)} PCU/h ${x.capacityBasis === 'signal' ? 'at the signal at its end' : `mid-block (IRC:106)${narrow}`}`;
       reasons.push(`${capital(x.label)}: ${fmt(x.demandVph)} veh/h routed along it (${Math.round(100 * x.vc)}% of capacity, ${cap}); ${fmt(x.vph)} veh/h got through in the simulation${n > 1 ? ` (${fmt(x.vphRange[0])}–${fmt(x.vphRange[1])} over ${n} runs)` : ''}.`);
     }
     if (overloadedRuns) reasons.push(loadMsg!);

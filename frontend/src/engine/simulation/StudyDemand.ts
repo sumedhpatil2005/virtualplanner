@@ -212,7 +212,19 @@ export function contentKey(value: unknown): string {
   return (hash >>> 0).toString(16);
 }
 
-/** Identifies the road network an analysis ran on (roads, junctions, mapped signals): a different key means a different network. */
+/**
+ * Identifies the road network an analysis ran on (roads, junctions, mapped
+ * signals): a different key means a different network. The edit timestamps are
+ * left out: every store update stamps updatedAt, so undoing an edit gave the
+ * unchanged network a new key and it read as a proposal against its own
+ * baseline (docs/OVERHAUL.md §14).
+ */
 export function networkContentKey(roads: readonly unknown[], junctions: unknown, signalPoints: unknown): string {
-  return contentKey({ roads, junctions, signalPoints });
+  const strip = (list: unknown) => Array.isArray(list) ? list.map(o => {
+    if (!o || typeof o !== 'object') return o;
+    const { createdAt: _c, updatedAt: _u, ...rest } = o as Record<string, unknown>;
+    void _c; void _u;
+    return rest;
+  }) : list;
+  return contentKey({ roads: strip(roads), junctions: strip(junctions), signalPoints });
 }
