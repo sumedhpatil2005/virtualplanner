@@ -89,7 +89,7 @@ export const WorstKpis: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
         <KpiCard label="Delay" value={d.delay ? Math.round(d.delay.total) : '—'} unit="s/veh" sub={d.travelTimeS !== null ? `${Math.round(d.travelTimeS)} s vs ${Math.round(d.freeTimeS)} s` : 'no time measured'} testId="kpi-delay"
           title="Delay per vehicle: time to drive the section minus its free-flow time (mean of the runs)" />
         <KpiCard label="Load v/c" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)}`} tone={vcTone} testId="kpi-vc"
-          title={`Traffic routed along it (assignment, ${fmt(d.demandPcu)} PCU/h) over its capacity (${fmt(d.capacityPcu)} PCU/h, ${d.capacityBasis === 'signal' ? 'stop line of the signal at its end, Indo-HCM' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}, IRC:106-1990`})`}>
+          title={`Traffic routed along it (assignment, ${fmt(d.demandPcu)} PCU/h) over its capacity (${fmt(d.capacityPcu)} PCU/h, ${d.capacityBasis === 'signal' ? 'stop line of the signal at its end, Indo-HCM' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}${d.lanesRange && d.lanesRange[0] !== d.lanesRange[1] ? ` on its narrowest ${fmt(d.narrowestM)} of ${fmt(d.lengthM)} m` : ''}, IRC:106-1990`})`}>
           <div className="mt-1"><Meter value={Math.min(1, d.vc)} color={vcColour(d.vc)} height="xs" /></div>
         </KpiCard>
         <KpiCard label="LOS" value={d.los ?? '—'} sub="Indo-HCM" tone={losTone(d.los)} testId="kpi-los"

@@ -81,12 +81,17 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const out = sim.analysis.output;
   if (!out) return gate;
   const r = out.result;
-  const stale = sim.analysis.status === 'running';
+  const stale = sim.analysis.status === 'running' || !!sim.analysis.outdated;
   const hour = sim.analysis.hour ?? sim.timeOfDay.hour;
   const period = DAY_PERIODS.find(p => p.id === periodOfHour(hour))?.label ?? hourLabel(hour);
   const suggestions = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
   return (
     <div className={`space-y-5 ${stale ? 'opacity-60' : ''}`} data-testid="understand-view">
+      {sim.analysis.outdated && (
+        <p role="status" data-testid="analysis-outdated" className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+          The network changed since this result. It is being re-run on the edited roads.
+        </p>
+      )}
       <StatusHeader r={r} when={`${period} · ${hourLabel(hour)} ${sim.timeOfDay.day}`} badges={<DataBadges r={r} proposal={sim.comparison.showingProposal} />} />
       <WorstKpis r={r} />
       <DirectionsGrid r={r} heading={heading} focus={sim.directionFocus} actions={actions} />
