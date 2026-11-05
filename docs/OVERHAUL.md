@@ -421,3 +421,65 @@ This file, plus the updated ROAD_ANALYSIS.md and CALIBRATION.md.
 1. **Demand source.** Keep the class-based edge flows (cheap, about 4× too low on Shivaji Bridge), or invest in a citywide OD source: CMP 2018 zonal matrices if PMC will share them, current screenline counts, or commercial probe data. This decides whether absolute volumes in the old city can ever be trusted.
 2. **50 km/h ceiling.** Applied to untagged urban roads as the mixed-stream limit, from the 2019 Maharashtra notification (60 cars / 50 motorcycles). The alternative is 60 km/h for car-dominated arterials. It changes free-flow speeds, and so LOS, on untagged roads only.
 3. **Corridor 700 m and 3 seeds.** 700 m keeps a 2 km analysis to about 40 s in the browser. Junctions further away are only in the assignment, without queues. Three seeds are the minimum for an agreement check, and five would roughly double the time. A larger corridor or more seeds trade time for confidence.
+
+## 14. Build edits and recompute
+
+**Report.** After a change in Build (for example adding a lane to a bridge), does the road analysis recompute on the edited network? Seen in the panel for Sangamwadi Bridge: the 2-lane westbound and the 3-lane eastbound carriageway both showed "2,571 PCU/h mid-block (IRC:106)". COEP Road showed 959% of capacity.
+
+### What was wrong, and why
+
+1. **A lane edit changed one OSM way, but a carriageway is several.** OSM maps Sangamwadi Bridge as one-way ways, all `lanes=2`: eastbound `osm_661187162` (60 m approach), `osm_208004768` (368 m deck), `osm_1151682763` (136 m approach); westbound four more. Build edited only the way you clicked (the deck). The road analysis takes a direction's mid-block capacity from its **narrowest** stretch (`RoadAnalysis.areaContext`, min over links), so it stayed at the 2-lane approaches' 2,571 PCU/h.
+2. **The panel's lane figure did not match its capacity.** The direction's `lanes` was a length-weighted mean, rounded: (60×2 + 368×3 + 136×2) / 564 = 2.65, shown as "3 lanes", next to the 2-lane capacity. Together, 1 and 2 give exactly the reported symptom. Reproduced in a unit test on the real OSM roads, and in the browser on the pre-fix build (below).
+3. **Undo did not restore the network.** The network key hashed every road including `updatedAt`, which every store update stamps. After undo the unchanged network got a new key, so it read as a proposal against its own baseline and its kept result was not reused.
+4. **A result from before the edit stayed on show with nothing to mark it.** In the browser, on the pre-fix build, the pre-edit result was still on show as `ready` 129 s after returning to Simulate, until the re-run started (it waits for pending OSM road and signal loads, which kept failing in this sandbox). Nothing marked it as out of date.
+5. **The correction layer overrode lanes set in Build** (found by reading the code, then proved by a test). `pune_west_v1` has 16 `set_lanes` fixes (Sakharam Waghmare Chowk) and one `set_two_way` (`kasturi-ne-3`). These were applied on top of the user's lanes, so a lane edit on those ways was silently reset to 2 in the simulation.
+
+What was checked and is **not** at fault: Build edits bump the simulation's revision (`TwinCityEngine` objects.onChange → `networkChanged`). The road cache, the explorer's compiled graph (`build.revision === revision`) and the demand cache are keyed on it. The analysis key hashes the roads, lanes included. There are no worker-side caches (each job gets a structured clone of the roads). The traffic network builder takes per-direction lanes from the first section's carriageways, and both the assignment (IRC:106 mid-block, Indo-HCM stop line from lanes × 3.5 m) and the micro-simulation (lanes per link) read those. Once the edited roads reach them, everything downstream recomputes.
+
+### Fix
+
+- `engine/editing/roadEdits.ts` (new; the properties panel's road edit moved here unchanged so it can be tested). `carriagewayPieces` makes a lane edit follow the clicked way along pieces of the same road (same name, alt name or ref) that run the same way and have the same lanes in the edited direction. It stops at a junction with a main road of another name, at a fork, or at 900 m. A two-way way drawn the other way round gets its directions swapped. The other carriageway is never included. `PropertiesPanel` applies the edit to all pieces as one undo step and shows a toast naming how many pieces changed.
+- `RoadAnalysis.areaContext`: a direction's `lanes` is now the lane count of the stretch its capacity comes from. New fields: `lanesRange`, `narrowestM`, `lengthM`. When lanes vary along a direction, the reasons text adds "its narrowest stretch: 2 lanes on 196 of 564 m". The panel component is not changed; it can show these fields.
+- `networkContentKey` (StudyDemand.ts) leaves out `createdAt`/`updatedAt`.
+- `RoadAnalysisState.outdated` is true while the result on show belongs to a network, demand or hour that has since changed. It clears when the new result lands. The panel can show it.
+- Lane or direction edits mark the section `profileModified`/`manual`. The correction layer then skips its lane fixes on that road (listed in the report as `userOverridden`) but still applies its direction fixes.
+
+### Verification
+
+**Unit tests** (`engine/testing/EditRecompute.test.ts`, 13 tests; fixture `testing/fixtures/sangamwadi.json` = the real imported OSM roads within 1 km of the bridge, from the 2026-11-03 dump; demand is estimated, from the cordon). Each one failed before the fix where noted:
+
+| Test | Before fix | After |
+|---|---|---|
+| Lane edit on the deck covers the eastbound carriageway (3 ways) and nothing else; every other compiled edge and assignment capacity unchanged | fail (1 way) | pass |
+| IRC:106 mid-block capacity of a divided primary: 2 lanes 2,571, 3 lanes 3,857 PCU/h per direction | pass | pass |
+| Direction widened on part of its length reports the lanes of its narrowest stretch (2, range 2–3) beside 2,571 | fail ("3") | pass |
+| Network key changes after the edit; explorer recompiles on the new revision | pass | pass |
+| Micro-simulation links: eastbound pieces 3 lanes, westbound 2 | fail (approaches 2) | pass |
+| Undo restores the network key and the assignment exactly | fail (key) | pass |
+| Edit outside the study area changes nothing | pass | pass |
+| Full analysis job (assignment + micro-simulation): capacities [2,571, 2,571] → [2,571, 3,857]; undo gives the first result back | — | pass |
+| SimulationMode end to end: result marked outdated after the edit, new key, re-run 3 lanes / 3,857; undo → first key and identical figures | fail | pass |
+| Lanes set in Build survive the shipped `set_lanes` fix | fail (2) | pass |
+| Which pieces an edit covers (reversed two-way, stops at main road, different lanes, fork, unnamed, never the other carriageway) | — | pass |
+
+**Browser, measured on the page** (headless Chromium/SwiftShader, production build of the fixed tree at `beefb49`; backend on a *copy* of the project database; Sangamwadi Bridge `osm_208004768`, 1,000 m range, default hour, 3 seeds; the lane edit made through Build's own Lanes control). Overpass was unreachable from the sandbox (connection failures and 429), so roads came from the project database and fresh OSM signal positions were not loaded. The figures are model output (estimated demand). The panel values were read from the page state; no screenshots were taken.
+
+| | Westbound | Eastbound |
+|---|---|---|
+| Before | 2 lanes, 2,571 PCU/h, 1,395 veh/h routed, v/c 0.57, 1,298 veh/h through, 22.9 km/h, LOS B | 2 lanes, 2,571 PCU/h, 1,546 veh/h routed, v/c 0.63, 1,132 veh/h through (1,115–1,152), 35.8 km/h, LOS C |
+| After adding a lane (store: the 3 eastbound ways → 3 lanes, westbound 2) | 2 lanes, 2,571, v/c 0.57, 1,289 veh/h, 23.4 km/h | **3 lanes, 3,857 PCU/h, v/c 0.42**, 1,110 veh/h (1,069–1,138), 36.9 km/h, LOS C |
+| After undo | identical to Before; analysis key back to the first one (`9e71829c`) | identical to Before |
+
+Repeated on the final build (`5270aae`) from a fresh copy of the database: the same Before, After and Undo figures. The result on show was flagged `outdated` from the moment Simulate reopened after the edit, and again after the undo. Its re-run started at 8 s both times. It finished at 99 s and 19 s; another agent's browser was using the CPU during the first. After undo the key was back to `9e71829c` and the directions were identical to Before.
+
+Pre-fix build (`6c425dd`), same steps: the edit changed only `osm_208004768`. The re-run started 129 s after returning to Simulate and gave eastbound **"3 lanes", 2,571 PCU/h, v/c 0.63**: the reported symptom, reproduced.
+
+Reading: widening the bridge's eastbound carriageway lowers its v/c from 0.63 to 0.42 and changes the simulated speed by about 1 km/h. The per-seed ranges overlap, so throughput shows no clear change: the carriageway was not the constraint at this hour.
+
+**Suites:** see the counts in the final report of this change (vitest, `tsc -b`, `oxlint`). Backend not touched.
+
+### Uncertainty and open points
+
+- **Which pieces are "the carriageway"** is a rule of thumb: same name, same direction, same lanes, end-to-end nodes matching to 6 decimals, stopping at a main road of another name, a fork, or 900 m. It can stop early where OSM nodes do not meet exactly, and on a long uniform road it can go further than the user meant. Build no longer offers a way to widen a single way on its own. Whether to add a "this piece only" option is a decision for the project owner.
+- **COEP Road 959%: not reproduced, and not the same cause.** COEP Road is `highway=service`, `lanes=1`, two-way: one lane each way, 643 PCU/h per direction, from its own tags. On the dump's network and demand (2 km, buildings + edge traffic), the assignment puts up to about 1,330 PCU/h on it westbound (about 207%), and the bridge edit leaves that unchanged. Why a campus service road carries through traffic, and where 959% comes from (hour, range or the panel's other figures), was not established.
+- The "result on show from before the edit" delay (129 s) was measured once, on the pre-fix build, while Overpass was failing. Its cause was not isolated. The new `outdated` flag makes the state visible but does not shorten the wait. The panel does not show the flag yet.
