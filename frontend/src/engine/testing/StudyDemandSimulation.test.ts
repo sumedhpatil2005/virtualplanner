@@ -76,7 +76,11 @@ describe('repeatable scenario experiments', () => {
     const demandTrips = [{ fromNodeId: node(300), toNodeId: node(900), vehiclesPerHour: 100, kind: 'car' as const }];
     const map = new Map(roads.map(r => [r.id, r]));
     const good = new TrafficMicroSim(a, map, { demandLevel: .12, seed: 42, demandTrips });
-    const bad = new TrafficMicroSim(a, map, { demandLevel: .12, seed: 42, demandTrips: [{ ...demandTrips[0], toNodeId: 'missing' }] });
+    // The same OD (same ends, so the same random stream) after an edit makes the middle road
+    // one-way against it: its route disappears
+    const cut = roads.map(r => (r.id === 'mid' ? { ...r, coordinates: [pt(900), pt(300)], isOneWay: true } : r));
+    const cutArea = new StudyAreaExplorer().explore(cut, 1, { seedRoadIds: ['mid'], rangeMeters: 500, direction: 'both' });
+    const bad = new TrafficMicroSim(cutArea, new Map(cut.map(r => [r.id, r])), { demandLevel: .12, seed: 42, demandTrips });
     for (let i = 0; i < 300 / STEP_S; i++) { good.step(); bad.step(); }
     const m = good.getMetrics();
     expect(bad.getMetrics().unroutable).toBe(m.completedTrips + m.onNetwork + m.waitingToEnter + m.gridlockRemovals);

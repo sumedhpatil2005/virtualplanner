@@ -16,7 +16,9 @@ import type { Cardinal } from '../calibration/observedCounts';
  * a red light, a junction it must give way at). Links keep their real lane
  * counts, so widening a road adds capacity. Traffic drives on the left.
  *
- * Deterministic for a given seed: all randomness comes from one seeded RNG.
+ * Deterministic for a given seed: all randomness comes from seeded RNGs. Explicit OD
+ * streams (arrivals and their drivers) and signal offsets each have their own
+ * stream keyed by identity (streamRng), so a baseline and a proposal share them.
  * No rendering here; see MicroTrafficVisualizer.
  */
 
@@ -467,6 +469,29 @@ function makeRng(seed: number) {
   };
 }
 
+/** FNV-1a hash of a string, for random streams keyed by what they belong to rather than by position. */
+function hashKey(key: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+
+/**
+ * A random stream for one thing in one run (an OD stream, a junction's
+ * signal offset), seeded from the run's seed and the thing's own identity.
+ * Keyed by identity, not by its position in a list, so a network edit that
+ * reorders or changes other entries leaves this one's draws as they were
+ * (common random numbers between a baseline and a proposal).
+ */
+export function streamRng(seed: number, key: string) {
+  return makeRng((seed ^ Math.imul(hashKey(key) | 1, 0x9e3779b1)) >>> 0);
+}
+
+/** The identity of a frozen OD stream: its ends, vehicle class and the links it is held to. */
+export function odStreamKey(trip: Pick<MicroDemandTrip, 'fromNodeId' | 'toNodeId' | 'kind' | 'viaRoadId' | 'viaLinkIds'>) {
+  return `${trip.fromNodeId}>${trip.toNodeId}|${trip.kind ?? ''}|${trip.viaRoadId ?? ''}|${trip.viaLinkIds?.join(',') ?? ''}`;
+}
+
 /** Lane width and half the median width, as the road's 3D mesh lays them out. */
 function laneGeometry(road: DrivableObject | undefined): { laneWidth: number; medianHalf: number } {
   if (!road) return { laneWidth: DEFAULT_LANE_WIDTH_M, medianHalf: 0 };
@@ -523,6 +548,8 @@ export class TrafficMicroSim {
   /** Links ending at a signal. */
   private signalLinks: number[] = [];
   private readonly rng: () => number;
+  /** The run's seed, for the per-junction and per-OD streams (streamRng). */
+  private readonly seed: number;
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
   /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
@@ -557,7 +584,7 @@ export class TrafficMicroSim {
   private focusNextT = Infinity;
   private readonly movements = new Map<string, LaneConnector>();
   private readonly reservations = new Set<Reservation>();
-  private readonly odArrivals: { index: number; trip: MicroDemandTrip; nextT: number; route: number[]; freeFlowS: number; rng: () => number }[] = [];
+  private readonly odArrivals: { index: number; key: string; trip: MicroDemandTrip; nextT: number; route: number[]; freeFlowS: number; rng: () => number }[] = [];
   private explicitDemand = false;
   /** Counted junctions (observed-count calibration): their layouts and the movements counted since countFromT. */
   private countLayouts: ZoneLayout[] = [];
@@ -574,6 +601,7 @@ export class TrafficMicroSim {
 
   constructor(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, options: MicroSimOptions) {
     this.rng = makeRng(options.seed);
+    this.seed = options.seed >>> 0;
     this.demandLevel = Math.max(0, Math.min(1, options.demandLevel));
     this.signalTimingMode = options.signalTiming ?? 'webster';
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
@@ -638,10 +666,18 @@ export class TrafficMicroSim {
       for (const s of this.sources) { s.ratePerS = 0; s.nextT = Infinity; }
       this.focusNextT = Infinity;
       const linkIndexById = new Map(this.links.map(l => [l.id, l.index]));
+      const seen = new Map<string, number>();
       for (const [index, trip] of options.demandTrips.entries()) {
         if (trip.vehiclesPerHour <= 0) continue;
-        // A stream per frozen OD pair keeps arrivals equal when a network edit changes routing.
-        const rng = makeRng((options.seed ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0);
+        // A stream per OD stream, seeded by what the stream is (its ends, class and links), not by
+        // its index: an edit re-routes the area, which reorders and changes the neighbourhood's trip
+        // list, and an index-keyed stream then gave every OD other arrivals and drivers, so any edit
+        // re-drew the whole neighbourhood's traffic (docs/OVERHAUL.md §10.2). Identical streams are told apart by
+        // their occurrence.
+        const key = odStreamKey(trip);
+        const occurrence = seen.get(key) ?? 0;
+        seen.set(key, occurrence + 1);
+        const rng = streamRng(options.seed, `${key}#${occurrence}`);
         const from = this.junction(trip.fromNodeId), to = this.junction(trip.toNodeId);
         // Intrazonal: both ends attach to the same junction, so the trip never
         // uses a modelled road. It is not a routing failure.
@@ -673,7 +709,7 @@ export class TrafficMicroSim {
             } else path = null;
           }
         }
-        this.odArrivals.push({ index, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
+        this.odArrivals.push({ index, key: `${key}#${occurrence}`, trip: { ...trip, fromNodeId: from, toNodeId: to }, nextT: this.nextOdArrival(trip, 0, rng), route: path?.route ?? [], freeFlowS: path?.freeFlowS ?? 0, rng });
       }
     }
     this.linkTimeSum = new Float64Array(this.links.length);
@@ -822,7 +858,7 @@ export class TrafficMicroSim {
         // Real signals: two phases, one per axis (both used whenever approaches lie on both)
         const twoPhases = new Set(groups.values()).size === 2;
         if (signalled.has(nodeId) && twoPhases) {
-          this.controls.set(nodeId, this.approachWisePlan(inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
+          this.controls.set(nodeId, this.approachWisePlan(nodeId, inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.signalOffsetUnit(nodeId) * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
           return;
         }
       } else if (armCount >= 4) {
@@ -830,7 +866,7 @@ export class TrafficMicroSim {
         // road meeting a lane stays a priority junction
         const majorOn = (g: number) => inLinks.some(i => groups.get(i) === g && this.links[i].rank >= 2);
         if (majorOn(0) && majorOn(1)) {
-          this.controls.set(nodeId, this.approachWisePlan(inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.rng() * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
+          this.controls.set(nodeId, this.approachWisePlan(nodeId, inLinks) ?? { kind: 'signal', groups, majorRank: null, offset: this.signalOffsetUnit(nodeId) * SIGNAL_CYCLE_S, busyUntil: 0, busyFrom: -1 });
           return;
         }
       }
@@ -854,7 +890,7 @@ export class TrafficMicroSim {
    * green, SIGNAL_AMBER_S amber, SIGNAL_ALL_RED_S all-red (120 s for four arms).
    * Returns null for fewer than three approaches.
    */
-  private approachWisePlan(inLinks: number[]): Control | null {
+  private approachWisePlan(nodeId: string, inLinks: number[]): Control | null {
     const reps: number[] = [];
     const groups = new Map<number, number>();
     // Collector-class and bigger approaches get phases; a lane or service road joining
@@ -884,7 +920,12 @@ export class TrafficMicroSim {
       groups.set(i, best);
     }
     const cycleS = reps.length * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
-    return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.rng() * cycleS, busyUntil: 0, busyFrom: -1 };
+    return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.signalOffsetUnit(nodeId) * cycleS, busyUntil: 0, busyFrom: -1 };
+  }
+
+  /** A junction's signal offset (share of its cycle): drawn per junction, so an edit elsewhere does not shift it. */
+  private signalOffsetUnit(nodeId: string) {
+    return streamRng(this.seed, `signal:${nodeId}`)();
   }
 
   /**
@@ -1128,12 +1169,12 @@ export class TrafficMicroSim {
     return true;
   }
 
-  private queueVehicle(source: Source, route: number[], freeFlowS: number, type: VehicleTypeParams) {
+  private queueVehicle(source: Source, route: number[], freeFlowS: number, type: VehicleTypeParams, speedDraw: number = this.rng()) {
     source.queue.push({
       id: this.nextId++,
       type,
       // Desired speeds vary a little between drivers
-      speedFactor: type.speedFactor * (0.9 + 0.2 * this.rng()),
+      speedFactor: type.speedFactor * (0.9 + 0.2 * speedDraw),
       link: route[0],
       lane: 0,
       pos: 0,
@@ -1216,16 +1257,22 @@ export class TrafficMicroSim {
       this.odArrivals.forEach((a, i) => { if (Number.isFinite(a.nextT)) this.heapPush(i); });
       this.arrivalHeapDirty = false;
     }
-    // Due streams in index order, as a scan over all of them would visit them
+    // Due streams by arrival time, then by stream identity: not by their index in the trip list,
+    // which an edit elsewhere can reorder
     const due: number[] = [];
     while (this.arrivalHeap.length && this.odArrivals[this.arrivalHeap[0]].nextT <= this.t) due.push(this.heapPop());
-    due.sort((a, b) => a - b);
+    const oa = this.odArrivals;
+    due.sort((a, b) => oa[a].nextT - oa[b].nextT || (oa[a].key < oa[b].key ? -1 : oa[a].key > oa[b].key ? 1 : 0));
     for (const i of due) {
       const arrival = this.odArrivals[i];
       while (arrival.nextT <= this.t) {
+        // The driver's speed comes from the OD's own stream (drawn whether or not it can be routed,
+        // so the stream stays aligned): which vehicle gets which driver does not depend on the order
+        // other streams fall due in
+        const speedDraw = arrival.rng();
         if (arrival.route.length) {
           const source = this.sourceByNode.get(arrival.trip.fromNodeId) ?? this.addSource(arrival.trip.fromNodeId);
-          this.queueVehicle(source, arrival.route, arrival.freeFlowS, VEHICLE_TYPES.find(t => t.kind === arrival.trip.kind)!);
+          this.queueVehicle(source, arrival.route, arrival.freeFlowS, VEHICLE_TYPES.find(t => t.kind === arrival.trip.kind)!, speedDraw);
         } else this.unroutable++;
         arrival.nextT = this.nextOdArrival(arrival.trip, arrival.nextT, arrival.rng);
       }

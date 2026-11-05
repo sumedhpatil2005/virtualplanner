@@ -186,7 +186,9 @@ describe('queue discharge does not stall', () => {
     for (const orderSeed of [7, 11, 23, 41, 97]) {
       const pcu = queueDischarge([0, 1, 0], orderSeed);
       expect(pcu).toBeGreaterThan(0.8 * INDO_HCM_7M);
-      expect(pcu).toBeLessThan(1.3 * INDO_HCM_7M);
+      // A sanity ceiling, not the point of the test (the floor is): the five orders give 0.94-1.30 of
+      // Indo-HCM for 7 m since drivers' speeds no longer share a stream with signal offsets (were 0.98-1.25)
+      expect(pcu).toBeLessThan(1.35 * INDO_HCM_7M);
     }
   });
 
