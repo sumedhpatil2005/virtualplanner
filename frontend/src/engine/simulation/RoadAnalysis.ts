@@ -123,6 +123,8 @@ export interface RoadAnalysisResult {
   reasons: string[];
   /** Evidence for the cause, or why there is not enough of it. */
   cause: { kind: 'none' | 'own-signal' | 'spillback' | 'give-way' | 'volume' | 'mixed' | 'insufficient'; text: string; chain: QueueChain | null };
+  /** Label of the direction the headline and cause describe (worse level of service, then longer delay); null without traffic. */
+  explainedDirection?: string | null;
   /** Section-end junction that limits the road, if any. */
   bottleneck: JunctionUse | null;
   origins: Place[];
@@ -144,6 +146,8 @@ export interface RoadAnalysisResult {
   areaBottlenecks: Bottleneck[];
   network: MicroSimMetrics;
   load: LoadCheck;
+  /** The load check of each run, in seed order (load above combines them). */
+  loadBySeed?: LoadCheck[];
   assignment: { iterations: number; relativeGap: number; demandVph: number; unroutedVph: number; overCapacityLinks: number; totalVehHours: number; elapsedMs: number };
   corridor: { roads: number; demandVph: number; rangeM: number };
   /** Per seed: what a comparison checks for consistency. */
@@ -633,12 +637,13 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
   return {
     windowS: runs[0].windowS, seeds: runs.map(r => r.seed),
     section: { name: section.name, lengthM: section.lengthM, carriageways: section.carriageways, endsAt: section.endsAt, segmentKeys: section.segmentKeys },
-    directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, bottleneck,
+    directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, explainedDirection: status === 'no_traffic' || !worst ? null : worst.label, bottleneck,
     origins: area.origins, destinations: area.destinations, composition: area.composition, feeders: area.feeders, nearby: area.nearby, junctions,
     selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks,
     network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
       gridlockRemovals: Math.round(mean(runs.map(r => r.network.gridlockRemovals))), waitingToEnter: Math.round(mean(runs.map(r => r.network.waitingToEnter))), onNetwork: Math.round(mean(runs.map(r => r.network.onNetwork))) },
     load: { ...runs[0].load, servedShare: mean(runs.map(r => r.load.servedShare)), overloaded: overloadedRuns > n / 2, message: overloadedRuns > n / 2 ? loadMsg : null },
+    loadBySeed: runs.map(r => r.load),
     assignment: area.summary, corridor: corridorInfo,
     perSeed: runs.map(r => {
       const tt = r.directions.map(d => d.travelTimeS).filter((x): x is number => x !== null);
