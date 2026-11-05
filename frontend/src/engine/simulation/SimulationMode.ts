@@ -131,6 +131,12 @@ export interface RoadAnalysisState {
   demandVph: number | null;
   /** Network, demand and hour the output is for: kept across closing and reopening Simulate while unchanged. */
   key: string | null;
+  /**
+   * The output on show is for a network, demand or hour that has changed since
+   * (e.g. a Build edit); its re-run is pending or running. Cleared when the new
+   * result arrives (docs/OVERHAUL.md §14).
+   */
+  outdated?: boolean;
 }
 
 /** Demand options the user can change. */
@@ -672,6 +678,9 @@ export class SimulationMode {
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       this.setState({ area, corridor, error: null, seedRoadIds: area.seedRoadIds, section, speeds: this.speedReport });
+      // A kept result for another network or demand stays on show until its re-run lands: say so
+      const shown = this.state.analysis;
+      if (shown.output && !shown.outdated && shown.key !== this.analysisKey()) this.setState({ analysis: { ...shown, outdated: true } });
       this.refreshCountedJunctions();
       this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
       // The selected road is the subject: the camera goes to it, not the whole area

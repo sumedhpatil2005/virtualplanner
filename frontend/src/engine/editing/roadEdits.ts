@@ -100,6 +100,12 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
     carriagewayA.rightRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
   }
 
+  // The lanes or direction are now the user's: the simulation's correction layer must not override them (networkCorrections.ts)
+  if (field === 'lanesForward' || field === 'lanesBackward' || field === 'isOneWay') {
+    const was = firstSection.provenance ?? { originalSource: r.osmProvenance ? 'OSM' : 'manual', originalConfidence: 'estimated', geometryModified: false, verificationStatus: 'unverified' };
+    firstSection.provenance = { ...was, profileModified: true, lastModifiedBy: 'manual' };
+  }
+
   const laneCount = carriagewayA.lanes + (carriagewayB?.lanes || 0);
   rUpdates.laneCount = laneCount;
   rUpdates.sections = sections;

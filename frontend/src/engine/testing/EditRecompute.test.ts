@@ -6,7 +6,7 @@ import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
 import { laneEditPlan, roadFieldUpdates, carriagewayPieces } from '../editing/roadEdits';
 import { StudyAreaExplorer, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
-import { applyNetworkCorrections } from '../simulation/networkCorrections';
+import { applyNetworkCorrections, validateCorrectionLayer } from '../simulation/networkCorrections';
 import { applyUrbanSpeeds, midblockCapacityPcu } from '../simulation/roadParameters';
 import { compileAreaDemand } from '../simulation/AreaDemand';
 import { roadSection } from '../simulation/roadSection';
@@ -15,6 +15,7 @@ import { assignTraffic } from '../simulation/staticAssignment';
 import { snapDemandPlan, networkContentKey } from '../simulation/StudyDemand';
 import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
 import { runAnalysisJob } from '../simulation/analysisJob';
+import { SimulationMode } from '../simulation/SimulationMode';
 
 /**
  * Build edits and recompute (docs/OVERHAUL.md §14), on the real OpenStreetMap
@@ -211,4 +212,61 @@ describe('the whole road analysis after a lane edit (assignment and micro-simula
     expect(undone).toEqual(before);
     if (process.env.EDIT_RECOMPUTE_LOG) console.log(JSON.stringify({ before, after, undone }));
   }, 120000);
+});
+
+describe('Simulate after a Build edit (SimulationMode: road cache, compiled graph, analysis key)', () => {
+  it('marks the shown result outdated, re-runs on the edited network, and after undo is back on the first key and result', async () => {
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, null, () => ({ buildings: [] }),
+      () => Promise.reject(new Error('no counts')), null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(RANGE_M);
+    mode.selectRoad(DECK, false);
+    const read = () => { const r = mode.getState().analysis.output!.result; return r.directions.map(d => ({ label: d.label, lanes: d.lanes, midblockPcu: d.midblockPcu, vc: d.vc, vph: d.vph })); };
+    const out0 = await mode.runAnalysis();
+    expect(out0).toBeTruthy();
+    const key0 = mode.getState().analysis.key, first = read();
+    expect(first.map(d => d.midblockPcu)).toEqual([2571, 2571]);
+
+    // The engine calls networkChanged on every road change (TwinCityEngine objects.onChange)
+    buildLaneEdit(DECK, 'lanesForward', 3);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400)); // re-map debounce
+    expect(mode.getState().analysis.outdated).toBe(true);
+    await mode.runAnalysis();
+    const key1 = mode.getState().analysis.key, second = read();
+    expect(key1).not.toBe(key0);
+    expect(mode.getState().analysis.outdated).toBeFalsy();
+    expect(second.find(d => d.label === 'eastbound')).toMatchObject({ lanes: 3, midblockPcu: 3857 });
+    expect(second.find(d => d.label === 'westbound')).toMatchObject({ lanes: 2, midblockPcu: 2571 });
+
+    history.undo();
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    await mode.runAnalysis();
+    expect(mode.getState().analysis.key).toBe(key0);
+    expect(read()).toEqual(first);
+    mode.dispose();
+  }, 120000);
+});
+
+describe('lanes set in Build win over the correction layer', () => {
+  it('a set_lanes correction (shipped pune_west_v1, Sakharam Waghmare Chowk) no longer overrides the lanes the user set', () => {
+    const layer = validateCorrectionLayer(JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../backend/data/network_corrections/pune_west_v1.json'), 'utf8')));
+    const fix = layer.corrections.find(c => c.id === 'sakharam-lanes-253976061')!;
+    expect(fix).toMatchObject({ action: 'set_lanes', params: { lanes: 2 } });
+    // A one-way 2-lane way standing in for OSM way 253976061
+    const base = structuredClone(fx.roads.find(r => r.id === DECK)!) as RoadObject;
+    const road = { ...base, id: 'osm_253976061', osmProvenance: { ...base.osmProvenance!, osmId: 253976061 } } as RoadObject;
+    const m = new ObjectManager();
+    m.addMultiple([road], true);
+    // Untouched: the layer's 2 lanes
+    expect(applyNetworkCorrections(m.getAll() as DrivableObject[], layer).roads[0]).toMatchObject({ laneCount: 2 });
+    m.update(road.id, roadFieldUpdates(m.getById(road.id) as RoadObject, 'lanesForward', 3, r => m.synthesizeDefaultSections(r)), true);
+    const { roads, report } = applyNetworkCorrections(m.getAll() as DrivableObject[], layer);
+    expect(roads[0]).toMatchObject({ laneCount: 3 });
+    expect((roads[0] as RoadObject).sections![0].carriagewayA.lanes).toBe(3);
+    expect(report.userOverridden).toContain('sakharam-lanes-253976061');
+    expect(report.notFound).not.toContain('sakharam-lanes-253976061');
+  });
 });

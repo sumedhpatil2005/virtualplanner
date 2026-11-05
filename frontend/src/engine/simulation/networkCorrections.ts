@@ -41,6 +41,8 @@ export interface CorrectionReport {
   notFound: string[];
   /** Roads made one-way because junction=roundabout implies it. */
   impliedOneWay: string[];
+  /** Lane corrections not applied because the user set that road's lanes in Build. */
+  userOverridden: string[];
 }
 
 const ACTIONS: readonly CorrectionAction[] = ['reverse', 'set_two_way', 'set_oneway', 'set_lanes', 'set_roundabout'];
@@ -119,7 +121,7 @@ export function impliesOneWay(tags: Record<string, string> | undefined): boolean
  */
 export function applyNetworkCorrections(roads: readonly DrivableObject[], layer: NetworkCorrectionLayer | null, enabled = true):
   { roads: DrivableObject[]; report: CorrectionReport } {
-  const report: CorrectionReport = { applied: [], notFound: [], impliedOneWay: [] };
+  const report: CorrectionReport = { applied: [], notFound: [], impliedOneWay: [], userOverridden: [] };
   const byWay = new Map<number, NetworkCorrection[]>();
   if (layer && enabled) for (const c of layer.corrections) if (c.enabled !== false) {
     if (!byWay.has(c.osm_way_id)) byWay.set(c.osm_way_id, []);
@@ -129,16 +131,20 @@ export function applyNetworkCorrections(roads: readonly DrivableObject[], layer:
   const out = roads.map(r0 => {
     if (r0.type !== 'road') return r0;
     let r = r0 as RoadObject;
+    // Lanes the user set in Build win over the layer's lane fixes and the importer's tag reading (docs/OVERHAUL.md §14)
+    const userLanes = !!r.sections?.[0]?.provenance?.profileModified;
     if (!r.isOneWay && impliesOneWay(r.osmProvenance?.originalTags as Record<string, string> | undefined)) {
-      r = setOneWay(r, oneWayLanes(r));
+      r = setOneWay(r, userLanes ? Math.max(1, r.laneCount) : oneWayLanes(r));
       report.impliedOneWay.push(r.id);
     }
     const way = osmWayOf(r);
     const fixes = way === undefined ? undefined : byWay.get(way);
     if (fixes) for (const c of fixes) {
+      // A lane fix on lanes the user has set is not applied (and not reported as applied)
+      if (userLanes && (c.action === 'set_lanes' || c.action === 'set_two_way')) { if (!report.userOverridden.includes(c.id)) report.userOverridden.push(c.id); continue; }
       switch (c.action) {
         case 'reverse': r = reverseRoad(r); break;
-        case 'set_oneway': r = setOneWay(c.params.reverse ? reverseRoad(r) : r, c.params.lanes ?? (r.isOneWay ? r.laneCount : oneWayLanes(r))); break;
+        case 'set_oneway': r = setOneWay(c.params.reverse ? reverseRoad(r) : r, userLanes ? Math.max(1, r.laneCount) : c.params.lanes ?? (r.isOneWay ? r.laneCount : oneWayLanes(r))); break;
         case 'set_two_way': r = setTwoWay(r, c.params.lanes_forward!, c.params.lanes_backward!); break;
         case 'set_lanes': r = r.isOneWay ? setOneWay(r, c.params.lanes!) : { ...r, laneCount: c.params.lanes! }; break;
         case 'set_roundabout': r = { ...r, osmProvenance: { ...r.osmProvenance!, roundabout: true } }; break;
@@ -151,7 +157,7 @@ export function applyNetworkCorrections(roads: readonly DrivableObject[], layer:
   if (layer && enabled) for (const c of layer.corrections) {
     if (c.enabled === false) continue;
     if (touched.has(c.id)) report.applied.push({ id: c.id, roadIds: touched.get(c.id)! });
-    else report.notFound.push(c.id);
+    else if (!report.userOverridden.includes(c.id)) report.notFound.push(c.id);
   }
   return { roads: out, report };
 }
