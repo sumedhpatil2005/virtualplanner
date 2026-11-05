@@ -10,7 +10,7 @@ Branch `realistic-traffic`, from `98a4966`. This document answers the overhaul b
 - The whole-area micro-simulation could not carry a 2 km area (55% of demand entered). It is replaced by a **two-tier model**: static user-equilibrium assignment for the area and a 700 m micro-simulation around the road, 3 seeds, ~41–54 s in the browser instead of ~210 s per seed.
 - Final Shivaji Bridge result (AM, estimated demand): **severely congested in all 3 runs**, south-east at 5 km/h (LOS F) while the bridge is at 33% of capacity; 87% of that delay is queueing traced to the Shivaji Bridge / Bajirao Road junction. Widening the bridge makes no clear difference.
 - Demand is the weakest part. The model puts **~23%** of the 2008 counted volume on Shivaji Bridge (PMC CMP 2008). This is reported, not corrected; choosing a demand source is the main open decision (§13).
-- Live controls now have a real lifecycle with Stop; "Play 24 h" (which did not simulate a day) is replaced by Compare times of day; the panel is split into What's wrong / Improve & compare / Details; comparisons use frozen demand and seeds and no longer call a trade-off "Better". Two issues from the final browser round are open: a cause can still be named from 1 of 3 runs, and the neighbourhood change in comparisons needs an A/A check (§10.3).
+- Live controls now have a real lifecycle with Stop; "Play 24 h" (which did not simulate a day) is replaced by Compare times of day; the panel is split into What's wrong / Improve & compare / Details; comparisons use frozen demand and seeds and no longer call a trade-off "Better". Both issues from the final browser round are fixed: a cause is named only when most runs agree, and comparisons now share random numbers between baseline and proposal (streams keyed by OD, not by list position), which the identical neighbourhood change for two unrelated edits exposed (§10.2, §10.3).
 
 Wording used throughout:
 
@@ -174,7 +174,7 @@ Two errors were fixed in this round:
 
 Before this round, the same two proposals were reported as **Better** and **Better** (`e2e2/shivaji2.log`). The bridge result came from a speed gain in 2 of 3 runs, the second while neighbourhood trip time rose 14% in all three. Comparison runtime: about 40–50 s for the baseline and about 55 s for the proposal.
 
-**Uncertain.** The final browser round found the neighbourhood trip-time and delay change almost identical for these two unrelated edits; an A/A check is needed before the neighbourhood part of these verdicts is trusted (§10.2, §10.3 issue 3). Confidence is *low* when the neighbourhood is over-loaded (more routed than its junctions pass). Three seeds are a minimum. Junction delay agreement shows "0 of 3" when per-seed end-junction delays are missing, which reads oddly.
+**Uncertain.** The two verdicts above were measured before the common-random-numbers fix (§10.2, *Identical neighbourhood change*) and are superseded by the re-run there: bridge widening **No clear change**, `osm_282054960` **Mixed** (road better, neighbourhood delay +7% in every run). Confidence is *low* when the neighbourhood is over-loaded (more routed than its junctions pass). Three seeds are a minimum: in this over-loaded neighbourhood one seed can move the mean trip time by 30 s or more, so a neighbourhood change under about 10% is within run-to-run variation. Junction delay agreement shows "0 of 3" when per-seed end-junction delays are missing, which reads oddly.
 
 ## 9. Architecture
 
@@ -214,11 +214,11 @@ Before this round, the same two proposals were reported as **Better** and **Bett
 
 ### 10.1 Test counts
 
-Recorded on the final code (after commit `8796aa6`, the last code change before shipping; earlier figures at `352ed55` in brackets):
+Recorded after the common-random-numbers fix (§10.2, *Identical neighbourhood change*); figures at `8796aa6` and `352ed55` in brackets:
 
 | Check | Result |
 |---|---|
-| `npx vitest run --config vitest.config.ts --pool=threads --maxWorkers=1` | 46 files: 43 passed, 3 skipped (opt-in harnesses); **362 tests: 359 passed, 3 skipped, 0 failed** (239 s) [361 / 358 / 3 at `352ed55`] |
+| `npx vitest run --config vitest.config.ts --pool=threads --maxWorkers=1` | 47 files: 44 passed, 3 skipped (opt-in harnesses); **364 tests: 361 passed, 3 skipped, 0 failed** (195 s) [362 / 359 / 3 at `8796aa6`; 361 / 358 / 3 at `352ed55`] |
 | `tsc -b` | no errors |
 | `oxlint` | 0 errors, 5 warnings (pre-existing unused variables in untouched files) |
 | backend `pytest` | **52 passed** |
@@ -284,7 +284,33 @@ Source: `vp-overhaul/e2e3/compare.md` (production build containing `fc5a7dd`, th
 
 Both verdicts follow the agreement and trade-off rules, and they reproduce the earlier engineer runs (§8). Runtime: baseline 42–62 s, comparison 64–66 s (two browsers were running at the time).
 
-**Open question about the neighbourhood figures (§10.3, issue 3).** The neighbourhood change is almost identical for the two unrelated edits: trip time 237.09 vs 237.18 s, delay 167.96 vs 167.94 s, both from the same 208.5 / 142.3 s baseline. Two different edits giving the same result to 0.1 s suggests the proposal run differs from the baseline for a reason other than the edit (warm-start, assignment state, measurement window or vehicle population). An A/A comparison (a no-op edit) was queued to check this. **A/A result: PENDING** (`vp-overhaul/e2e3/aa.results.json` not yet written). **Until it is resolved, the "+14% trip time / +18% delay" part of the Mixed verdict for proposal 2 should not be relied on**. The bridge-level figures (−34% drive time) come from the same proposal runs, so they are provisional too until the A/A result is known.
+#### Identical neighbourhood change for unrelated edits: root cause and fix
+
+**What was seen.** The two proposals above gave almost the same neighbourhood change: trip time 208.5 → 237.09 vs 237.18 s (+14%), delay 142.3 → 167.96 vs 167.94 s (+18%). An A/A comparison (no edit) gave exactly zero, as did a no-op edit.
+
+**What was measured** (production build of `36d63a9`, headless Chromium, Shivaji Bridge 2 km, AM 09:00, seeds 42/7/11; scripts and logs in `vp-overhaul/samefix/`, working files, not in the repository):
+
+1. *The job sent to the simulation differs only where the edit is.* Before and after each edit the inputs were hashed and diffed in the page (`samefix/js/diag.js`): every road, every area and neighbourhood edge, the neighbourhood's road set, nodes and bounds, signals (85), placed junctions, count junctions, the section, the demand plan (5,425 OD pairs) and the options. A no-op edit and an edit far outside the area changed nothing; a road widened outside the neighbourhood changed only its own 2 edges; `osm_282054960` only its 1 edge; the bridge only its 11 roads (18 edges). Every revert restored every hash. So neighbourhood boundary, vehicle set, warm-up, demand plan, signals and id re-indexing on re-map were ruled out.
+2. *The two equal means are made of different runs.* Per seed (trip time s, seeds 42 / 7 / 11): baseline 179.6 / 232.6 / 213.4; `osm_282054960` 215.1 / 243.1 / 253.4 (mean 237.18); bridge 257.4 / 253.3 / 200.6 (mean 237.09). The bridge proposal is *faster* than the baseline in seed 11 and the other is not; the means agree to 0.1 s by coincidence. Delay follows trip time (delay = trip time − free-flow time, and free-flow time hardly changed), so the second match is not independent of the first.
+3. *The neighbourhood's random numbers were not common to baseline and proposal.* Each OD stream of the simulation (its arrivals) was seeded from its **index** in the neighbourhood trip list (`TrafficMicroSim.ts`, `seed ^ (index + 1)·φ`), and each driver's desired speed came from one shared stream in spawn order. That list is rebuilt from the area assignment on every run (`subareaDemand`), so any edit that re-routes traffic reorders it. Measured: the bridge edit kept 670 of 690 trips but only **320 at the same index** (first difference at index 45), so most ODs received another OD's arrival times; the `osm_282054960` edit left all 690 at the same index. A control edit (`osm_218881250`, inside the 2 km area but outside the 700 m neighbourhood) moved per-seed neighbourhood trip time by +15 / −25 / +20 s and made the bridge's drive time **+28% worse in 3 of 3 runs** (203.5 → 259.7 s), which the comparison would have reported as a real effect; an edit outside the area gave exactly zero.
+
+**Root cause (supported, with the limits stated below).** Comparisons were meant to use common random numbers (the code comment said so), but the streams were keyed by list position, not by OD. Any edit that changes routing anywhere in the area re-drew the whole neighbourhood's traffic, so the neighbourhood (and road) change of such a proposal mixed the edit's effect with seed-to-seed variation that in this over-loaded neighbourhood is ±30 s per run. The identical figures for the two edits were a coincidence of three-run means on top of that; no shared artefact common to every edit was found (the A/A, the no-op and the far edit all gave exactly zero).
+
+**Fix** (`TrafficMicroSim.ts`): each OD stream is seeded from the run seed and the stream's identity (entry and exit node, vehicle class, the links it is held to; identical streams by occurrence), and the driver's desired speed is drawn from that stream; streams that fall due in the same step are taken in time and identity order, not list order; signal offsets are drawn per junction from its node id instead of from one shared stream in construction order. The baseline is a new realisation of the same model: the Shivaji analysis is still severe in 3 of 3 runs with the queue traced to Shivaji Bridge / Bajirao Road in 3 of 3 (NW 628 veh/h LOS D, SE 515 veh/h at 3.9 km/h LOS F; the per-seed table above predates the fix).
+
+**Verified after the fix** (same build procedure, `samefix/cmp1.results.json`; baseline neighbourhood trip time 218.4 s, delay 151.8 s, drive time 229.2 s):
+
+| Edit | Drive time on the bridge, s (42 / 7 / 11) | Neighbourhood trip time | Neighbourhood delay | Overall verdict |
+|---|---|---|---|---|
+| Baseline | 240.6 / 276.8 / 170.1 | 227.4 / 202.9 / 225.0 s | 162.7 / 134.0 / 158.9 s | — |
+| A road outside the 2 km area (`osm_856199593`) | identical | **0.0%** (3/3 identical) | **0.0%** | No clear change |
+| A road in the area, outside the neighbourhood (`osm_218881250`) | 240.6 / 255.9 / 167.7 (−3%) | +1.0% (seeds 42 and 11 identical; 7: +6.5 s) | +1.5% | No clear change (was: bridge drive time +28% worse, 3/3) |
+| Widen `osm_282054960` 1 → 2 lanes | 90.7 / 168.5 / 76.9 (**−51%, 3/3**) | 238.3 / 202.5 / 251.3 s: **+5.6%** (2/3) | +6.6% (**3/3**) | **Mixed**: road better (drive time −51%, speed +19%), neighbourhood delay +7% in every run |
+| Widen Shivaji Bridge +1 lane per carriageway | 216.6 / 332.7 / 147.4 (+1%, 1/3) | 225.3 / 221.8 / 260.3 s: **+7.9%** (2/3) | +10.2% (2/3) | **No clear change** (low confidence) |
+
+The two edits no longer give the same neighbourhood change (+5.6% / +6.6% against +7.9% / +10.2%). The bridge comparison was run a second and third time in fresh browser sessions and gave the same figures to the last digit (+7.95% trip time, +10.24% delay, No clear change); the panel is in `vp-overhaul-shots/S14_compare_bridge_after_fix_neighbourhood.png` (S10, S11: the same run, top of the panel), viewed. The causes rule is unchanged: a change counts only when every run agrees, and a cause is named only when at least 2 of 3 runs agree.
+
+**Still uncertain.** (a) The bridge widening re-routes traffic inside the neighbourhood (25 new and 20 dropped neighbourhood trips, 712 veh/h of shifted flow), so its streams legitimately differ; its per-seed spread (seed 11 +35 s, seed 42 −2 s) is the over-loaded network's response, not a stream artefact, and three seeds cannot size it. (b) Gridlock removals fall with both widenings (156 → 134 and 137); removed vehicles never complete a trip, so part of the rise in mean trip time may be vehicles that now finish instead of being removed (a measurement effect, estimated, not measured). (c) This was measured at one place, one hour and three seeds; the new figures are model output on estimated demand. (d) The size of a neighbourhood change is not robust across realisations: `osm_282054960` gave +14% trip time on the old streams (where its trip list was unchanged, so that run was already on common numbers) and +5.6% on the new ones; the direction (delay up, drive time down) held in both. (e) Edits that change the *network nodes* at an OD's ends (moving a junction) still give that OD a new stream; lane, speed and capacity edits do not.
 
 
 **Screenshots** (`vp-overhaul-shots/`, working directory, not in the repository): F01 (2 km map, junction dots), F02 (What's wrong), F03–F05 (queue, routes and how-full overlays), F06–F07 (comparison), F08 (comparison overlay). All were viewed.
@@ -295,7 +321,7 @@ From `vp-overhaul/e2e3/BUGS.md`:
 
 1. **Cause named from a minority of runs (medium).** The rule is that a cause is named only when runs agree. `RoadAnalysis.ts` (`chainFor()`) takes the most common queue root with no minimum agreement, and the spill-back text is used whenever a root exists. On the Wakad lane the panel names a junction found in 1 of 3 runs. Expected: fall back to "could not be traced to one junction consistently". Shivaji Bridge and Nal Stop are unaffected (3 of 3). **Fixed in `8796aa6`**: a cause is named only when most runs (2 of 3, or the single run) trace the queue to the same junction; otherwise the panel says the queue could not be traced consistently, names the minority trace with its count ("found in only 1 of 3 runs") and marks nothing on the map. Unit-tested (`Overhaul.test.ts`); the Wakad lane was not re-run in the browser after the fix.
 2. **"found in all 1 runs" (low, wording)** when a single seed is analysed. **Fixed in `8796aa6`** ("in the one run analysed").
-3. **Identical neighbourhood change for unrelated edits (needs check).** See §10.2, comparison re-check. This bears directly on the comparison verdicts. A/A check pending.
+3. **Identical neighbourhood change for unrelated edits (high).** Not an artefact common to every edit (A/A, no-op and an edit outside the area all give exactly zero), but it exposed a real fault: the simulation's random streams were keyed by each trip's position in the neighbourhood trip list, which any re-routing edit reorders, so baseline and proposal did not share random numbers and the proposal's neighbourhood was re-drawn. The equal means were a coincidence of different per-seed runs. **Fixed** (streams keyed by OD identity, per-junction signal offsets); regression test `EditIsolation.test.ts`; both Shivaji comparisons re-run in the browser (§10.2, *Identical neighbourhood change*). The earlier comparison figures in §8 and §10.2 predate the fix.
 4. **"Worst junction delay at its ends" shows "—" for a proposal (low)** with no reason given (proposal 2: existing 17 s). **Fixed in `8796aa6`**: the row now says why ("Not measured in the proposal: the simulation recorded no junction at the road's ends in any run"). Unit-tested.
 
 Layout and readability observations (not blocking): map buttons partly under the panel at 1600 px; the traced-queue label overlapped by the selection marker; on the Wakad lane the camera leaves the lane behind 3D buildings; the routes overlay is low-contrast at 1 km; after changing the area from 2 to 3 km the old 2 km figures stay visible (dimmed) under a "3 km" header until the new run finishes; the comparison map shows little when no roads gain or lose; "time to drive it" uses the simulated direction length, which can be shorter than the header length (Shivaji: 548 m header, ~437 m implied by the NW free-flow time), so the numbers do not reconcile for a reader.
@@ -326,7 +352,9 @@ This file, plus the updated ROAD_ANALYSIS.md and CALIBRATION.md.
 
 ### Tested
 
-- Unit and integration: lifecycle, speeds and capacities, LOS, delay attribution and tracing, sample-object exclusion, screenlines, comparison agreement and verdict (§10.1).
+- Unit and integration: lifecycle, speeds and capacities, LOS, delay attribution and tracing, sample-object exclusion, screenlines, comparison agreement and verdict, common random numbers between baseline and proposal (`EditIsolation.test.ts`: a reordered trip list gives the same run; an edit outside the area changes nothing; one outside the neighbourhood changes it by under 3%; two different edits do not give the same result) (§10.1).
+
+  Two existing tests changed with the fix, both because drivers' speeds no longer share a random stream with signal offsets: the "route disappears" test now cuts the route by an edit (same OD, so the same stream) instead of pointing the trip at a missing node (a different OD); the two-wheeler discharge ceiling is 1.35 of Indo-HCM for 7 m instead of 1.3 (the five queue orders now give 0.94–1.30, before 0.98–1.25; the floor, which is what the test is for, is unchanged).
 - Browser, production build: lifecycle and resource release on three places; Shivaji Bridge analysis, overlays, time-of-day comparison and two proposals; Nal Stop and a Wakad lane (§10.2).
 
 ### Estimated (model output, not measured)
