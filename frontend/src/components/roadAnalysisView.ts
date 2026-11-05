@@ -53,7 +53,14 @@ export function causeLine(r: RoadAnalysisResult): { text: string; tone: Tone; ag
     case 'give-way': return { text: 'Giving way at an unsignalised junction', tone: 'warn' };
     case 'volume': return { text: 'Close to capacity: slow in dense traffic', tone: 'alert' };
     case 'mixed': return { text: 'Spread over several causes', tone: 'neutral' };
-    case 'insufficient': return { text: r.status === 'no_traffic' ? 'Routes avoid it, or it is poorly connected' : 'No single cause: evidence not enough to name one', tone: 'warn' };
+    case 'insufficient': {
+      if (r.status === 'no_traffic') return { text: 'Routes avoid it, or it is poorly connected', tone: 'warn' };
+      // Which kind of "not enough evidence": the same split the analysis used (RoadAnalysis.combineAnalysis)
+      const d = explainedDirection(r)?.d.delay;
+      if (d && d.total > 0 && d.blocked / d.total >= 0.35) return { text: 'Queue from further on, not traced to one junction consistently', tone: 'warn' };
+      if (d && d.total > 0 && d.other / d.total >= 0.5) return { text: 'Slow in moving traffic: no single junction stands out', tone: 'warn' };
+      return { text: 'Evidence not enough to name a cause', tone: 'warn' };
+    }
     default: return { text: 'Delay is small', tone: 'good' };
   }
 }

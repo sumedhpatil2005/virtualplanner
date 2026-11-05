@@ -92,6 +92,12 @@ describe('road analysis panel pieces', () => {
     const r = result({ cause: { kind: 'spillback', text: 'x', chain: { direction: 'eastbound', blockedShare: 0.6, root: { label: 'Bund Garden Road / Mangaldas Road', coordinates: [0, 0], cause: 'signal', delayS: 30 }, segmentKeys: [], agreement: 3, seeds: 3 } } });
     expect(causeLine(r)).toMatchObject({ text: 'Queue backing up from Bund Garden Road / Mangaldas Road (its signal)', agreement: '3/3 runs' });
   });
+  it('says which kind of evidence is missing when no cause is named', () => {
+    const slowMoving = result({ cause: { kind: 'insufficient', text: 'x', chain: null }, directions: [dir({ label: 'eastbound', delay: { signal: 0, blocked: 0, giveWay: 0, conflict: 0, other: 13, total: 13 } })] });
+    expect(causeLine(slowMoving).text).toBe('Slow in moving traffic: no single junction stands out');
+    const untraced = result({ cause: { kind: 'insufficient', text: 'x', chain: null }, directions: [dir({ label: 'eastbound', delay: { signal: 2, blocked: 8, giveWay: 0, conflict: 0, other: 2, total: 12 } })] });
+    expect(causeLine(untraced).text).toBe('Queue from further on, not traced to one junction consistently');
+  });
   it('demand vs throughput: one card with per-run bars and the explanation behind a toggle', () => {
     const html = renderToStaticMarkup(createElement(LoadCard, { r: result() }));
     const d = doc(html);

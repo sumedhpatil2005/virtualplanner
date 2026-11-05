@@ -126,7 +126,7 @@ const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = 
   const max = Math.max(1, c.station.peakVehicles, c.modelVph, c.simulatedVph ?? 0);
   const rows: { k: string; v: number; color: string; badge: React.ReactNode; title: string }[] = [
     { k: 'Counted', v: c.station.peakVehicles, color: '#34d399', badge: <SourceBadge source="observed" />, title: `${fmt(c.station.peakVehicles)} veh/h both directions, ${c.station.peakHour} (${src.surveyYear} count)` },
-    { k: 'Model routes', v: c.modelVph, color: '#a78bfa', badge: null, title: `The area routing at ${hourLabel(sim.analysis.hour ?? 0)}` },
+    { k: 'Model routes', v: c.modelVph, color: '#a78bfa', badge: <SourceBadge source={sourceOf(r.evidence.demand?.source)} />, title: `The area routing at ${hourLabel(sim.analysis.hour ?? 0)}` },
     ...(c.simulatedVph !== null ? [{ k: 'Got through', v: c.simulatedVph, color: '#818cf8', badge: <SourceBadge source="simulated" />, title: 'What got through in the simulation' }] : []),
   ];
   return (
@@ -138,10 +138,11 @@ const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = 
       <Card testId="measured" tone="good">
         <ul className="space-y-1.5">
           {rows.map(x => (
-            <li key={x.k} className="grid grid-cols-[6.5rem_1fr_auto] items-center gap-2 text-[11px]" title={x.title}>
-              <span className="text-slate-400 flex items-center gap-1 whitespace-nowrap">{x.k}{x.badge}</span>
+            <li key={x.k} className="grid grid-cols-[5.5rem_1fr_3rem_4.75rem] items-center gap-2 text-[11px]" title={x.title}>
+              <span className="text-slate-400 whitespace-nowrap">{x.k}</span>
               <Meter value={x.v} max={max} color={x.color} height="md" />
-              <span className="tabular-nums text-slate-200">{fmt(x.v)}</span>
+              <span className="tabular-nums text-slate-200 text-right">{fmt(x.v)}</span>
+              <span>{x.badge}</span>
             </li>
           ))}
         </ul>
@@ -306,7 +307,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
         <div className="flex items-center gap-2 flex-wrap">
           <Chip tone={v.tone} icon={v.icon} size="md" testId="verdict">{v.label}</Chip>
           <Chip tone={c.confidence.level === 'low' ? 'warn' : c.confidence.level === 'high' ? 'good' : 'neutral'} testId="confidence" title={c.confidence.text}>Confidence: {c.confidence.level}</Chip>
-          {sim.length > 0 && <Chip tone={agreeing === sim.length ? 'neutral' : 'warn'} title="Simulated changes of 5% or more whose direction every run shows">{agreeing}/{sim.length} changes in all runs</Chip>}
+          {sim.length > 0 && <Chip tone={agreeing === sim.length ? 'neutral' : 'warn'} title={`Simulated changes of 5% or more: ${agreeing} of ${sim.length} show the same direction in every run`}>runs agree on {agreeing}/{sim.length} changes</Chip>}
         </div>
         <div className="grid grid-cols-3 gap-1.5" data-testid="verdict-levels">
           {([['Road', c.verdict.section], ['Neighbourhood', c.verdict.network], ['Area', c.verdict.area]] as const).map(([k, vv]) => (

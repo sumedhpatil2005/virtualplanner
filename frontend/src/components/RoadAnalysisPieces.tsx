@@ -88,7 +88,7 @@ export const WorstKpis: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
         </KpiCard>
         <KpiCard label="Delay" value={d.delay ? Math.round(d.delay.total) : '—'} unit="s/veh" sub={d.travelTimeS !== null ? `${Math.round(d.travelTimeS)} s vs ${Math.round(d.freeTimeS)} s` : 'no time measured'} testId="kpi-delay"
           title="Delay per vehicle: time to drive the section minus its free-flow time (mean of the runs)" />
-        <KpiCard label="Load v/c" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)} PCU/h`} tone={vcTone} testId="kpi-vc"
+        <KpiCard label="Load v/c" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)}`} tone={vcTone} testId="kpi-vc"
           title={`Traffic routed along it (assignment, ${fmt(d.demandPcu)} PCU/h) over its capacity (${fmt(d.capacityPcu)} PCU/h, ${d.capacityBasis === 'signal' ? 'stop line of the signal at its end, Indo-HCM' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}, IRC:106-1990`})`}>
           <div className="mt-1"><Meter value={Math.min(1, d.vc)} color={vcColour(d.vc)} height="xs" /></div>
         </KpiCard>
@@ -140,8 +140,8 @@ export const DirectionCard: React.FC<{ d: DirectionFlow; index: number; heading:
       <div className="flex items-start gap-2">
         <DirectionGlyph index={index} bearingDeg={labelDeg} heading={heading} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-1">
-            <div className="text-sm font-medium text-white leading-tight truncate" data-testid="direction-title">{capital(compass)}<span className="text-slate-500 font-normal tabular-nums" title="Compass bearing of travel (on a road with two opposite directions, the axis they share)"> · {Math.round(labelDeg)}°</span></div>
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[13px] font-medium text-white leading-tight min-w-0" data-testid="direction-title">{capital(compass)}<span className="text-[11px] text-slate-500 font-normal tabular-nums whitespace-nowrap" title="Compass bearing of travel (on a road with two opposite directions, the axis they share)"> · {Math.round(labelDeg)}°</span></div>
             <LosBadge los={d.los} />
           </div>
           {d.towards && <div className="text-[11px] text-slate-400 leading-tight line-clamp-2 mt-0.5" data-testid="direction-landmark" title={`${landmarkPhrase(d.towards)}. ${d.towards.kind === 'into' ? 'The named road this direction carries on into' : 'The main road this direction meets at its end'}`}>{landmarkPhrase(d.towards)}</div>}
@@ -276,7 +276,7 @@ const PlaceBars: React.FC<{ title: string; icon: typeof ArrowDownRight; places: 
       {places.slice(0, 3).map(p => (
         <li key={p.label} className="space-y-0.5">
           <div className="flex items-baseline justify-between gap-2 text-[11px]">
-            <button className="text-left text-slate-300 hover:text-white cursor-pointer leading-tight line-clamp-2" title={`${p.label} (${fmt(p.vph)} veh/h). Click to fly there.`} onClick={() => actions.flyTo(p.coordinates)}>{p.label}</button>
+            <button className="text-left text-slate-300 hover:text-white cursor-pointer leading-tight" title={`${p.label} (${fmt(p.vph)} veh/h). Click to fly there.`} onClick={() => actions.flyTo(p.coordinates)}>{p.label}</button>
             <span className="tabular-nums text-slate-200 shrink-0">{Math.round(p.share * 100)}%</span>
           </div>
           <Meter value={p.share} color={p.edge ? '#a78bfa' : '#22d3ee'} height="xs" />
@@ -296,7 +296,7 @@ export const SourcesCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay;
           <div className="flex h-3 rounded-full overflow-hidden bg-white/10"><div className="bg-violet-400" style={{ width: `${through}%` }} /><div className="bg-cyan-400" style={{ width: `${100 - through}%` }} /></div>
           <div className="flex justify-between text-[11px]"><span className="text-violet-300"><strong className="tabular-nums">{through}%</strong> through</span><span className="text-cyan-300"><strong className="tabular-nums">{100 - through}%</strong> local</span></div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           <PlaceBars title="Comes from" icon={ArrowDownRight} places={r.origins} actions={actions} />
           <PlaceBars title="Goes to" icon={ArrowUpRight} places={r.destinations} actions={actions} />
         </div>
@@ -308,7 +308,10 @@ export const SourcesCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay;
 
 // ── Worst places in the area ──────────────────────────────────────────────
 
-export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay; actions: AnalysisActions }> = ({ r, overlay, actions }) => (
+export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay; actions: AnalysisActions }> = ({ r, overlay, actions }) => {
+  // One scale for the list, at least to 150%, so the ranking stays visible beyond capacity; the line marks 100%
+  const vcMax = Math.max(1.5, ...r.areaBottlenecks.slice(0, 4).map(b => b.vc));
+  return (
   <section className="space-y-2">
     <div className="flex items-baseline justify-between gap-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Worst places in the area</h3>
@@ -325,7 +328,7 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
                   <span className="text-slate-200 leading-tight line-clamp-2" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.label}</span>
                   <span className="tabular-nums shrink-0" style={{ color: vcColour(b.vc) }}>{Math.round(b.vc * 100)}%</span>
                 </div>
-                <Meter value={Math.min(1.5, b.vc)} max={1.5} marker={1} color={vcColour(b.vc)} title={`${Math.round(b.vc * 100)}% of capacity (the line marks 100%)`} />
+                <Meter value={b.vc} max={vcMax} marker={1} color={vcColour(b.vc)} title={`${Math.round(b.vc * 100)}% of capacity (the line marks 100%)`} />
               </div>
               <button className="p-1 -m-1 rounded text-slate-400 hover:text-cyan-200 hover:bg-white/5 cursor-pointer" title="Show on map" aria-label={`Show ${b.roadName} on the map`} onClick={() => actions.flyTo(b.coordinates)}><MapPin size={14} /></button>
             </li>
@@ -341,11 +344,14 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
       </InfoToggle>
     </Card>
   </section>
-);
+  );
+};
 
 // ── Suggestions ───────────────────────────────────────────────────────────
 
 const KIND_ICON: Record<Suggestion['kind'], typeof Hammer> = { junction: Split, signal: Signal, widen: Construction, divert: Users, investigate: Search, none: CheckCircle2, times: CheckCircle2 };
+/** Suggestions that are a change to make and compare (not an investigation or "no problem"). */
+const TESTABLE = new Set<Suggestion['kind']>(['junction', 'signal', 'widen', 'divert']);
 const KIND_TONE: Record<Suggestion['kind'], Tone> = { junction: 'info', signal: 'info', widen: 'info', divert: 'info', investigate: 'warn', none: 'good', times: 'good' };
 
 /** A suggestion as a card: what to try, its headline number, and the actions. Full shows the evidence and what to check. */
@@ -365,9 +371,10 @@ export const SuggestionCard: React.FC<{ s: Suggestion; full?: boolean; onTest?: 
       {full ? (
         <Disclosure title="Evidence" tone="subtle"><p>{s.evidence}</p></Disclosure>
       ) : !s.figure && <p className="text-[11px] text-slate-400 leading-snug line-clamp-2" title={s.evidence}>{s.evidence}</p>}
-      {(onTest || s.action) && (
+      {((onTest && (TESTABLE.has(s.kind) || s.kind === 'times')) || s.action) && (
         <div className="flex gap-1.5 flex-wrap">
-          {onTest && <Button size="sm" variant="primary" onClick={onTest}>Test it<ChevronRight size={13} /></Button>}
+          {onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Build, then compare">Test it<ChevronRight size={13} /></Button>}
+          {onTest && s.kind === 'times' && <Button size="sm" variant="secondary" onClick={onTest} title="Go to Improve & compare, where the road can be analysed at other times of day">Other times of day<ChevronRight size={13} /></Button>}
           {s.action && <Button size="sm" variant={onTest ? 'secondary' : 'secondary'} icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at)}>{s.action.label}</Button>}
         </div>
       )}
