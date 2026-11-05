@@ -108,6 +108,17 @@ vi.mock('cesium', () => ({
   VerticalOrigin: { TOP: -1, CENTER: 0, BOTTOM: 1 },
   HeightReference: { NONE: 0, CLAMP_TO_GROUND: 1, RELATIVE_TO_GROUND: 2 },
   PolylineDashMaterialProperty: vi.fn(),
+  // Direction arrows (DirectionArrows.ts): shared colour/width properties recoloured in place
+  PolylineArrowMaterialProperty: vi.fn().mockImplementation((color: unknown) => ({ color })),
+  ConstantProperty: vi.fn().mockImplementation((value: unknown) => {
+    const p = { value, setValue: (v: unknown) => { p.value = v; }, getValue: () => p.value };
+    return p;
+  }),
+  CustomDataSource: vi.fn().mockImplementation(() => {
+    const list: any[] = [];
+    return { entities: { values: list, add: (e: any) => { list.push(e); return e; }, remove: vi.fn(), removeAll: () => { list.length = 0; }, suspendEvents: vi.fn(), resumeEvents: vi.fn() } };
+  }),
+  HeadingPitchRange: vi.fn().mockImplementation((heading: number, pitch: number, range: number) => ({ heading, pitch, range })),
   Billboard: vi.fn(),
   BillboardCollection: vi.fn().mockImplementation(() => ({
     add: vi.fn(),

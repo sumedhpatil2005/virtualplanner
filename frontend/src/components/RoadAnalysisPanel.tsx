@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Loader2, AlertTriangle, ArrowDownRight, ArrowUpRight, Hammer, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, Search, CheckCircle2, Gauge,
+  Loader2, AlertTriangle, ArrowUp, ArrowDownRight, ArrowUpRight, Hammer, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, Search, CheckCircle2, Gauge,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { SimulationModeState } from '../engine/simulation/SimulationMode';
@@ -14,6 +14,8 @@ import { Section, Button, Notice } from './ui/kit';
 import { SourceBadge } from './ui/SourceBadge';
 import { sourceOf } from './ui/dataSource';
 import { DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
+import { useCameraHeading } from '../hooks/useCameraHeading';
+import { compassWord, directionColor, landmarkPhrase, screenArrowDeg } from '../engine/simulation/directions';
 
 /**
  * The analysis of the selected road, in the order a planner works:
@@ -61,7 +63,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
     <div className={`space-y-5 ${stale ? 'opacity-60' : ''}`} data-testid="understand-view">
       {sim.comparison.showingProposal && <ProposalBadge />}
       <StatusCard r={r} period={period} hour={hour} sim={sim} />
-      <Directions r={r} />
+      <Directions r={r} focus={sim.directionFocus} />
       <Cause r={r} overlay={sim.overlay} />
       <Measured sim={sim} r={r} />
       <TrafficSources r={r} overlay={sim.overlay} />
@@ -99,19 +101,54 @@ const VcBar: React.FC<{ vc: number }> = ({ vc }) => (
   </div>
 );
 
-const Directions: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => (
-  <Section title="Each direction" aside={`${r.seeds.length} runs, mean`}>
-    <div className="space-y-2" data-testid="directions">
-      {r.directions.map(d => <DirectionCard key={d.label} d={d} />)}
-    </div>
-  </Section>
-);
+const Directions: React.FC<{ r: RoadAnalysisResult; focus: SimulationModeState['directionFocus'] }> = ({ r, focus }) => {
+  const heading = useCameraHeading();
+  const active = focus.hover ?? focus.pinned;
+  return (
+    <Section title="Each direction" aside={`${r.seeds.length} runs, mean`}>
+      <div className="space-y-2" data-testid="directions">
+        {r.directions.map((d, i) => <DirectionCard key={d.label} d={d} index={i} heading={heading} active={active === i} dimmed={active !== null && active !== i} pinned={focus.pinned === i} />)}
+      </div>
+      <p className="text-[11px] text-slate-500">Arrows on the map show each direction in its colour; the arrow by each name points the way it runs on screen now. Click one to pick it out on the map.</p>
+    </Section>
+  );
+};
 
-const DirectionCard: React.FC<{ d: DirectionFlow }> = ({ d }) => (
-  <div className="rounded-xl border border-white/5 bg-white/[0.03] p-2.5 space-y-1.5">
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-sm font-medium text-white">{capital(d.label)}</span>
-      <span className="text-xs text-slate-400">level of service <strong className={`text-sm ${LOS_CLS[d.los ?? ''] ?? 'text-slate-300'}`}>{d.los ?? '—'}</strong></span>
+/** Swatch and arrow for a direction: the arrow points the way it runs on screen for the current camera heading. */
+const DirectionGlyph: React.FC<{ index: number; bearingDeg: number; heading: number }> = ({ index, bearingDeg, heading }) => {
+  const rot = screenArrowDeg(bearingDeg, heading);
+  return (
+    <span className="relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ background: `${directionColor(index)}26`, boxShadow: `inset 0 0 0 1.5px ${directionColor(index)}` }} data-testid="direction-glyph" data-rotation={Math.round(rot)}>
+      <ArrowUp size={14} strokeWidth={2.75} style={{ color: directionColor(index), transform: `rotate(${rot}deg)` }} aria-hidden />
+    </span>
+  );
+};
+
+const DirectionCard: React.FC<{ d: DirectionFlow; index: number; heading: number; active: boolean; dimmed: boolean; pinned: boolean }> = ({ d, index, heading, active, dimmed, pinned }) => {
+  const mode = engineInstance.simMode;
+  const labelDeg = d.labelBearingDeg ?? d.bearingDeg;
+  const compass = d.compass ?? compassWord(labelDeg);
+  return (
+  <div
+    role="button" tabIndex={0} aria-pressed={pinned}
+    data-testid="direction-card" data-direction={index} data-active={active ? 'true' : 'false'}
+    title={pinned ? 'Click again to show both directions alike' : 'Click to pick this direction out on the map and fly to it'}
+    onMouseEnter={() => mode.hoverDirection(index)} onMouseLeave={() => mode.hoverDirection(null)}
+    onFocus={() => mode.hoverDirection(index)} onBlur={() => mode.hoverDirection(null)}
+    onClick={() => mode.pinDirection(index, true)}
+    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mode.pinDirection(index, true); } }}
+    className={`rounded-xl border p-2.5 space-y-1.5 cursor-pointer transition ${active ? 'bg-white/[0.06]' : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.05]'} ${dimmed ? 'opacity-60' : ''}`}
+    style={active ? { borderColor: directionColor(index) } : undefined}
+  >
+    <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start gap-2 min-w-0">
+        <DirectionGlyph index={index} bearingDeg={labelDeg} heading={heading} />
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-white leading-tight" data-testid="direction-title">{capital(compass)}<span className="text-slate-500 font-normal tabular-nums" title="Compass bearing of travel (on a road with two opposite directions, the axis they share)"> · {Math.round(labelDeg)}°</span></div>
+          {d.towards && <div className="text-[11px] text-slate-400 leading-tight truncate" data-testid="direction-landmark" title={d.towards.kind === 'into' ? 'The named road this direction carries on into' : 'The main road this direction meets at its end'}>{landmarkPhrase(d.towards)}</div>}
+        </div>
+      </div>
+      <span className="text-xs text-slate-400 shrink-0">level of service <strong className={`text-sm ${LOS_CLS[d.los ?? ''] ?? 'text-slate-300'}`}>{d.los ?? '—'}</strong></span>
     </div>
     <div className="grid grid-cols-3 gap-2 text-xs">
       <div><div className="text-slate-500">Speed</div><div className="text-slate-100 tabular-nums">{d.meanSpeedKmh === null ? '—' : `${Math.round(d.meanSpeedKmh)} km/h`}</div><div className="text-[11px] text-slate-500">free-flow {Math.round(d.freeSpeedKmh)}</div></div>
@@ -126,7 +163,8 @@ const DirectionCard: React.FC<{ d: DirectionFlow }> = ({ d }) => (
       )}
     </div>
   </div>
-);
+  );
+};
 
 const DelayBar: React.FC<{ d: NonNullable<DirectionFlow['delay']> }> = ({ d }) => {
   const parts = [

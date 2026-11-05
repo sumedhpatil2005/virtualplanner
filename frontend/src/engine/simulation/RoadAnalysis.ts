@@ -1,6 +1,7 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { MAX_VEHICLES, STEP_S, type TrafficMicroSim, type MicroSimMetrics, type AnalysisLinkCounts, type HoldCause } from './TrafficMicroSim';
 import { isGenericRoadName, type RoadSection } from './roadSection';
+import { angleDiff, boundLabel, compassWord, displacementM, downstreamLandmark, labelBearings, nameKeys, type Landmark } from './directions';
 import type { DemandProvenance } from './StudyDemand';
 import { routeMovements, movementKey, type ZoneLayout } from '../calibration/junctionMovements';
 import type { CountJunction } from '../calibration/observedCounts';
@@ -39,6 +40,14 @@ export interface DirectionFlow {
   /** "northbound", "towards the south-west", ... */
   label: string;
   bearingDeg: number;
+  /** Eight-point compass word of the label ("north-west"). */
+  compass: string;
+  /** Bearing the compass word is taken from (shared axis of an opposite pair); within 15 degrees of bearingDeg. */
+  labelBearingDeg: number;
+  /** Where it leads at its downstream end, when a reliable name exists; else null (compass only). */
+  towards: Landmark | null;
+  /** Its geometry in travel order, for the direction arrows on the map. */
+  paths: [number, number, number][][];
   /** Vehicles per hour that drove it in the corridor simulation (mean over seeds). */
   vph: number;
   /** Range over seeds (min, max). */
@@ -181,11 +190,7 @@ const bearing = (a: readonly number[], b: readonly number[]) => {
   const dx = (b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), dy = b[1] - a[1];
   return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
 };
-const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
-export const compass = (deg: number) => COMPASS[Math.round(deg / 45) % 8];
-const BOUND = ['northbound', 'north-east', 'eastbound', 'south-east', 'southbound', 'south-west', 'westbound', 'north-west'];
-const boundLabel = (deg: number) => { const b = BOUND[Math.round(deg / 45) % 8]; return b.endsWith('bound') ? b : `towards the ${b}`; };
-const angleDiff = (a: number, b: number) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+export const compass = compassWord;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const fmt = (n: number) => Math.round(n).toLocaleString();
 const mean = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
@@ -199,22 +204,76 @@ function pointToLineM(p: readonly number[], line: readonly (readonly number[])[]
 const LOS_STATUS: Record<string, RoadStatus> = { A: 'flowing', B: 'flowing', C: 'moderate', D: 'slow', E: 'congested', F: 'severe' };
 const STATUS_RANK: Record<RoadStatus, number> = { no_traffic: 0, flowing: 1, moderate: 2, slow: 3, congested: 4, severe: 5 };
 
-/** Directions of travel on a section: its links grouped by bearing (two carriageways of a divided road, or both directions of a two-way one). */
-export function sectionDirections(area: StudyArea, section: RoadSection): { bearing: number; label: string; linkIds: string[] }[] {
+/** One direction of travel on the section, with its geometry in travel order. */
+export interface SectionDirection {
+  /** Overall compass bearing of travel (degrees clockwise from north), from the pieces' start-to-end displacements. */
+  bearing: number;
+  label: string;
+  /** Eight-point compass word of the label ("north-west"); opposite directions share an axis (labelBearings). */
+  compass: string;
+  /** Bearing the compass word is taken from: the shared axis of an opposite pair, else the bearing itself. */
+  labelBearing: number;
+  /** Where this direction leads at its downstream end, when a reliable name exists (directions.ts). */
+  towards: Landmark | null;
+  linkIds: string[];
+  /** The direction's pieces as chains of points in travel order (lng, lat, z). */
+  paths: [number, number, number][][];
+}
+
+/** Chains a direction's links end to start, so each chain is a run of road in travel order. */
+function chainLinks(network: StudyArea['network'], linkIds: readonly string[]): string[][] {
+  const edges = linkIds.map(id => network.edges.get(id)!).filter(Boolean);
+  const byFrom = new Map(edges.map(e => [e.fromNodeId, e]));
+  const toNodes = new Set(edges.map(e => e.toNodeId));
+  const used = new Set<string>();
+  const chains: string[][] = [];
+  const starts = [...edges.filter(e => !toNodes.has(e.fromNodeId)), ...edges];
+  for (const s of starts) {
+    if (used.has(s.id)) continue;
+    const chain: string[] = [];
+    for (let e: typeof s | undefined = s; e && !used.has(e.id); e = byFrom.get(e.toNodeId)) { used.add(e.id); chain.push(e.id); }
+    chains.push(chain);
+  }
+  return chains;
+}
+
+/**
+ * Directions of travel on a section: its links grouped by bearing (two
+ * carriageways of a divided road, or both directions of a two-way one).
+ * Each link's points are taken in travel order (the network stores a
+ * backward link's points already reversed), and each direction's bearing is
+ * that of its whole length, not of whichever piece came first.
+ */
+export function sectionDirections(area: StudyArea, section: RoadSection, roads?: ReadonlyMap<string, DrivableObject>): SectionDirection[] {
   const keys = new Set(section.segmentKeys);
-  const segCoords = new Map(area.segments.map(s => [s.key, s.coordinates]));
-  const groups: { bearing: number; label: string; linkIds: string[] }[] = [];
+  const groups: { e: number; n: number; linkIds: string[] }[] = [];
+  const groupBearing = (g: { e: number; n: number }) => ((Math.atan2(g.e, g.n) * 180) / Math.PI + 360) % 360;
   for (const e of area.network.edges.values()) {
     const key = e.id.replace(/_(fwd|bwd)$/, '');
     if (!keys.has(key)) continue;
-    const c = segCoords.get(key) ?? e.coordinates;
-    const pts = e.id.endsWith('_bwd') ? [...c].reverse() : c;
+    const pts = e.coordinates;
     if (pts.length < 2) continue;
+    const [de, dn] = displacementM(pts[0], pts[pts.length - 1]);
     const b = bearing(pts[0], pts[pts.length - 1]);
-    const g = groups.find(x => angleDiff(x.bearing, b) < 70);
-    if (g) g.linkIds.push(e.id); else groups.push({ bearing: b, label: boundLabel(b), linkIds: [e.id] });
+    const g = groups.find(x => angleDiff(groupBearing(x), b) < 70);
+    if (g) { g.e += de; g.n += dn; g.linkIds.push(e.id); } else groups.push({ e: de, n: dn, linkIds: [e.id] });
   }
-  return groups;
+  const sectionNames = new Set<string>();
+  if (roads) for (const id of section.roadIds) for (const k of nameKeys(roads.get(id))) sectionNames.add(k);
+  const labelled = labelBearings(groups.map(groupBearing));
+  return groups.map((g, gi) => {
+    const b = groupBearing(g);
+    const chains = chainLinks(area.network, g.linkIds);
+    const paths = chains.map(ch => ch.flatMap((id, i) => { const c = area.network.edges.get(id)!.coordinates; return (i === 0 ? c : c.slice(1)).map(p => [p[0], p[1], p[2] || 0] as [number, number, number]); }));
+    // The landmark is read from the end of the longest run of the direction
+    let towards: Landmark | null = null;
+    if (roads && chains.length) {
+      const lengthOf = (ch: string[]) => ch.reduce((m, id) => m + (area.network.edges.get(id)?.length ?? 0), 0);
+      const main = chains.reduce((a, c) => (lengthOf(c) > lengthOf(a) ? c : a));
+      towards = downstreamLandmark(area.network, roads, main[main.length - 1], keys, sectionNames);
+    }
+    return { bearing: b, label: boundLabel(labelled[gi]), compass: compassWord(labelled[gi]), labelBearing: labelled[gi], towards, linkIds: g.linkIds, paths };
+  });
 }
 
 // ── One corridor simulation run ─────────────────────────────────────────────
@@ -441,7 +500,7 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
 
 // ── Combining the area and the corridor runs ────────────────────────────────
 
-export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { bearing: number; label: string }[], section: RoadSection, corridorInfo: RoadAnalysisResult['corridor'], demand: DemandProvenance | null): RoadAnalysisResult {
+export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { bearing: number; label: string; compass?: string; labelBearing?: number; towards?: Landmark | null; paths?: [number, number, number][][] }[], section: RoadSection, corridorInfo: RoadAnalysisResult['corridor'], demand: DemandProvenance | null): RoadAnalysisResult {
   const n = runs.length;
   const directions: DirectionFlow[] = dirs.map((d, i) => {
     const a = area.directions[i];
@@ -460,7 +519,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     const pcuph = mean(rs.map(r => r.pcuph));
     const delays = rs.map(r => r.delay).filter((x): x is DelayBreakdown => !!x);
     const avgDelay = delays.length ? { signal: mean(delays.map(x => x.signal)), blocked: mean(delays.map(x => x.blocked)), giveWay: mean(delays.map(x => x.giveWay)), conflict: mean(delays.map(x => x.conflict)), other: mean(delays.map(x => x.other)), total: mean(delays.map(x => x.total)) } : null;
-    return { label: d.label, bearingDeg: d.bearing, vph: Math.round(mean(vphs)), vphRange: [Math.round(Math.min(...vphs)), Math.round(Math.max(...vphs))] as [number, number], pcuph: Math.round(pcuph),
+    return { label: d.label, bearingDeg: d.bearing, compass: d.compass ?? compassWord(d.labelBearing ?? d.bearing), labelBearingDeg: d.labelBearing ?? d.bearing, towards: d.towards ?? null, paths: d.paths ?? [], vph: Math.round(mean(vphs)), vphRange: [Math.round(Math.min(...vphs)), Math.round(Math.max(...vphs))] as [number, number], pcuph: Math.round(pcuph),
       demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1,
       midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock',
       vc, servedVc: pcuph / Math.max(1, capacityPcu),

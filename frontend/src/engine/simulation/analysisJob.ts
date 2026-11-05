@@ -75,7 +75,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   if (cancelled?.()) throw new Error('cancelled');
   onProgress?.(0.15);
 
-  const dirs = sectionDirections(job.area, job.section);
+  const dirs = sectionDirections(job.area, job.section, job.roads);
   const demandVph = job.plan.provenance.vehiclesPerHour * job.hourFactor;
   const ctx = areaContext(assignment, job.area, job.roads, job.section, dirs, demandVph);
   const corridorPlan = corridorPlanOf(job, assignment);

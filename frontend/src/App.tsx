@@ -15,6 +15,7 @@ import { CoachMarks } from './components/ui/CoachMarks';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAppMode, useSelectedId } from './hooks/useAppMode';
 import { engineInstance } from './engine/TwinCityEngine';
+import { MapCompass } from './components/MapCompass';
 import { Compass, Layers, X, Keyboard, FolderOpen } from 'lucide-react';
 
 const pillBase = 'h-11 px-4 rounded-full flex items-center gap-2 border border-white/10 shadow-xl cursor-pointer transition text-sm font-semibold backdrop-blur-xl';
@@ -131,6 +132,8 @@ function App() {
           <span>Layers</span>
         </button>
       </div>
+      {/* Bottom left, beside Layers: which way the map faces */}
+      <div className="absolute bottom-4 left-[8.75rem] z-20"><MapCompass /></div>
 
       {/* Notifications, bottom centre above the drawing hints */}
       {toast && (

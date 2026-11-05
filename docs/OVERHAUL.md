@@ -152,6 +152,43 @@ The model carries roughly a quarter of what the bridge carried in 2008, and traf
 
 **Uncertain.** No usability test with a first-time user has been done. The What's wrong tab is still long at 2 km (about 2,300 px with Why expanded).
 
+## 6a. Direction of travel on the map
+
+**What was wrong.** *Each direction* said "Towards the north-west" and "Towards the south-east", but nothing on the map showed which carriageway was which, and the camera frames a road from the side (Shivaji Bridge opens looking west-south-west), so "north-west" pointed right on screen.
+
+**What changed.**
+
+- **Compass** (`MapCompass.tsx`, bottom left beside Layers). The needle points to north on screen and the readout gives the camera heading ("W 248°"). It reads `camera.heading` after each rendered frame (`useCameraHeading.ts`, `scene.postRender`) and re-renders only when the heading moved by 1° or more. Clicking it turns the map north-up about the point at the centre of the screen, keeping tilt and distance.
+- **Arrows on the road** (`DirectionArrows.ts`). Each direction gets a few short `PolylineArrowMaterialProperty` polylines (about one per 90 m, at most 8 per run of road) following its geometry in travel order. They are offset 4 m to the left of travel, because traffic keeps left, so the two directions of a two-way road sit side by side. They also have a depth-fail material, so they stay visible under the road mesh. All arrows of one direction share one colour and one width property, so highlighting changes those two values and rebuilds nothing. Arrows are drawn while the analysis on show belongs to the selected section and are removed otherwise (`SimulationMode.syncArrows`).
+- **Panel** (`RoadAnalysisPanel.tsx`). Each direction card starts with a swatch in the direction's map colour (`DIRECTION_COLORS`: orange, violet, ...) holding an arrow glyph turned to `bearing − camera heading`, so it points the way the arrows run on screen right now. Next to it are the compass word, the bearing in degrees and, where one is known, the landmark. The word, the degrees and the glyph all use the same bearing: for an opposite pair, their shared axis (at most 15° from each direction's own bearing; on Shivaji Bridge, 0.6°). A new direction list (another road, hour or proposal) clears the highlight, and an index outside the list is ignored. Hovering over a card highlights its arrows (thicker and lighter) and dims the other direction's. Clicking a card pins the highlight and flies to frame that direction, keeping the current heading. Clicking an arrow on the map pins its direction and highlights the matching card (`TwinCityEngine.handleSimulationClick` → `directionOfArrowId`).
+
+**How the direction is computed** (`directions.ts`, `RoadAnalysis.sectionDirections`).
+
+- Links of the section are taken with their points in travel order. The network already stores a backward link's points reversed. Before this change the code reversed the drawn segment, which gave the same result, except in its fallback path, where the points ended up reversed twice.
+- Links are grouped by bearing (within 70°). Each group's bearing is the sum of its links' start-to-end displacements in metres (east offsets scaled by cos latitude), so it is the bearing of the whole run. Before, it was the bearing of whichever link came first, which a short kink at a junction could swing.
+- Compass word: eight points, 45° each, with boundaries at 22.5° and so on. Two directions running opposite ways (more than 150° apart) are labelled from their shared axis, so one road never reads "north" one way and "south-east" the other when the rounding falls either side of a boundary.
+- Screen arrow: `screenArrowDeg(bearing, heading) = bearing − heading` (degrees, clockwise from screen-up). This is exact for a camera looking straight down. On a tilted view it is the direction in the ground plane seen from the camera's heading, which is what the map arrows show.
+
+**Landmarks** (`downstreamLandmark`). These never invent a name. Each is read from the end of the direction's longest run:
+
+1. *towards X*: go straight on from the end (turn of at most 50°). Unnamed pieces and pieces of the section's own roads (matched by name, not by `ref`, because a national-highway ref is shared by different roads) are followed for up to 400 m. The first piece with a real name (an OSM `name` or `name:en`, never an importer placeholder such as "Tertiary Road") gives X. A signed OSM `destination` on a one-way piece driven forwards is used first. If two straight-on roads with different names are within 15° of each other, it is a fork and the step gives no name.
+2. *to the junction with X*: otherwise, the main road (collector or larger, real name, not one of the section's own) at the end node.
+3. Otherwise, only the compass word.
+
+**Verified** (Pune OSM, from the analysis dump and in the browser).
+
+| Road | Direction | Bearing (geometry) | Label shown | Landmark |
+|---|---|---|---|---|
+| Shivaji Bridge | 73.8552,18.5211 → 73.8536,18.5250 | 337.9° | North-west · 337° | none: ahead, Shivaji Road forks against Sadguru Morya Gosavi Underpass, and the end junction has no named main road |
+| Shivaji Bridge | 73.8537,18.5249 → 73.8554,18.5212 | 156.7° | South-east · 157° | none: Shivaji Road continues for 400 m, and the end junction meets an unnamed trunk link |
+| Veer Santaji Ghorpade Marg | SW / NE | 226° / 47° | South-west / North-east | towards Shivaji Road / to the junction with Dengle Bridge |
+| Lokmanya Tilak Marg | NW / SE | 306° / 128° | North-west / South-east | junction with Lalbahadur Shashtri Marg / Chhatrapati Sambhaji Path |
+| Baba Bhide Bridge | NW / SE | 306° / 126° | North-west / South-east | towards Jagannath Kaniram Kasat Path / none |
+
+Shivaji Bridge runs at 338°/158°, almost exactly on the boundary between north-west and north (337.5°). The pair is labelled from its shared axis (337.3°) as north-west and south-east, matching the earlier analysis. The panel shows the axis in degrees (337° / 157°), so a reader can see that it is close to the boundary. Browser screenshots: `DIR_01` (default view, compass and arrows), `DIR_02` (rotated 120° and tilted, with the compass and panel glyphs following), `DIR_03` (hover), `DIR_04` (click: pinned and framed), `DIR_05` (an arrow clicked on the map highlights its card) and `DIR_06` (compass click back to north-up).
+
+**Uncertain.** The landmark covers only the first named road ahead. It does not give place names (such as "Deccan") unless OSM carries a `destination` sign, because the network holds road names, not place names. On a strongly tilted perspective view, the glyph angle is the ground-plane direction, so it can differ by a few degrees from the arrow's apparent angle near the screen edge.
+
 ## 7. Usefulness for planning: suggestions traced to findings
 
 `improvements.ts`: each suggestion carries the finding and number that motivate it. Examples: "fix the junction where the queue starts" with that junction's share of the delay and run agreement; "retime the signal" when the delay is at the section's own signal; "no spare parallel route" when 100% of the road's traffic only crosses the area. Where the analysis cannot point to a cause, the suggestion is to **investigate** (a count, a travel-time survey), not to build. Suggestions are things to test with Compare, not results. On Shivaji Bridge: fix Shivaji Bridge / Bajirao Road (84% of the SE delay, 3 of 3 runs); a bypass would need a wider study; the result is borderline when runs disagree.
@@ -222,6 +259,8 @@ Recorded after the common-random-numbers fix (§10.2, *Identical neighbourhood c
 | `tsc -b` | no errors |
 | `oxlint` | 0 errors, 5 warnings (pre-existing unused variables in untouched files) |
 | backend `pytest` | **52 passed** |
+
+With the direction-of-travel work (§6a, new `Directions.test.ts`, 17 tests): vitest 48 files (45 passed, 3 skipped), **381 tests: 378 passed, 3 skipped, 0 failed**; `tsc -b` no errors; `oxlint` 0 errors, 5 warnings (the same pre-existing ones); backend pytest **52 passed**.
 
 Before the overhaul (at `651fc2f`): 346 vitest tests (343 passed, 3 skipped), backend pytest 50 passed.
 

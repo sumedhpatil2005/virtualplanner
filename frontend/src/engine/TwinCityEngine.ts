@@ -51,6 +51,7 @@ import { HistoryManager } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet } from '../lib/api';
+import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
 import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
 
 export class TwinCityEngine {
@@ -708,6 +709,9 @@ export class TwinCityEngine {
     }
     const picked = this.viewer.scene.pick(position);
     const pickedId = defined(picked) && picked.id ? (picked.id.id || picked.id) : null;
+    // A direction arrow of the selected road: highlight that direction (and its row in the panel)
+    const arrowDirection = directionOfArrowId(pickedId);
+    if (arrowDirection !== null && !additive) { this.simMode.pinDirection(arrowDirection); return; }
     const pickedObj = typeof pickedId === 'string' ? this.objects.getById(pickedId) : undefined;
     let roadId = pickedObj && isDrivable(pickedObj) ? pickedObj.id : null;
 

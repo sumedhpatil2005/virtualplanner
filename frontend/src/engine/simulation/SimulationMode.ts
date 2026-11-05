@@ -12,6 +12,7 @@ import { roadTilesAround } from './osmCoverage';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { OverpassCancelledError } from '../editing/OverpassClient';
 import { StudyAreaVisualizer } from '../rendering/renderers/StudyAreaVisualizer';
+import { DirectionArrows } from '../rendering/renderers/DirectionArrows';
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
@@ -233,6 +234,8 @@ export interface SimulationModeState {
   demandSettings: DemandSettings;
   timeline: TimelineState;
   overlay: MapOverlay;
+  /** Direction of the selected road highlighted on the map and in the panel: under the pointer (hover) or clicked (pinned). */
+  directionFocus: { hover: number | null; pinned: number | null };
   /** Free-flow speeds used (OSM maxspeed, inherited, or urban default). */
   speeds: SpeedReport | null;
   /** Why the last run of something long was stopped (left Simulate, network changed), shown once. */
@@ -305,6 +308,7 @@ export class SimulationMode {
     demandSettings: { through: true, hypotheticalScale: null },
     timeline: EMPTY_TIMELINE,
     overlay: 'none',
+    directionFocus: { hover: null, pinned: null },
     speeds: null,
     notice: null,
     screenlines: null,
@@ -323,6 +327,9 @@ export class SimulationMode {
   private listeners = new Set<() => void>();
   private readonly explorer = new StudyAreaExplorer();
   private readonly visualizer = new StudyAreaVisualizer();
+  private readonly arrows = new DirectionArrows();
+  /** The direction list the arrows (and the highlight index) belong to. */
+  private arrowDirections: readonly unknown[] | null = null;
   /** Bumped on every road or scenario change; the explorer rebuilds its graph when it moves. */
   private revision = 0;
   private recomputeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -409,7 +416,46 @@ export class SimulationMode {
 
   private setState(patch: Partial<SimulationModeState>) {
     this.state = { ...this.state, ...patch };
+    this.syncArrows();
     this.listeners.forEach(cb => cb());
+  }
+
+  /**
+   * The direction arrows follow the analysis on show: drawn for its
+   * directions while Simulate is open and the result belongs to the selected
+   * section, gone otherwise. Cheap when nothing changed (same result object).
+   */
+  private syncArrows() {
+    const out = this.state.active ? this.state.analysis.output?.result : undefined;
+    const section = this.state.section;
+    const current = !!out && !!section && out.section.segmentKeys.length === section.segmentKeys.length && out.section.segmentKeys.every((k, i) => k === section.segmentKeys[i]);
+    const dirs = current ? out!.directions : null;
+    // A different direction list (another road, hour or proposal) may number its directions differently: start unhighlighted
+    if (dirs !== this.arrowDirections) {
+      this.arrowDirections = dirs;
+      if (this.state.directionFocus.hover !== null || this.state.directionFocus.pinned !== null) this.state = { ...this.state, directionFocus: { hover: null, pinned: null } };
+    }
+    this.arrows.show(dirs);
+    const f = this.state.directionFocus;
+    this.arrows.setFocus(f.hover ?? f.pinned);
+  }
+
+  /** Pointer over a direction's row in the panel (null: left it). */
+  public hoverDirection(index: number | null) {
+    if (index !== null && !(index >= 0 && index < (this.arrowDirections?.length ?? 0))) index = null;
+    if (this.state.directionFocus.hover === index) return;
+    this.setState({ directionFocus: { ...this.state.directionFocus, hover: index } });
+  }
+
+  /**
+   * Clicked a direction (its row, or its arrows on the map): highlights it
+   * until clicked again. With `frame`, the camera flies to it, keeping its heading.
+   */
+  public pinDirection(index: number | null, frame = false) {
+    if (index !== null && !(index >= 0 && index < (this.arrowDirections?.length ?? 0))) index = null;
+    const pinned = index !== null && this.state.directionFocus.pinned === index ? null : index;
+    this.setState({ directionFocus: { hover: null, pinned } });
+    if (frame && pinned !== null) this.arrows.frame(pinned);
   }
 
   public isActive(): boolean {
@@ -418,6 +464,7 @@ export class SimulationMode {
 
   public setViewer(viewer: Viewer) {
     this.visualizer.setViewer(viewer);
+    this.arrows.setViewer(viewer);
     this.trafficVisualizer.setViewer(viewer);
     if (this.state.active && this.state.area) this.visualizer.render(this.state.area, false);
   }
@@ -427,6 +474,7 @@ export class SimulationMode {
     this.osmLoad?.abort();
     this.signalLoad?.abort();
     this.visualizer.dispose();
+    this.arrows.dispose();
     this.trafficVisualizer.dispose();
   }
 
