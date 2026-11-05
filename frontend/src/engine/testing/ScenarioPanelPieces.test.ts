@@ -5,7 +5,7 @@ import type { BuildingObject, RoadObject } from '../objects/types';
 import type { Delta } from '../simulation/ScenarioComparison';
 import type { SimulationContext } from '../simulation/StudyDemand';
 import { SimulationMode } from '../simulation/SimulationMode';
-import { DeltaRows, ProposalBadge } from '../../components/ScenarioDeltaTable';
+import { DeltaKpi, DeltaRows, ProposalBadge } from '../../components/ScenarioDeltaTable';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -13,21 +13,35 @@ const delta = (label: string, before: number, after: number, unit = 's'): Delta 
   ({ label, before, after, unit, lowerIsBetter: true, change: (after - before) / before, good: after < before });
 
 describe('scenario comparison table', () => {
-  it('keeps existing and proposal values in separate padded cells with the change on its own line', () => {
+  it('shows existing → proposal with the change as a coloured pill', () => {
     const html = renderToStaticMarkup(createElement(DeltaRows, { rows: [delta('Delay', 389, 376)] }));
     const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-    const cells = [...doc.querySelectorAll('tbody td')];
-    expect(cells).toHaveLength(2);
-    expect(cells[0].textContent).toBe('389 s');
-    // Padding on both sides of the gap between the two value columns
-    expect(cells[0].className).toMatch(/\bpx-3\b/);
-    expect(cells[1].className).toMatch(/\bpl-3\b/);
-    const lines = [...cells[1].querySelectorAll('span.block')].map(x => x.textContent);
-    expect(lines).toEqual(['376 s', '-3%']);
+    expect(doc.querySelectorAll('[data-testid="delta-row"]')).toHaveLength(1);
+    expect(doc.querySelector('[data-testid="delta-before"]')!.textContent).toBe('389 s');
+    expect(doc.querySelector('[data-testid="delta-after"]')!.textContent).toBe('376 s');
+    const pill = doc.querySelector('[data-testid="change-pill"]')!;
+    expect(pill.textContent).toBe('-3%');
+    expect(pill.getAttribute('data-good')).toBe('true');
+  });
+  it('shows run agreement as a chip, amber when not every run agrees', () => {
+    const d = { ...delta('Delay', 100, 80), agreement: { same: 2, of: 3 }, good: null };
+    const html = renderToStaticMarkup(createElement(DeltaRows, { rows: [d] }));
+    expect(html).toContain('2/3 runs');
+    expect(html).toContain('text-amber-200');
+    expect(html).toContain('data-good="null"');
+  });
+  it('renders a before → after KPI card', () => {
+    const html = renderToStaticMarkup(createElement(DeltaKpi, { d: delta('Time to drive it', 77, 60), label: 'Time to drive' }));
+    expect(html).toContain('Time to drive');
+    expect(html).toContain('77 s');
+    expect(html).toContain('60 s');
+    expect(html).toContain('-22%');
   });
   it('omits a negligible change', () => {
     const html = renderToStaticMarkup(createElement(DeltaRows, { rows: [delta('Speed', 1000, 1001, 'km/h')] }));
-    expect(html).not.toContain('%');
+    const text = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html').body.textContent!;
+    expect(text).not.toContain('%');
+    expect(text).toContain('no change');
   });
   it('labels the proposal badge', () => {
     expect(renderToStaticMarkup(createElement(ProposalBadge))).toContain('Proposal');

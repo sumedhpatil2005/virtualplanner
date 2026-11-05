@@ -1,21 +1,26 @@
 import React from 'react';
 import {
-  Loader2, AlertTriangle, ArrowUp, ArrowDownRight, ArrowUpRight, Hammer, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, Search, CheckCircle2, Gauge,
+  Loader2, AlertTriangle, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, CheckCircle2,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import { DAY_PERIODS, periodOfHour } from '../engine/simulation/SimulationMode';
-import { STATUS_WORD, VC_BANDS, type RoadAnalysisResult, type RoadStatus, type DirectionFlow } from '../engine/simulation/RoadAnalysis';
+import type { RoadAnalysisResult } from '../engine/simulation/RoadAnalysis';
 import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation/ScenarioComparison';
 import { improvementsFor } from '../engine/simulation/improvements';
 import { screenlineChecks } from '../engine/calibration/screenlines';
 import { hourLabel } from '../engine/simulation/timeOfDay';
-import { Section, Button, Notice } from './ui/kit';
+import { Button, Notice } from './ui/kit';
+import { Card, Chip, Disclosure, InfoToggle, Meter } from './ui/viz';
+import { TONE_FILL, TONE_TEXT, type Tone } from './ui/vizTones';
+import { STATUS } from './roadAnalysisView';
 import { SourceBadge } from './ui/SourceBadge';
 import { sourceOf } from './ui/dataSource';
-import { DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
+import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
-import { compassWord, directionColor, landmarkPhrase, screenArrowDeg } from '../engine/simulation/directions';
+import {
+  StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
+} from './RoadAnalysisPieces';
 
 /**
  * The analysis of the selected road, in the order a planner works:
@@ -25,17 +30,7 @@ import { compassWord, directionColor, landmarkPhrase, screenArrowDeg } from '../
  * live animation.
  */
 
-const STATUS: Record<RoadStatus, { label: string; short: string; cls: string; dot: string }> = {
-  flowing: { label: 'Flowing', short: 'Flowing', cls: 'text-emerald-200 bg-emerald-500/15 border-emerald-400/30', dot: 'bg-emerald-400' },
-  moderate: { label: 'Some delay', short: 'Some delay', cls: 'text-lime-200 bg-lime-500/15 border-lime-400/30', dot: 'bg-lime-400' },
-  slow: { label: 'Slow', short: 'Slow', cls: 'text-amber-200 bg-amber-500/15 border-amber-400/30', dot: 'bg-amber-400' },
-  congested: { label: 'Congested', short: 'Congested', cls: 'text-orange-200 bg-orange-500/15 border-orange-400/30', dot: 'bg-orange-400' },
-  severe: { label: 'Severely congested', short: 'Severe', cls: 'text-rose-200 bg-rose-500/15 border-rose-400/30', dot: 'bg-rose-400' },
-  no_traffic: { label: 'Almost no traffic', short: 'Empty', cls: 'text-slate-200 bg-slate-500/20 border-slate-400/30', dot: 'bg-slate-400' },
-};
-const LOS_CLS: Record<string, string> = { A: 'text-emerald-300', B: 'text-emerald-300', C: 'text-lime-300', D: 'text-amber-300', E: 'text-orange-300', F: 'text-rose-300' };
 const fmt = (n: number) => Math.round(n).toLocaleString();
-const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Progress / error / stale states shared by both tabs; null when a result is ready to show. */
 const AnalysisGate: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
@@ -51,7 +46,37 @@ const AnalysisGate: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   return null;
 };
 
-export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () => void }> = ({ sim, goImprove }) => {
+/** The panel's actions on the engine, for the engine-free pieces. */
+const useActions = (): AnalysisActions => {
+  const mode = engineInstance.simMode;
+  return {
+    hoverDirection: i => mode.hoverDirection(i),
+    pinDirection: i => mode.pinDirection(i, true),
+    flyTo: c => mode.flyTo(c),
+    setOverlay: o => mode.setOverlay(o),
+    editInBuild: (ids, at) => engineInstance.editInBuild(ids, at),
+  };
+};
+
+/** Small source badges: where the demand comes from, and that speeds and delays are simulated. */
+const DataBadges: React.FC<{ r: RoadAnalysisResult; proposal: boolean }> = ({ r, proposal }) => {
+  const demand = r.evidence.demand;
+  return (
+    <>
+      {proposal && <ProposalBadge />}
+      {demand && (
+        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" title={demand.source === 'calibrated' ? 'Demand fitted to traffic counts' : 'Demand estimated, not counted'}>
+          demand <SourceBadge source={sourceOf(demand.source)} />
+        </span>
+      )}
+      <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">speeds <SourceBadge source="simulated" /></span>
+    </>
+  );
+};
+
+export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () => void; goDetails?: () => void }> = ({ sim, goImprove, goDetails }) => {
+  const actions = useActions();
+  const heading = useCameraHeading();
   const gate = <AnalysisGate sim={sim} />;
   const out = sim.analysis.output;
   if (!out) return gate;
@@ -59,218 +84,77 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const stale = sim.analysis.status === 'running';
   const hour = sim.analysis.hour ?? sim.timeOfDay.hour;
   const period = DAY_PERIODS.find(p => p.id === periodOfHour(hour))?.label ?? hourLabel(hour);
+  const suggestions = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
   return (
     <div className={`space-y-5 ${stale ? 'opacity-60' : ''}`} data-testid="understand-view">
-      {sim.comparison.showingProposal && <ProposalBadge />}
-      <StatusCard r={r} period={period} hour={hour} sim={sim} />
-      <Directions r={r} focus={sim.directionFocus} />
-      <Cause r={r} overlay={sim.overlay} />
+      <StatusHeader r={r} when={`${period} · ${hourLabel(hour)} ${sim.timeOfDay.day}`} badges={<DataBadges r={r} proposal={sim.comparison.showingProposal} />} />
+      <WorstKpis r={r} />
+      <DirectionsGrid r={r} heading={heading} focus={sim.directionFocus} actions={actions} />
+      <WhyCard r={r} overlay={sim.overlay} actions={actions} />
+      <LoadCard r={r} />
       <Measured sim={sim} r={r} />
-      <TrafficSources r={r} overlay={sim.overlay} />
-      <AreaHotspots r={r} overlay={sim.overlay} />
-      {r.load.message && <Notice tone="warn" icon={AlertTriangle}>{r.load.message}</Notice>}
-      <Button variant="primary" className="w-full" onClick={goImprove}>Next: what could be improved →</Button>
-    </div>
-  );
-};
-
-const StatusCard: React.FC<{ r: RoadAnalysisResult; period: string; hour: number; sim: SimulationModeState }> = ({ r, period, hour, sim }) => {
-  const s = STATUS[r.status];
-  const demand = r.evidence.demand;
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-2.5" data-testid="road-status" data-status={r.status}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm font-semibold ${s.cls}`}><span className={`h-2 w-2 rounded-full ${s.dot}`} />{s.label}</span>
-        <span className="text-xs text-slate-400">{period} · {hourLabel(hour)} {sim.timeOfDay.day}</span>
-      </div>
-      <p className="text-sm text-slate-100 leading-snug">{r.headline}</p>
-      <div className="flex flex-wrap gap-1.5 items-center text-[11px]">
-        <span className={`rounded-md border px-1.5 py-px ${r.statusConsistent ? 'border-white/10 text-slate-400' : 'border-amber-400/40 text-amber-200'}`} data-testid="status-consistency">
-          {r.statusConsistent ? `Same in all ${r.seeds.length} runs` : `Runs disagree: ${r.statusBySeed.map(x => STATUS_WORD[x]).join(' / ')}`}
-        </span>
-        {demand && <SourceBadge source={sourceOf(demand.source)} />}
-        <span className="text-slate-500">demand {demand?.source === 'calibrated' ? 'fitted to counts' : 'estimated, not counted'}</span>
-      </div>
-    </section>
-  );
-};
-
-const VcBar: React.FC<{ vc: number }> = ({ vc }) => (
-  <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden" title={`${Math.round(vc * 100)}% of capacity`}>
-    <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.round(vc * 100))}%`, background: VC_BANDS.find(b => vc <= b.max)!.css }} />
-  </div>
-);
-
-const Directions: React.FC<{ r: RoadAnalysisResult; focus: SimulationModeState['directionFocus'] }> = ({ r, focus }) => {
-  const heading = useCameraHeading();
-  const active = focus.hover ?? focus.pinned;
-  return (
-    <Section title="Each direction" aside={`${r.seeds.length} runs, mean`}>
-      <div className="space-y-2" data-testid="directions">
-        {r.directions.map((d, i) => <DirectionCard key={d.label} d={d} index={i} heading={heading} active={active === i} dimmed={active !== null && active !== i} pinned={focus.pinned === i} />)}
-      </div>
-      <p className="text-[11px] text-slate-500">Arrows on the map show each direction in its colour; the arrow by each name points the way it runs on screen now. Click one to pick it out on the map.</p>
-    </Section>
-  );
-};
-
-/** Swatch and arrow for a direction: the arrow points the way it runs on screen for the current camera heading. */
-const DirectionGlyph: React.FC<{ index: number; bearingDeg: number; heading: number }> = ({ index, bearingDeg, heading }) => {
-  const rot = screenArrowDeg(bearingDeg, heading);
-  return (
-    <span className="relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ background: `${directionColor(index)}26`, boxShadow: `inset 0 0 0 1.5px ${directionColor(index)}` }} data-testid="direction-glyph" data-rotation={Math.round(rot)}>
-      <ArrowUp size={14} strokeWidth={2.75} style={{ color: directionColor(index), transform: `rotate(${rot}deg)` }} aria-hidden />
-    </span>
-  );
-};
-
-const DirectionCard: React.FC<{ d: DirectionFlow; index: number; heading: number; active: boolean; dimmed: boolean; pinned: boolean }> = ({ d, index, heading, active, dimmed, pinned }) => {
-  const mode = engineInstance.simMode;
-  const labelDeg = d.labelBearingDeg ?? d.bearingDeg;
-  const compass = d.compass ?? compassWord(labelDeg);
-  return (
-  <div
-    role="button" tabIndex={0} aria-pressed={pinned}
-    data-testid="direction-card" data-direction={index} data-active={active ? 'true' : 'false'}
-    title={pinned ? 'Click again to show both directions alike' : 'Click to pick this direction out on the map and fly to it'}
-    onMouseEnter={() => mode.hoverDirection(index)} onMouseLeave={() => mode.hoverDirection(null)}
-    onFocus={() => mode.hoverDirection(index)} onBlur={() => mode.hoverDirection(null)}
-    onClick={() => mode.pinDirection(index, true)}
-    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mode.pinDirection(index, true); } }}
-    className={`rounded-xl border p-2.5 space-y-1.5 cursor-pointer transition ${active ? 'bg-white/[0.06]' : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.05]'} ${dimmed ? 'opacity-60' : ''}`}
-    style={active ? { borderColor: directionColor(index) } : undefined}
-  >
-    <div className="flex items-start justify-between gap-2">
-      <div className="flex items-start gap-2 min-w-0">
-        <DirectionGlyph index={index} bearingDeg={labelDeg} heading={heading} />
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-white leading-tight" data-testid="direction-title">{capital(compass)}<span className="text-slate-500 font-normal tabular-nums" title="Compass bearing of travel (on a road with two opposite directions, the axis they share)"> · {Math.round(labelDeg)}°</span></div>
-          {d.towards && <div className="text-[11px] text-slate-400 leading-tight truncate" data-testid="direction-landmark" title={d.towards.kind === 'into' ? 'The named road this direction carries on into' : 'The main road this direction meets at its end'}>{landmarkPhrase(d.towards)}</div>}
-        </div>
-      </div>
-      <span className="text-xs text-slate-400 shrink-0">level of service <strong className={`text-sm ${LOS_CLS[d.los ?? ''] ?? 'text-slate-300'}`}>{d.los ?? '—'}</strong></span>
-    </div>
-    <div className="grid grid-cols-3 gap-2 text-xs">
-      <div><div className="text-slate-500">Speed</div><div className="text-slate-100 tabular-nums">{d.meanSpeedKmh === null ? '—' : `${Math.round(d.meanSpeedKmh)} km/h`}</div><div className="text-[11px] text-slate-500">free-flow {Math.round(d.freeSpeedKmh)}</div></div>
-      <div><div className="text-slate-500">Traffic</div><div className="text-slate-100 tabular-nums">{fmt(d.vph)} veh/h</div><div className="text-[11px] text-slate-500">{fmt(d.demandVph)} routed here</div></div>
-      <div><div className="text-slate-500">Time to drive it</div><div className="text-slate-100 tabular-nums">{d.travelTimeS === null ? '—' : `${Math.round(d.travelTimeS)} s`}</div><div className="text-[11px] text-slate-500">{Math.round(d.freeTimeS)} s free-flow</div></div>
-    </div>
-    <div className="space-y-0.5">
-      <VcBar vc={d.vc} />
-      <p className="text-[11px] text-slate-500">{Math.round(d.vc * 100)}% of capacity ({fmt(d.capacityPcu)} PCU/h {d.capacityBasis === 'signal' ? 'at the signal at its end' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}`})</p>
-      {(d.los === 'E' || d.los === 'F') && d.vc < 0.85 && (
-        <p className="text-[11px] text-amber-200/90" data-testid="slow-below-capacity">Slow although the road itself has room: the hold-up is further on, not its width (see Why).</p>
+      <SourcesCard r={r} overlay={sim.overlay} actions={actions} />
+      <BottlenecksCard r={r} overlay={sim.overlay} actions={actions} />
+      {suggestions.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">What to try</h3>
+            <span className="text-[11px] text-slate-500">options to test, not results</span>
+          </div>
+          <ul className="space-y-2" data-testid="suggestions-preview">
+            {suggestions.slice(0, 3).map(s => <SuggestionCard key={s.title} s={s} onTest={goImprove} actions={actions} />)}
+          </ul>
+        </section>
       )}
-    </div>
-  </div>
-  );
-};
-
-const DelayBar: React.FC<{ d: NonNullable<DirectionFlow['delay']> }> = ({ d }) => {
-  const parts = [
-    { k: 'Waiting at a signal', v: d.signal, c: '#60a5fa' },
-    { k: 'Stopped behind a queue from further on', v: d.blocked, c: '#f43f5e' },
-    { k: 'Giving way / crossing traffic', v: d.giveWay + d.conflict, c: '#facc15' },
-    { k: 'Slow in moving traffic', v: d.other, c: '#94a3b8' },
-  ];
-  const total = Math.max(1e-9, d.total);
-  return (
-    <div className="space-y-1">
-      <div className="flex h-2 rounded-full overflow-hidden bg-white/10">{parts.map(p => <div key={p.k} style={{ width: `${(100 * p.v) / total}%`, background: p.c }} title={`${p.k}: ${Math.round(p.v)} s`} />)}</div>
-      <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">{parts.map(p => <li key={p.k} className="flex items-center gap-1 whitespace-nowrap"><span className="h-2 w-2 rounded-full shrink-0" style={{ background: p.c }} />{p.k}: <span className="text-slate-200 tabular-nums">{Math.round(p.v)} s</span></li>)}</ul>
-    </div>
-  );
-};
-
-const Cause: React.FC<{ r: RoadAnalysisResult; overlay: string }> = ({ r, overlay }) => {
-  const mode = engineInstance.simMode;
-  const worst = [...r.directions].sort((a, b) => (b.delay?.total ?? 0) - (a.delay?.total ?? 0))[0];
-  return (
-    <Section title="Why" aside={worst?.delay ? `delay ${Math.round(worst.delay.total)} s per vehicle, ${worst.label}` : undefined}>
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-2" data-testid="cause" data-kind={r.cause.kind}>
-        <p className={`text-sm leading-snug ${r.cause.kind === 'insufficient' ? 'text-amber-100' : 'text-slate-100'}`}>{r.cause.kind === 'insufficient' && <Search size={13} className="inline mr-1 -mt-0.5" />}{r.cause.text || 'No delay worth explaining.'}</p>
-        {worst?.delay && worst.delay.total > 3 && <DelayBar d={worst.delay} />}
-        {r.cause.chain?.root && <Button size="sm" icon={MapIcon} variant={overlay === 'cause' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'cause' ? 'none' : 'cause')}>{overlay === 'cause' ? 'Hide the queue on the map' : 'Show the queue on the map'}</Button>}
-        {r.reasons.length > 0 && (
-          <ul className="space-y-1 text-xs text-slate-400 leading-snug list-disc pl-4">{r.reasons.map((x, i) => <li key={i}>{x}</li>)}</ul>
-        )}
+      <div className="space-y-2">
+        <PerRunDetail r={r} />
+        <MethodNote onDetails={goDetails} />
       </div>
-    </Section>
+      <Button variant="primary" className="w-full" onClick={goImprove}>Next: improve &amp; compare →</Button>
+    </div>
   );
 };
 
-/** Measured traffic on this road, where a published count exists. */
+/** Measured traffic on this road, where a published count exists: counted, routed and got through as bars. */
 const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = ({ sim, r }) => {
   const ids = new Set((sim.section?.roadIds ?? sim.seedRoadIds).map(id => Number(/^osm_(\d+)/.exec(id)?.[1])));
   const checks = screenlineChecks(sim.screenlines, r, sim.analysis.hour).filter(c => c.station.osmWays.some(w => ids.has(w)));
   if (!checks.length) return null;
   const c = checks[0], src = sim.screenlines!.source;
   const ratio = c.station.peakVehicles > 0 ? c.modelVph / c.station.peakVehicles : 0;
+  const far = ratio < 0.5 || ratio > 2;
+  const max = Math.max(1, c.station.peakVehicles, c.modelVph, c.simulatedVph ?? 0);
+  const rows: { k: string; v: number; color: string; badge: React.ReactNode; title: string }[] = [
+    { k: 'Counted', v: c.station.peakVehicles, color: '#34d399', badge: <SourceBadge source="observed" />, title: `${fmt(c.station.peakVehicles)} veh/h both directions, ${c.station.peakHour} (${src.surveyYear} count)` },
+    { k: 'Model routes', v: c.modelVph, color: '#a78bfa', badge: null, title: `The area routing at ${hourLabel(sim.analysis.hour ?? 0)}` },
+    ...(c.simulatedVph !== null ? [{ k: 'Got through', v: c.simulatedVph, color: '#818cf8', badge: <SourceBadge source="simulated" />, title: 'What got through in the simulation' }] : []),
+  ];
   return (
-    <Section title="Counted traffic on this road">
-      <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3 space-y-1.5 text-xs" data-testid="measured">
-        <p className="text-sm text-emerald-50"><SourceBadge source="observed" /> {fmt(c.station.peakVehicles)} veh/h both directions, {c.station.peakHour} ({src.surveyYear} count)</p>
-        <p className="text-slate-300">The model routes {fmt(c.modelVph)} veh/h over it at {hourLabel(sim.analysis.hour ?? 0)}{c.simulatedVph !== null ? ` (${fmt(c.simulatedVph)} got through in the simulation)` : ''}: {Math.round(100 * ratio)}% of the count{c.sameHour ? '' : ', at a different hour than the count'}.</p>
-        {(ratio < 0.5 || ratio > 2) && <p className="text-amber-200">The model's volume here is far from the counted one, so its volumes and level of service on this road should not be relied on. The likely reason is the demand estimate (trips to and from the area are missing or misplaced), not the road itself.</p>}
-        {!c.station.comparable && <p className="text-slate-400">{c.station.note}</p>}
-        <p className="text-slate-500">{src.title}, {src.tables}. The count is from {src.surveyYear}; traffic has changed since.</p>
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Counted traffic on this road</h3>
+        <Chip tone={far ? 'warn' : 'good'} title="Model's routed volume as a share of the count">{Math.round(100 * ratio)}% of count</Chip>
       </div>
-    </Section>
-  );
-};
-
-const TrafficSources: React.FC<{ r: RoadAnalysisResult; overlay: string }> = ({ r, overlay }) => {
-  const mode = engineInstance.simMode;
-  const through = Math.round(100 * r.composition.throughShare);
-  return (
-    <Section title="Where its traffic comes from and goes">
-      <div className="space-y-2">
-        <div className="space-y-1">
-          <div className="flex h-2 rounded-full overflow-hidden bg-white/10"><div className="bg-violet-400" style={{ width: `${through}%` }} /><div className="bg-cyan-400" style={{ width: `${100 - through}%` }} /></div>
-          <p className="text-xs text-slate-400"><span className="text-violet-300">{through}% passing through</span> the area · <span className="text-cyan-300">{100 - through}% starting or ending</span> inside it</p>
-        </div>
-        <PlaceList title="Comes from" icon={ArrowDownRight} places={r.origins} />
-        <PlaceList title="Goes to" icon={ArrowUpRight} places={r.destinations} />
-        <Button size="sm" icon={MapIcon} variant={overlay === 'select-link' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'select-link' ? 'none' : 'select-link')}>{overlay === 'select-link' ? 'Hide routes' : 'Show its routes on the map'}</Button>
-      </div>
-    </Section>
-  );
-};
-
-const PlaceList: React.FC<{ title: string; icon: typeof ArrowDownRight; places: RoadAnalysisResult['origins'] }> = ({ title, icon: Icon, places }) => (
-  <div>
-    <p className="text-xs font-semibold text-slate-400 flex items-center gap-1"><Icon size={12} />{title}</p>
-    <ul className="mt-1 space-y-0.5">
-      {places.slice(0, 3).map(p => (
-        <li key={p.label} className="flex items-center justify-between gap-2 text-xs">
-          <button className="text-left text-slate-300 hover:text-white truncate cursor-pointer" onClick={() => engineInstance.simMode.flyTo(p.coordinates)}>{p.label}</button>
-          <span className="tabular-nums text-slate-400 shrink-0">{Math.round(p.share * 100)}%</span>
-        </li>
-      ))}
-    </ul>
-  </div>
-);
-
-const AreaHotspots: React.FC<{ r: RoadAnalysisResult; overlay: string }> = ({ r, overlay }) => {
-  const mode = engineInstance.simMode;
-  return (
-    <Section title="Worst places in the wider area" aside={`${r.assignment.overCapacityLinks} stretches over capacity`}>
-      {r.areaBottlenecks.length === 0 ? <p className="text-xs text-slate-400">No road in the area is over 90% of its capacity at this hour.</p> : (
-        <ol className="space-y-1">
-          {r.areaBottlenecks.slice(0, 4).map((b, i) => (
-            <li key={b.label} className="flex items-center justify-between gap-2 text-xs">
-              <button className="text-left text-slate-300 hover:text-white cursor-pointer truncate" onClick={() => mode.flyTo(b.coordinates)}>{i + 1}. {b.label}</button>
-              <span className="tabular-nums text-rose-300 shrink-0">{Math.round(b.vc * 100)}%</span>
+      <Card testId="measured" tone="good">
+        <ul className="space-y-1.5">
+          {rows.map(x => (
+            <li key={x.k} className="grid grid-cols-[6.5rem_1fr_auto] items-center gap-2 text-[11px]" title={x.title}>
+              <span className="text-slate-400 flex items-center gap-1 whitespace-nowrap">{x.k}{x.badge}</span>
+              <Meter value={x.v} max={max} color={x.color} height="md" />
+              <span className="tabular-nums text-slate-200">{fmt(x.v)}</span>
             </li>
           ))}
-        </ol>
-      )}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button size="sm" icon={Gauge} variant={overlay === 'area-vc' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'area-vc' ? 'none' : 'area-vc')}>{overlay === 'area-vc' ? 'Hide load map' : 'Show how full every road is'}</Button>
-        {overlay === 'area-vc' && <span className="flex flex-wrap gap-x-2 text-[11px] text-slate-400">{VC_BANDS.map(b => <span key={b.label} className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: b.css }} />{b.label}</span>)}</span>}
-      </div>
-      <p className="text-[11px] text-slate-500">From routing all of the area's demand (volume over capacity per stretch). Queues are not modelled at this level; the selected road's neighbourhood is simulated for that.</p>
-    </Section>
+        </ul>
+        <p className="text-[11px] text-slate-500">veh/h, both directions · count {c.station.peakHour}, {src.surveyYear}{c.sameHour ? '' : ' · different hour than the model'}</p>
+        {far && <p className="text-[11px] text-amber-200 flex items-center gap-1"><AlertTriangle size={12} />Far from the count: don't rely on this road's volumes and LOS.</p>}
+        <Disclosure title="Source and caveats" tone="subtle">
+          <p>The model routes {fmt(c.modelVph)} veh/h over it at {hourLabel(sim.analysis.hour ?? 0)}{c.simulatedVph !== null ? ` (${fmt(c.simulatedVph)} got through in the simulation)` : ''}: {Math.round(100 * ratio)}% of the count{c.sameHour ? '' : ', at a different hour than the count'}.</p>
+          {far && <p className="text-amber-200/90">The model's volume here is far from the counted one, so its volumes and level of service on this road should not be relied on. The likely reason is the demand estimate (trips to and from the area are missing or misplaced), not the road itself.</p>}
+          {!c.station.comparable && <p>{c.station.note}</p>}
+          <p>{src.title}, {src.tables}. The count is from {src.surveyYear}; traffic has changed since.</p>
+        </Disclosure>
+      </Card>
+    </section>
   );
 };
 
@@ -280,76 +164,76 @@ export const ImproveView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => 
   const out = sim.analysis.output;
   return (
     <div className="space-y-5" data-testid="improve-view">
+      {sim.comparison.showingProposal && <ProposalBadge />}
+      <ScenarioTest sim={sim} />
       {out ? <Suggestions r={out.result} sim={sim} /> : <AnalysisGate sim={sim} />}
       <TimesOfDay sim={sim} />
-      <ScenarioTest sim={sim} />
     </div>
   );
 };
 
 const Suggestions: React.FC<{ r: RoadAnalysisResult; sim: SimulationModeState }> = ({ r, sim }) => {
+  const actions = useActions();
   const list = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
   return (
-    <Section title="What to try, and why">
+    <section className="space-y-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">What to try</h3>
+        <span className="text-[11px] text-slate-500">test each with Compare</span>
+      </div>
       <ul className="space-y-2" data-testid="suggestions">
-        {list.map(s => (
-          <li key={s.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-1">
-            <p className="text-sm font-medium text-white">{s.title}</p>
-            <p className="text-xs text-slate-300 leading-snug"><span className="text-slate-500">Evidence: </span>{s.evidence}</p>
-            <p className="text-xs text-slate-400 leading-snug">{s.why}</p>
-            {s.action && <Button size="sm" variant="ghost" icon={Hammer} onClick={() => engineInstance.editInBuild(s.action!.roadIds, s.action!.at)}>{s.action.label}</Button>}
-          </li>
-        ))}
+        {list.map(s => <SuggestionCard key={s.title} s={s} full actions={actions} />)}
       </ul>
-      <p className="text-[11px] text-slate-500">These are options to test with the comparison below, not results.</p>
-    </Section>
+    </section>
   );
 };
 
 const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
   const tl = sim.timeline;
+  const maxVph = Math.max(1, ...tl.rows.map(r => r.result?.totalVph ?? 0));
   return (
-    <Section title="Through the day">
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-2" data-testid="timeline">
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3>
+      <Card testId="timeline">
         {tl.status !== 'running' && tl.rows.every(r => !r.result) && <p className="text-xs text-slate-400">Analyse the road at the morning peak, midday, the evening peak and night, on the same network, to see when it is a problem.</p>}
         <div className="flex gap-2 items-center">
           <Button size="sm" icon={tl.status === 'running' ? Loader2 : Clock} spin={tl.status === 'running'} disabled={tl.status === 'running'} onClick={() => void mode.runTimeline()}>{tl.rows.some(r => r.result) ? 'Run again' : 'Compare times of day'}</Button>
           {tl.status === 'running' && <><span className="text-xs text-slate-400 tabular-nums">{Math.round(tl.progress * 100)}%</span><Button size="sm" variant="ghost" onClick={() => mode.cancelTimeline()}>Stop</Button></>}
         </div>
         {tl.rows.some(r => r.result) && (
-          <table className="w-full text-xs tabular-nums">
-            <thead><tr className="text-slate-500 whitespace-nowrap"><th className="text-left font-medium">Period</th><th className="text-right font-medium pl-2" title="Vehicles per hour routed over the whole area">Area veh/h</th><th className="text-right font-medium pl-3" title="Vehicles per hour through the road, both directions">Road veh/h</th><th className="text-right font-medium pl-2" title="Mean speed of the busier direction">km/h</th><th className="text-right font-medium pl-2">Status</th></tr></thead>
-            <tbody>{tl.rows.map(row => {
+          <ul className="space-y-1.5" data-testid="timeline-rows">
+            {tl.rows.map(row => {
               const r = row.result, top = r?.directions[0];
               return (
-                <tr key={row.period} className="border-t border-white/5">
-                  <td className="py-1 text-slate-300">{row.label} <span className="text-slate-500">{hourLabel(row.hour)}</span></td>
-                  <td className="text-right pl-2">{r ? fmt(row.demandVph) : '…'}</td>
-                  <td className="text-right pl-3">{r ? fmt(r.totalVph) : ''}</td>
-                  <td className="text-right">{top?.meanSpeedKmh ? `${Math.round(top.meanSpeedKmh)}` : r ? '—' : ''}</td>
-                  <td className="text-right pl-2 whitespace-nowrap">{r ? <span className={`inline-flex items-center gap-1 rounded px-1 ${STATUS[r.status].cls}`}><span className={`h-1.5 w-1.5 rounded-full ${STATUS[r.status].dot}`} />{STATUS[r.status].short}</span> : ''}</td>
-                </tr>
+                <li key={row.period} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-2 text-[11px]" title={r ? `${row.label}, ${hourLabel(row.hour)}: ${fmt(row.demandVph)} veh/h routed over the whole area; ${fmt(r.totalVph)} veh/h through the road (both directions); busier direction ${top?.meanSpeedKmh ? `${Math.round(top.meanSpeedKmh)} km/h` : 'no speed'}` : undefined}>
+                  <span className="text-slate-300 truncate">{row.label} <span className="text-slate-500">{hourLabel(row.hour)}</span></span>
+                  <div className="space-y-0.5">
+                    <Meter value={r?.totalVph ?? 0} max={maxVph} color={r ? TONE_FILL[STATUS[r.status].tone] : '#334155'} height="sm" />
+                    <div className="flex justify-between tabular-nums text-slate-500"><span>{r ? `${fmt(r.totalVph)} veh/h` : '…'}</span><span>{top?.meanSpeedKmh ? `${Math.round(top.meanSpeedKmh)} km/h` : r ? '—' : ''}</span></div>
+                  </div>
+                  <span className="justify-self-end">{r ? <StatusChip status={r.status} short /> : ''}</span>
+                </li>
               );
-            })}</tbody>
-          </table>
+            })}
+          </ul>
         )}
         {tl.status === 'error' && <p className="text-xs text-rose-300">{tl.error}</p>}
         {(() => { const am = tl.rows.find(r => r.period === 'am'), pm = tl.rows.find(r => r.period === 'pm');
           return am?.result && pm?.result && Math.abs(am.demandVph - pm.demandVph) < 1
-            ? <p className="text-[11px] text-amber-200/90" data-testid="peaks-identical">The morning and evening peaks carry the same estimated demand here, so their results match: the traffic crossing the area's edge is estimated per lane from counts, without a morning or evening direction pattern (see Details). Real tidal flows would make them differ.</p>
+            ? <div className="text-[11px] text-amber-200/90 space-y-1" data-testid="peaks-identical"><p className="flex items-center gap-1"><AlertTriangle size={12} />Morning and evening peaks match: same estimated demand.</p><InfoToggle label="Why"><p>The morning and evening peaks carry the same estimated demand here, so their results match: the traffic crossing the area's edge is estimated per lane from counts, without a morning or evening direction pattern (see Details). Real tidal flows would make them differ.</p></InfoToggle></div>
             : null; })()}
-        {tl.rows.some(r => r.result) && <p className="text-[11px] text-slate-500">One run per period (seed 42): differences under about 10% are within run-to-run noise. Each period is analysed on its own, from a warm-up; speed is the busier direction's. Pick a period above to see it in full.</p>}
-      </div>
-    </Section>
+        {tl.rows.some(r => r.result) && <InfoToggle label="How to read this"><p>Bars: vehicles per hour through the road (both directions); speed is the busier direction's. Area veh/h per period is in each row's tooltip. One run per period (seed 42): differences under about 10% are within run-to-run noise. Each period is analysed on its own, from a warm-up. Pick a period above to see it in full.</p></InfoToggle>}
+      </Card>
+    </section>
   );
 };
 
-const VERDICT: Record<Verdict, { label: string; cls: string; icon: typeof TrendingUp }> = {
-  better: { label: 'Better', cls: 'text-emerald-200 bg-emerald-500/15 border-emerald-400/30', icon: TrendingUp },
-  worse: { label: 'Worse', cls: 'text-rose-200 bg-rose-500/15 border-rose-400/30', icon: TrendingDown },
-  mixed: { label: 'Mixed', cls: 'text-amber-200 bg-amber-500/15 border-amber-400/30', icon: Route },
-  no_change: { label: 'No clear change', cls: 'text-slate-200 bg-slate-500/20 border-slate-400/30', icon: Minus },
+const VERDICT: Record<Verdict, { label: string; tone: Tone; icon: typeof TrendingUp }> = {
+  better: { label: 'Better', tone: 'good', icon: TrendingUp },
+  worse: { label: 'Worse', tone: 'bad', icon: TrendingDown },
+  mixed: { label: 'Mixed', tone: 'warn', icon: Route },
+  no_change: { label: 'No clear change', tone: 'neutral', icon: Minus },
 };
 
 /** Existing city against a proposal on the same frozen demand, hour and seeds. */
@@ -357,14 +241,24 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
   const mode = engineInstance.simMode;
   const { baseline, result, staleReason, running, progress, demandChanged } = sim.comparison;
   const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
+  const steps = [
+    { n: 1, label: 'Save existing city', done: !!baseline, title: baseline ? `Saved at ${hourLabel(baseline.hour)}, ${fmt(baseline.demandVph)} veh/h of demand` : 'Save the existing city as the baseline' },
+    { n: 2, label: 'Edit in Build', done: false, title: 'Change roads, junctions or signals in Build' },
+    { n: 3, label: 'Compare', done: !!result, title: `The same trips, hour and ${mode.analysisSeeds.length} seeds on both` },
+  ];
   return (
-    <Section title="Test a change">
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Before vs after</h3>
       <div className="rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/10 to-slate-900/50 p-3 space-y-2.5" data-testid="scenario-test">
-        <ol className="space-y-1 text-xs text-slate-300">
-          <li className={baseline ? 'text-emerald-300' : ''}>{baseline ? <CheckCircle2 size={12} className="inline mr-1" /> : '1. '}Save the existing city {baseline ? `(at ${hourLabel(baseline.hour)}, ${fmt(baseline.demandVph)} veh/h of demand)` : ''}</li>
-          <li>2. Change roads, junctions or signals in Build</li>
-          <li>3. Compare: the same trips, hour and {mode.analysisSeeds.length} seeds on both</li>
+        <ol className="grid grid-cols-3 gap-1.5 text-[11px]">
+          {steps.map(s => (
+            <li key={s.n} title={s.title} className={`flex items-center gap-1.5 rounded-lg border px-1.5 py-1 ${s.done ? 'border-emerald-400/30 text-emerald-200' : 'border-white/10 text-slate-300'}`}>
+              {s.done ? <CheckCircle2 size={12} className="shrink-0" /> : <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px]">{s.n}</span>}
+              <span className="leading-tight">{s.label}</span>
+            </li>
+          ))}
         </ol>
+        {baseline && <p className="text-[11px] text-slate-500">Baseline: {hourLabel(baseline.hour)}, {fmt(baseline.demandVph)} veh/h of demand · {mode.analysisSeeds.length} seeds on both</p>}
         <div className="flex gap-2 flex-wrap">
           <Button size="sm" icon={running && !baseline ? Loader2 : Flag} spin={running && !baseline} disabled={busy} onClick={() => void mode.captureBaseline()}>{baseline ? 'Save again' : 'Save existing city'}</Button>
           <Button size="sm" variant="primary" icon={running && baseline ? Loader2 : GitCompareArrows} spin={running && !!baseline} disabled={busy || !baseline} onClick={() => void mode.runComparison()}>Compare</Button>
@@ -378,50 +272,93 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
         )}
         {result && <ComparisonView c={result} overlay={sim.overlay} />}
       </div>
-    </Section>
+    </section>
   );
 };
 
+/** A road's load before and after, as two bars on one scale with the 100% line. */
 const RoadChanges: React.FC<{ title: string; rows: RoadChange[]; tone: 'good' | 'bad' }> = ({ title, rows, tone }) => rows.length === 0 ? null : (
-  <div>
-    <p className={`text-xs font-semibold ${tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}`}>{title}</p>
-    <ul className="mt-1 space-y-0.5">{rows.map(x => <li key={x.roadName} className="flex justify-between text-xs gap-2"><span className="text-slate-300 truncate">{x.roadName}</span><span className="tabular-nums text-slate-400 shrink-0">{Math.round(x.vcBefore * 100)}% → <span className={tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}>{Math.round(x.vcAfter * 100)}%</span> of capacity</span></li>)}</ul>
+  <div className="space-y-1.5">
+    <p className={`text-[11px] font-semibold ${tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}`}>{title}</p>
+    <ul className="space-y-1.5">{rows.map(x => (
+      <li key={x.roadName} className="space-y-0.5" title={`${x.roadName}: ${Math.round(x.vcBefore * 100)}% → ${Math.round(x.vcAfter * 100)}% of capacity on its busiest stretch`}>
+        <div className="flex justify-between gap-2 text-[11px]"><span className="text-slate-300 truncate">{x.roadName}</span><span className="tabular-nums text-slate-400 shrink-0">{Math.round(x.vcBefore * 100)}% → <span className={tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}>{Math.round(x.vcAfter * 100)}%</span></span></div>
+        <div className="space-y-px"><Meter value={Math.min(1.5, x.vcBefore)} max={1.5} marker={1} color="#64748b" height="xs" /><Meter value={Math.min(1.5, x.vcAfter)} max={1.5} marker={1} color={tone === 'good' ? '#34d399' : '#f43f5e'} height="xs" /></div>
+      </li>
+    ))}</ul>
   </div>
 );
+
+const LEVEL_KPI: Record<string, string> = { 'Time to drive it': 'Time to drive', 'Speed on it': 'Speed', 'Worst junction delay at its ends': 'End junction delay', 'Traffic through the road': 'Traffic through' };
 
 const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c, overlay }) => {
   const mode = engineInstance.simMode;
   const v = VERDICT[c.verdict.overall];
+  const kpis = ['Time to drive it', 'Speed on it', 'Worst junction delay at its ends', 'Traffic through the road'].map(l => c.section.find(d => d.label === l)).filter((d): d is NonNullable<typeof d> => !!d);
+  const otherSection = c.section.filter(d => !kpis.includes(d));
+  const sim = [...c.section, ...c.network].filter(d => d.agreement && d.change !== null && Math.abs(d.change) >= 0.05);
+  const agreeing = sim.filter(d => d.agreement!.same === d.agreement!.of).length;
+  const maxShift = Math.max(1, ...c.rerouting.map(x => Math.abs(x.change)));
   return (
     <div className="space-y-3 pt-1" data-testid="comparison-result" data-verdict={c.verdict.overall}>
-      {c.kind === 'development' && <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300">Development scenario: demand changed too</p>}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-semibold ${v.cls}`}><v.icon size={14} />{v.label}</span>
-        <span className="text-[11px] text-slate-400">road: {VERDICT[c.verdict.section].label.toLowerCase()} · neighbourhood: {VERDICT[c.verdict.network].label.toLowerCase()} · area: {VERDICT[c.verdict.area].label.toLowerCase()}</span>
+      {c.kind === 'development' && <Chip tone="accent" className="!text-fuchsia-200 !border-fuchsia-400/40 !bg-fuchsia-500/15">Development scenario: demand changed too</Chip>}
+      <div className="rounded-xl border border-white/10 bg-slate-950/40 p-2.5 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Chip tone={v.tone} icon={v.icon} size="md" testId="verdict">{v.label}</Chip>
+          <Chip tone={c.confidence.level === 'low' ? 'warn' : c.confidence.level === 'high' ? 'good' : 'neutral'} testId="confidence" title={c.confidence.text}>Confidence: {c.confidence.level}</Chip>
+          {sim.length > 0 && <Chip tone={agreeing === sim.length ? 'neutral' : 'warn'} title="Simulated changes of 5% or more whose direction every run shows">{agreeing}/{sim.length} changes in all runs</Chip>}
+        </div>
+        <div className="grid grid-cols-3 gap-1.5" data-testid="verdict-levels">
+          {([['Road', c.verdict.section], ['Neighbourhood', c.verdict.network], ['Area', c.verdict.area]] as const).map(([k, vv]) => (
+            <div key={k} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1">
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">{k}</div>
+              <div className={`text-xs font-semibold ${TONE_TEXT[VERDICT[vv].tone]}`}>{VERDICT[vv].label}</div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-slate-300 leading-snug">{c.verdict.summary}</p>
+        <InfoToggle label="About the confidence"><p>{c.confidence.text}</p></InfoToggle>
       </div>
-      <p className="text-sm text-slate-200">{c.verdict.summary}</p>
-      <p className={`text-xs rounded-lg border px-2 py-1.5 ${c.confidence.level === 'low' ? 'border-amber-400/30 text-amber-100' : 'border-white/10 text-slate-300'}`} data-testid="confidence">Confidence: <strong>{c.confidence.level}</strong>. {c.confidence.text}</p>
-      <div className="grid grid-cols-1 gap-2">
-        <RoadChanges title="Roads that gain (less loaded)" rows={c.winners} tone="good" />
-        <RoadChanges title="Roads that lose (more loaded)" rows={c.losers} tone="bad" />
-        {c.newBottlenecks.length > 0 && <p className="text-xs text-rose-200">New bottleneck{c.newBottlenecks.length > 1 ? 's' : ''}: {c.newBottlenecks.map(b => `${b.roadName} (${Math.round(b.vc * 100)}%)`).join(', ')}</p>}
-        <Button size="sm" icon={MapIcon} variant={overlay === 'comparison' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'comparison' ? 'none' : 'comparison')}>{overlay === 'comparison' ? 'Hide changes on the map' : 'Show gains and losses on the map'}</Button>
+      <div className="grid grid-cols-2 gap-1.5" data-testid="delta-kpis">
+        {kpis.map(d => <DeltaKpi key={d.label} d={d} label={LEVEL_KPI[d.label]} />)}
       </div>
-      <p className="text-xs font-semibold text-slate-400">The selected road</p>
-      <DeltaRows rows={c.section} />
-      <p className="text-xs font-semibold text-slate-400">Its neighbourhood (simulated)</p>
-      <DeltaRows rows={c.network} />
-      <p className="text-xs font-semibold text-slate-400">The whole area (routed)</p>
-      <DeltaRows rows={c.area} />
+      {otherSection.length > 0 && <DeltaRows rows={otherSection} />}
+      {c.newBottlenecks.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 items-center"><span className="text-[11px] text-rose-200">New bottleneck{c.newBottlenecks.length > 1 ? 's' : ''}:</span>{c.newBottlenecks.map(b => <Chip key={b.label} tone="bad" title={b.label}>{b.roadName} {Math.round(b.vc * 100)}%</Chip>)}</div>
+      )}
+      <RoadChanges title="Roads that gain (less loaded)" rows={c.winners} tone="good" />
+      <RoadChanges title="Roads that lose (more loaded)" rows={c.losers} tone="bad" />
+      <Button size="sm" icon={MapIcon} variant={overlay === 'comparison' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'comparison' ? 'none' : 'comparison')}>{overlay === 'comparison' ? 'Hide changes on the map' : 'Show gains and losses on the map'}</Button>
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Its neighbourhood (simulated)</p>
+        <DeltaRows rows={c.network} />
+      </div>
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">The whole area (routed)</p>
+        <DeltaRows rows={c.area} />
+      </div>
       {c.rerouting.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-slate-400 flex items-center gap-1"><MapPin size={12} />Where traffic moved</p>
-          <ul className="mt-1 space-y-0.5">
-            {c.rerouting.slice(0, 5).map(x => <li key={x.roadName} className="flex justify-between text-xs"><span className="text-slate-300 truncate">{x.roadName}</span><span className={`tabular-nums ${x.change > 0 ? 'text-amber-300' : 'text-sky-300'}`}>{x.change > 0 ? '+' : ''}{fmt(x.change)} veh/h</span></li>)}
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-slate-400 flex items-center gap-1"><MapPin size={12} />Where traffic moved</p>
+          <ul className="space-y-1">
+            {c.rerouting.slice(0, 5).map(x => (
+              <li key={x.roadName} className="grid grid-cols-[1fr_6rem_auto] items-center gap-2 text-[11px]" title={`${x.roadName}: ${fmt(x.before)} → ${fmt(x.after)} veh/h on its busiest stretch`}>
+                <span className="text-slate-300 truncate">{x.roadName}</span>
+                <div className="relative h-1.5 rounded-full bg-white/5">
+                  <div className="absolute top-0 bottom-0 w-px bg-white/30 left-1/2" />
+                  <div className={`absolute top-0 bottom-0 rounded-full ${x.change > 0 ? 'bg-amber-400 left-1/2' : 'bg-sky-400 right-1/2'}`} style={{ width: `${(50 * Math.abs(x.change)) / maxShift}%` }} />
+                </div>
+                <span className={`tabular-nums text-right ${x.change > 0 ? 'text-amber-300' : 'text-sky-300'}`}>{x.change > 0 ? '+' : ''}{fmt(x.change)} veh/h</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}
-      {c.caveats.map((x, i) => <p key={i} className="text-[11px] text-slate-500 leading-snug">{x}</p>)}
+      {c.caveats.length > 0 && (
+        <Disclosure title="Assumptions of this comparison" testId="comparison-caveats">
+          {c.caveats.map((x, i) => <p key={i}>{x}</p>)}
+        </Disclosure>
+      )}
     </div>
   );
 };

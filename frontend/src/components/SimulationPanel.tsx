@@ -163,14 +163,14 @@ const Study: React.FC<{ sim: SimulationModeState; tab: Tab; setTab: (t: Tab) => 
         </Notice>
       )}
       {sim.error && <Notice tone="bad" icon={AlertOctagon}>{sim.error}</Notice>}
-      {area && tab === 'understand' && <UnderstandView sim={sim} goImprove={() => setTab('improve')} />}
+      {area && tab === 'understand' && <UnderstandView sim={sim} goImprove={() => setTab('improve')} goDetails={() => setTab('details')} />}
       {area && tab === 'improve' && <ImproveView sim={sim} />}
       {area && tab === 'details' && <DetailsView sim={sim} />}
     </>
   );
 };
 
-/** An optional section, closed until opened. Only used under Details. */
+/** An optional section, closed until opened (pass open to start it open). Only used under Details. */
 const Advanced: React.FC<{ title: string; children: React.ReactNode; open?: boolean }> = ({ title, children, open }) => (
   <details className="group rounded-xl border border-white/10 bg-white/[0.02]" open={open}>
     <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-300 hover:text-white list-none">
@@ -186,11 +186,11 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   if (!area) return null;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-400 leading-relaxed">Everything behind the figures: where the demand comes from, how it is checked against counts, and the model's assumptions. Nothing here is needed to read the results.</p>
-      <Advanced title="Demand: what traffic is assumed, and how sure it is" open>
+      <p className="text-xs text-slate-400 leading-relaxed">Everything behind the figures, closed until opened. Nothing here is needed to read the results.</p>
+      <Advanced title="Assumptions & data sources: the demand">
         <DemandEvidence sim={sim} />
       </Advanced>
-      <Advanced title="Checks against traffic counts">
+      <Advanced title="Checks against traffic counts (screenlines)">
         <CountChecks sim={sim} />
         <CalibrationPanel sim={sim} />
       </Advanced>
@@ -217,7 +217,7 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
         {sim.speeds && <p className="text-xs text-slate-500">Free-flow speeds: {sim.speeds.tagged.toLocaleString()} roads from their OSM speed limit, {sim.speeds.inherited.toLocaleString()} from another piece of the same road, {sim.speeds.urbanDefault.toLocaleString()} from urban defaults (at most {URBAN_SPEED_CEILING_KMH} km/h).</p>}
         <NetworkChecks problems={area.problems} provisional={osmRoads.status === 'loading'} />
       </Advanced>
-      <Advanced title="How the model works">
+      <Advanced title="How this is calculated">
         <Assumptions seeds={mode.analysisSeeds} />
       </Advanced>
     </div>
