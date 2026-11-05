@@ -16,7 +16,7 @@ import { DirectionArrows } from '../rendering/renderers/DirectionArrows';
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
-import { snapDemandPlan, contentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
+import { snapDemandPlan, contentKey, networkContentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
 import { apiGet } from '../../lib/api';
@@ -1130,7 +1130,7 @@ export class SimulationMode {
   }
 
   private currentNetworkKey() {
-    return contentKey({ roads: this.getRoads(), junctions: this.getContext().junctions, signalPoints: this.signalPoints });
+    return networkContentKey(this.getRoads(), this.getContext().junctions, this.signalPoints);
   }
 
   /** Whether the analysis on show ran on a network other than the baseline's. */

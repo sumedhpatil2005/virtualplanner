@@ -211,3 +211,8 @@ export function contentKey(value: unknown): string {
   for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
   return (hash >>> 0).toString(16);
 }
+
+/** Identifies the road network an analysis ran on (roads, junctions, mapped signals): a different key means a different network. */
+export function networkContentKey(roads: readonly unknown[], junctions: unknown, signalPoints: unknown): string {
+  return contentKey({ roads, junctions, signalPoints });
+}

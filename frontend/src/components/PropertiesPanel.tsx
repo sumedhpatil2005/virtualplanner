@@ -13,6 +13,7 @@ type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
+import { roadFieldUpdates } from '../engine/editing/roadEdits';
 
 /** Build mode: edit the selected object. */
 export const PropertiesPanel: React.FC = () => {
@@ -140,120 +141,7 @@ export const PropertiesPanel: React.FC = () => {
       bUpdates.electricityDemand = bUpdates.population * elecFactor;
       bUpdates.parkingSpaces = Math.max(1, Math.round(floors * (usage === 'commercial' ? 8 : 2)));
     } else if (selectedObj.type === 'road') {
-      const r = selectedObj as RoadObject;
-      const rUpdates = updates as Partial<RoadObject>;
-
-      let sections = r.sections ? JSON.parse(JSON.stringify(r.sections)) : engineInstance.objects.synthesizeDefaultSections(r);
-      if (!sections || sections.length === 0) {
-        sections = engineInstance.objects.synthesizeDefaultSections(r);
-      }
-
-      const firstSection = sections[0];
-      let carriagewayA = firstSection.carriagewayA;
-      let carriagewayB = firstSection.carriagewayB;
-
-      let isOneWay = r.isOneWay;
-      let laneWidth = r.laneWidth || 3.5;
-      let hasDivider = r.hasDivider;
-      let dividerWidth = r.dividerWidth || 2.0;
-      let hasFootpath = r.hasFootpath;
-      let footpathWidth = r.footpathWidth || 1.5;
-
-      if (field === 'isOneWay') {
-        isOneWay = Boolean(value);
-        rUpdates.isOneWay = isOneWay;
-      } else if (field === 'hasDivider') {
-        hasDivider = Boolean(value);
-        rUpdates.hasDivider = hasDivider;
-      } else if (field === 'dividerWidth') {
-        dividerWidth = Number(value);
-        rUpdates.dividerWidth = dividerWidth;
-      } else if (field === 'hasFootpath') {
-        hasFootpath = Boolean(value);
-        rUpdates.hasFootpath = hasFootpath;
-      } else if (field === 'footpathWidth') {
-        footpathWidth = Number(value);
-        rUpdates.footpathWidth = footpathWidth;
-      } else if (field === 'laneWidth') {
-        laneWidth = Number(value);
-        rUpdates.laneWidth = laneWidth;
-      }
-
-      if (field === 'isOneWay') {
-        if (isOneWay) {
-          carriagewayA.direction = 'forward';
-          firstSection.carriagewayB = undefined;
-          carriagewayB = undefined;
-        } else {
-          carriagewayA.direction = 'both';
-          const defaultBwdLanes = 1;
-          firstSection.carriagewayB = {
-            direction: 'backward',
-            lanes: defaultBwdLanes,
-            laneWidth,
-            leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
-            rightRoadside: { footpathWidth: hasFootpath ? footpathWidth : 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
-          };
-          carriagewayB = firstSection.carriagewayB;
-        }
-      } else if (field === 'lanesForward') {
-        carriagewayA.lanes = Math.max(1, Number(value));
-      } else if (field === 'lanesBackward') {
-        if (isOneWay) {
-          firstSection.carriagewayB = undefined;
-          carriagewayB = undefined;
-        } else {
-          if (!carriagewayB) {
-            firstSection.carriagewayB = {
-              direction: 'backward',
-              lanes: Math.max(1, Number(value)),
-              laneWidth,
-              leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
-              rightRoadside: { footpathWidth: hasFootpath ? footpathWidth : 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
-            };
-            carriagewayB = firstSection.carriagewayB;
-          } else {
-            carriagewayB.lanes = Math.max(1, Number(value));
-          }
-        }
-      }
-
-      carriagewayA.laneWidth = laneWidth;
-      if (carriagewayB) carriagewayB.laneWidth = laneWidth;
-
-      firstSection.hasMedian = hasDivider && !isOneWay;
-      firstSection.medianWidth = firstSection.hasMedian ? dividerWidth : 0;
-
-      carriagewayA.leftRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
-      if (carriagewayB) {
-        carriagewayB.rightRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
-        carriagewayA.rightRoadside.footpathWidth = 0;
-      } else {
-        carriagewayA.rightRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
-      }
-
-      const laneCount = carriagewayA.lanes + (carriagewayB?.lanes || 0);
-      rUpdates.laneCount = laneCount;
-      rUpdates.sections = sections;
-
-      const totalLanesWidth = (carriagewayA.lanes * laneWidth) + (carriagewayB ? carriagewayB.lanes * laneWidth : 0);
-      const medianWidth = firstSection.hasMedian ? dividerWidth : 0;
-      const leftFootpath = carriagewayA.leftRoadside.footpathWidth || 0;
-      const rightFootpath = carriagewayB ? (carriagewayB.rightRoadside.footpathWidth || 0) : (carriagewayA.rightRoadside.footpathWidth || 0);
-      rUpdates.width = totalLanesWidth + medianWidth + leftFootpath + rightFootpath;
-      rUpdates.trafficCapacity = laneCount * 1000;
-
-      rUpdates.laneWidth = laneWidth;
-      rUpdates.hasDivider = hasDivider && !isOneWay;
-      rUpdates.dividerWidth = rUpdates.hasDivider ? dividerWidth : 0;
-      rUpdates.hasFootpath = hasFootpath;
-      rUpdates.footpathWidth = footpathWidth;
-
-      if (field === 'speedLimit' || field === 'trafficCapacity') {
-        (rUpdates as any)[field] = Number(value);
-      } else if (field === 'roadClass' || field === 'name') {
-        (rUpdates as any)[field] = value;
-      }
+      Object.assign(updates, roadFieldUpdates(selectedObj as RoadObject, field, value, r => engineInstance.objects.synthesizeDefaultSections(r)));
     } else if (selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') {
       const f = selectedObj as any;
       const fUpdates = updates as any;
