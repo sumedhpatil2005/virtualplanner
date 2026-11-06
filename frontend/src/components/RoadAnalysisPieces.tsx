@@ -2,7 +2,7 @@ import React from 'react';
 import {
   ArrowUp, AlertTriangle, CheckCircle2, Hammer, Map as MapIcon, MapPin, Search, Gauge, TrafficCone, Users, Signal, Construction, Split, ChevronRight, ListOrdered, Info, ArrowDownRight, ArrowUpRight,
 } from 'lucide-react';
-import { VC_BANDS, vcColour, type RoadAnalysisResult, type RoadStatus, type DirectionFlow } from '../engine/simulation/RoadAnalysis';
+import { VC_BANDS, vcColour, vcText, type RoadAnalysisResult, type RoadStatus, type DirectionFlow } from '../engine/simulation/RoadAnalysis';
 import type { MapOverlay } from '../engine/simulation/SimulationMode';
 import type { Suggestion } from '../engine/simulation/improvements';
 import { compassWord, directionColor, landmarkPhrase, screenArrowDeg } from '../engine/simulation/directions';
@@ -326,7 +326,7 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
               <div className="min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
                   <span className="text-slate-200 leading-tight line-clamp-3" data-testid="bottleneck-label" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.label}</span>
-                  <span className="tabular-nums shrink-0" style={{ color: vcColour(b.vc) }}>{Math.round(b.vc * 100)}%</span>
+                  <span className="tabular-nums shrink-0" style={{ color: vcColour(b.vc) }} title={b.demandOverCapacity ? 'Assigned demand over capacity: more traffic than this stretch can pass in the hour, not a flow that could be counted' : undefined}>{b.demandOverCapacity ? vcText(b.vc).replace('demand ', '') : `${Math.round(b.vc * 100)}%`}</span>
                 </div>
                 <Meter value={b.vc} max={vcMax} marker={1} color={vcColour(b.vc)} title={`${Math.round(b.vc * 100)}% of capacity (the line marks 100%)`} />
               </div>

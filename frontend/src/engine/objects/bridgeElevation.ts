@@ -219,9 +219,17 @@ export function bridgeGeometry(objects: Iterable<CityObject>): Map<RoadObject, B
   };
   const liftableSet = new Set(liftable);
   for (const r of structures) addArms(r, false);
+  // Heights a road that may not move holds at each of its points: an edited approach keeps the heights it had
+  // when it was edited, and a structure meeting it there starts from that height, not from 0 (docs/OVERHAUL.md §19)
+  const fixedHeight = new Map<string, number>();
   for (const r of ground) {
     addArms(r, true);
-    if (!liftableSet.has(r)) for (const p of r.coordinates) fixedGround.add(key(p));
+    if (!liftableSet.has(r)) for (const p of r.coordinates) {
+      const k = key(p);
+      fixedGround.add(k);
+      const z = p[2] || 0;
+      if (Math.abs(z) > Math.abs(fixedHeight.get(k) ?? 0)) fixedHeight.set(k, z);
+    }
   }
   // At-grade junctions (other ground roads join, not just a continuation) and roads that may not move stay at 0
   const pinned = (k: string) => fixedGround.has(k) || ((groundArms.get(k) ?? 0) >= 2 && (allArms.get(k) ?? 0) >= 3);
@@ -266,7 +274,7 @@ export function bridgeGeometry(objects: Iterable<CityObject>): Map<RoadObject, B
       const reach = Math.max(...hardDecks.map(mag)) / RAMP_GRADE;
       for (const r of approachRoads(hardDecks, groundOfKey, pinned, reach)) geo.set(r, densify(r.coordinates));
       const { links, cap } = graphOf(geo, hardSet, mag);
-      const down = dijkstra([...links.keys()].filter(pinned).map(k => [k, 0]), links);
+      const down = dijkstra([...links.keys()].filter(pinned).map(k => [k, Math.max(0, sign * (fixedHeight.get(k) ?? 0)) / RAMP_GRADE]), links);
       const up = dijkstra([...cap].map(([k, h]) => [k, -h / RAMP_GRADE]), links);
       const heightOf = (k: string) => Math.max(0, Math.min(-(up.get(k) ?? Infinity) * RAMP_GRADE, (down.get(k) ?? Infinity) * RAMP_GRADE, cap.get(k) ?? Infinity));
       geo.forEach((g, r) => out.set(r, { coordinates: g.coordinates.map(p => [p[0], p[1], heightOf(key(p))]), originalIndices: g.originalIndices }));

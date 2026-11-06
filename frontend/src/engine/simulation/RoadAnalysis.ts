@@ -128,10 +128,62 @@ export interface Bottleneck {
    * demand than the area's roads can carry across a cut (docs/OVERHAUL.md §17). Absent on older results.
    */
   noAlternativeShare?: number;
+  /**
+   * v/c above FORCED_VC: the assigned demand is more than the stretch can carry in the hour, so the figure is demand
+   * over capacity (traffic that could not pass), not a flow that could be observed (docs/OVERHAUL.md §19).
+   */
+  demandOverCapacity?: boolean;
+  /** For a stretch whose traffic is forced (no other route): the nearest main road in the area that ends without a connection. */
+  gap?: { roadName: string; title: string; coordinates: [number, number, number]; distanceM: number };
 }
 
 /** A stretch whose traffic mostly has no other route is labelled as such. */
 export const NO_ALTERNATIVE_LABEL_SHARE = 0.5;
+/**
+ * Above this v/c an assigned volume is reported as demand over capacity, not as a flow. An hour's flow past a point
+ * cannot exceed its capacity by half again (BPR then puts the stretch at 1.8x its free-flow time and rising with the
+ * fourth power); what the static assignment loads beyond that is demand the road could not serve.
+ */
+export const FORCED_VC = 1.5;
+/** A network gap this close to a forced stretch is named with it (m). */
+export const GAP_NEAR_M = 1200;
+
+/** v/c as read in the panel: a percentage while it could be a flow, demand over capacity beyond FORCED_VC. */
+export function vcText(vc: number): string {
+  return vc > FORCED_VC ? `demand ${(Math.round(vc * 10) / 10).toFixed(1)}× capacity` : `${Math.round(vc * 100)}%`;
+}
+
+/** A main road (trunk, primary, secondary, their links) in the study area that ends without connecting to anything. */
+export interface NetworkGap { roadId: string; roadName: string; title: string; kind: string; coordinates: [number, number, number] }
+
+const GAP_KINDS = new Set(['dead_end', 'one_way_trap', 'one_way_source', 'near_miss', 'open_end', 'area_edge']);
+const MAIN_HIGHWAY = /^(motorway|trunk|primary|secondary)(_link)?$/;
+
+/**
+ * Main roads in the study area that end without a connection (from the study area's network checks): a road of
+ * that class does not stop in the middle of a city, so this is a piece missing from the model (not loaded, cut at
+ * an earlier mapped-area boundary, deleted, or not joined), and traffic that needs it is forced elsewhere.
+ */
+export function networkGaps(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>): NetworkGap[] {
+  const out: NetworkGap[] = [];
+  const seen = new Set<string>();
+  for (const p of area.problems ?? []) {
+    if (!GAP_KINDS.has(p.kind)) continue;
+    for (const id of p.roadIds) {
+      const r = roads.get(id);
+      if (r?.type !== 'road') continue;
+      const hw = r.osmProvenance?.originalTags?.highway;
+      const main = hw ? MAIN_HIGHWAY.test(hw) : r.roadClass === 'highway' || r.roadClass === 'arterial';
+      if (!main) continue;
+      const key = `${id}|${p.location[0].toFixed(5)},${p.location[1].toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const roadName = r.name && !isGenericRoadName(r.name) ? r.name : 'Unnamed road';
+      out.push({ roadId: id, roadName, kind: p.kind, title: `${roadName} ends without a connection`, coordinates: p.location });
+    }
+  }
+  return out;
+}
 
 export interface RoadAnalysisResult {
   windowS: number;
@@ -169,6 +221,8 @@ export interface RoadAnalysisResult {
   areaLinkVph: Map<string, number>;
   /** Worst places in the wider area (assignment v/c), for "which parts suffer most". */
   areaBottlenecks: Bottleneck[];
+  /** Main roads in the area that end without a connection (absent on older results). */
+  networkGaps?: NetworkGap[];
   network: MicroSimMetrics;
   load: LoadCheck;
   /** The load check of each run, in seed order (load above combines them). */
@@ -453,6 +507,8 @@ export interface AreaContext {
   feeders: RoadUse[];
   nearby: RoadUse[];
   bottlenecks: Bottleneck[];
+  /** Main roads in the area that end without a connection (networkGaps). */
+  networkGaps: NetworkGap[];
   summary: RoadAnalysisResult['assignment'];
 }
 
@@ -590,6 +646,7 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     .filter(x => x.vc > 0.9 && x.extra > 0.5).sort((a, b) => b.extra - a.extra);
   const bottlenecks: Bottleneck[] = [];
   const chosen: { name: string; vol: number }[] = [];
+  const gaps = networkGaps(area, roads);
   for (const x of cand) {
     if (bottlenecks.length >= 6) break;
     const r = roads.get(x.l.roadId);
@@ -601,11 +658,22 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     if (name !== 'Unnamed road' && chosen.some(b => b.name === name && Math.abs(b.vol - vol) <= 0.005 * Math.max(vol, 1))) continue;
     chosen.push({ name, vol });
     const noAlt = noAlternativeShare(res, x.l.index);
-    bottlenecks.push({ label: `${name}${x.l.stopLinePcu !== null ? ' at its signal' : ''}, ${compass(bearing(centre, c))} of the road, ${Math.round(distM(centre, c) / 100) * 100} m${noAlt >= NO_ALTERNATIVE_LABEL_SHARE ? ` (no other route in the model for ${Math.round(100 * noAlt)}% of its traffic)` : ''}`, roadName: name, coordinates: c,
-      vc: x.vc, delayVehH: x.extra, segmentKeys: [x.l.segmentKey], atJunction: x.l.stopLinePcu !== null, noAlternativeShare: noAlt });
+    const forced = noAlt >= NO_ALTERNATIVE_LABEL_SHARE;
+    const overDemand = x.vc > FORCED_VC;
+    // The nearest main road that ends unconnected, for traffic that has nowhere else to go
+    const nearestGap = forced ? gaps.filter(g => g.roadId !== x.l.roadId).map(g => ({ g, d: distM(g.coordinates, c) })).filter(e => e.d <= GAP_NEAR_M).sort((a, b) => a.d - b.d)[0] : undefined;
+    const notes = [
+      overDemand ? `demand ${(Math.round(x.vc * 10) / 10).toFixed(1)}× its capacity: more than can pass, not a flow` : '',
+      forced ? `no other route in the model for ${Math.round(100 * noAlt)}% of its traffic` : '',
+      nearestGap ? `network gap: ${nearestGap.g.title} ${Math.max(100, Math.round(nearestGap.d / 100) * 100)} m away` : '',
+    ].filter(Boolean);
+    bottlenecks.push({ label: `${name}${x.l.stopLinePcu !== null ? ' at its signal' : ''}, ${compass(bearing(centre, c))} of the road, ${Math.round(distM(centre, c) / 100) * 100} m${notes.length ? ` (${notes.join('; ')})` : ''}`, roadName: name, coordinates: c,
+      vc: x.vc, delayVehH: x.extra, segmentKeys: [x.l.segmentKey], atJunction: x.l.stopLinePcu !== null, noAlternativeShare: noAlt,
+      ...(overDemand ? { demandOverCapacity: true } : {}),
+      ...(nearestGap ? { gap: { roadName: nearestGap.g.roadName, title: nearestGap.g.title, coordinates: nearestGap.g.coordinates, distanceM: Math.round(nearestGap.d) } } : {}) });
   }
   return { directions, origins: places('from'), destinations: places('to'), composition: { throughShare: total ? through / total : 0, localShare: total ? 1 - through / total : 0 },
-    selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks,
+    selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks, networkGaps: gaps,
     summary: { iterations: res.iterations, relativeGap: res.relativeGap, demandVph, unroutedVph: res.unroutedVeh, overCapacityLinks: over, totalVehHours: vehH, elapsedMs: res.elapsedMs } };
 }
 
@@ -733,7 +801,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     section: { name: section.name, lengthM: section.lengthM, carriageways: section.carriageways, endsAt: section.endsAt, segmentKeys: section.segmentKeys },
     directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, explainedDirection: status === 'no_traffic' || !worst ? null : worst.label, bottleneck,
     origins: area.origins, destinations: area.destinations, composition: area.composition, feeders: area.feeders, nearby: area.nearby, junctions,
-    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks,
+    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
     network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
       gridlockRemovals: Math.round(mean(runs.map(r => r.network.gridlockRemovals))), waitingToEnter: Math.round(mean(runs.map(r => r.network.waitingToEnter))), onNetwork: Math.round(mean(runs.map(r => r.network.onNetwork))) },
     load: { ...runs[0].load, servedShare: mean(runs.map(r => r.load.servedShare)), overloaded: overloadedRuns > n / 2, message: overloadedRuns > n / 2 ? loadMsg : null },

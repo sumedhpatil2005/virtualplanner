@@ -118,7 +118,8 @@ export class TrafficNetworkBuilder {
         if (!list) return;
         for (const iB of list) {
           const pB = b[iB];
-          if (Math.abs((pA[2] || 0) - (pB[2] || 0)) > GRADE_SEPARATION_M) continue;
+          // One OSM node is one place, whatever heights the two ways were given there (a stale
+          // lifted height on an edited approach must not cut a flyover off: docs/OVERHAUL.md §19)
           addSplitPt(roadA.id, iA === a.length - 1 ? iA - 1 : iA, pA);
           addSplitPt(roadB.id, iB === b.length - 1 ? iB - 1 : iB, pB);
         }
@@ -177,6 +178,20 @@ export class TrafficNetworkBuilder {
       if (!exists) list.push(pt);
     };
 
+    // Points held by two or more OSM roads: OSM nodes they share
+    const sharedOsmKeys = new Set<string>();
+    {
+      const owner = new Map<string, string>();
+      for (const r of roads) {
+        if (!r.osmProvenance) continue;
+        for (const p of r.coordinates) {
+          const k = vertexKey(p);
+          const o = owner.get(k);
+          if (o === undefined) owner.set(k, r.id);
+          else if (o !== r.id) sharedOsmKeys.add(k);
+        }
+      }
+    }
     let bridgeTunnelCrossingsCount = 0;
     let unjoinedOsmCrossings = 0;
     const gradeSeparations: GradeSeparation[] = [];
@@ -237,8 +252,11 @@ export class TrafficNetworkBuilder {
         }
         // OSM ways on different layers still join where they share a node: a
         // bridge (layer 1) meets its approach roads (layer 0) at its end nodes.
-        const shared = gradeSeparated ? sharedVertices(roadA.coordinates, roadB.coordinates) : null;
+        const shared = gradeSeparated || (provA && provB) ? sharedVertices(roadA.coordinates, roadB.coordinates) : null;
         const layerSeparatedAt = (pt: readonly number[]) => gradeSeparated && !shared!.has(vertexKey(pt));
+        // Two OSM roads (one of them edited) at a node they both still hold: the same OSM node, joined
+        // whatever their heights there (an edited road keeps the heights it had when it was edited)
+        const sameOsmNode = (pt: readonly number[]) => !!provA && !!provB && shared!.has(vertexKey(pt));
 
         // X-crossing check (Segment-Segment intersection)
         for (let sA = 0; sA < roadA.coordinates.length - 1; sA++) {
@@ -303,7 +321,7 @@ export class TrafficNetworkBuilder {
               const ub = dxB !== 0 ? (res.closestPt[0] - pB1[0]) / dxB : (res.closestPt[1] - pB1[1]) / (dyB || 1);
               const z_B = pB1[2] + ub * (pB2[2] - pB1[2]);
 
-              if (layerSeparatedAt(ptA) || Math.abs(ptA[2] - z_B) > GRADE_SEPARATION_M) {
+              if (!sameOsmNode(ptA) && (layerSeparatedAt(ptA) || Math.abs(ptA[2] - z_B) > GRADE_SEPARATION_M)) {
                 bridgeTunnelCrossingsCount++;
                 continue;
               }
@@ -337,7 +355,7 @@ export class TrafficNetworkBuilder {
               const ua = dxA !== 0 ? (res.closestPt[0] - pA1[0]) / dxA : (res.closestPt[1] - pA1[1]) / (dyA || 1);
               const z_A = pA1[2] + ua * (pA2[2] - pA1[2]);
 
-              if (layerSeparatedAt(ptB) || Math.abs(ptB[2] - z_A) > GRADE_SEPARATION_M) {
+              if (!sameOsmNode(ptB) && (layerSeparatedAt(ptB) || Math.abs(ptB[2] - z_A) > GRADE_SEPARATION_M)) {
                 bridgeTunnelCrossingsCount++;
                 continue;
               }
@@ -377,7 +395,9 @@ export class TrafficNetworkBuilder {
     const getNodeId = (coord: [number, number, number], osm = false): string => {
       const cx = Math.floor(coord[0] / tol);
       const cy = Math.floor(coord[1] / tol);
-      const coordKey = osm ? vertexKey(coord) : '';
+      const exactKey = vertexKey(coord);
+      const coordKey = osm ? exactKey : '';
+      const osmNode = sharedOsmKeys.has(exactKey);
       // Earliest-created matching node wins, as with a linear scan in creation order
       let match = -1;
       for (let dx = -1; dx <= 1; dx++) {
@@ -392,6 +412,8 @@ export class TrafficNetworkBuilder {
             // Ends of OSM ways only merge with each other at the same OSM node; a road
             // the user built still joins whatever lies within the tolerance
             if (osm && n.osm && vertexKey(n.coords) !== coordKey) continue;
+            // A node two OSM roads share joins at any height difference (see joinAtSharedNodes)
+            if (osmNode && vertexKey(n.coords) === exactKey) { match = idx; continue; }
             if (dist < tol && zDist < GRADE_SEPARATION_M) match = idx;
           }
         }
