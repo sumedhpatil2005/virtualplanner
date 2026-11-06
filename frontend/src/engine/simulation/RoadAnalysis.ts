@@ -1,6 +1,6 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { MAX_VEHICLES, STEP_S, GRIDLOCK_S, type TrafficMicroSim, type MicroSimMetrics, type AnalysisLinkCounts, type HoldCause, type VehicleAccounting, type GridlockSite } from './TrafficMicroSim';
-import { isGenericRoadName, type RoadSection } from './roadSection';
+import { isGenericRoadName, carriagewayRun, type RoadSection } from './roadSection';
 import { angleDiff, boundLabel, compassWord, displacementM, downstreamLandmark, labelBearings, nameKeys, type Landmark } from './directions';
 import type { DemandProvenance } from './StudyDemand';
 import { routeMovements, movementKey, type ZoneLayout } from '../calibration/junctionMovements';
@@ -343,6 +343,33 @@ function chainLinks(network: StudyArea['network'], linkIds: readonly string[]): 
 }
 
 /**
+ * Keeps, of a direction's links, those on the carriageway (carriagewayRun, roadSection.ts) that the selected
+ * road travels in that direction, the definition a lane edit's "Entire carriageway" uses, so the direction's
+ * capacity, lanes and binding stretch are read from the stretch that edit reaches (docs/OVERHAUL.md §21). The
+ * section can hold more of the road than one carriageway (a one-way stretch, a piece past a junction); those
+ * links still count for the traffic through the road but do not set a direction's capacity. The run starts on
+ * the selected road where it has links in this direction, else (the other carriageway of a divided road) on
+ * the link nearest it. The direction's own bearing is unchanged.
+ */
+function carriagewayOnly(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, g: { linkIds: string[] }) {
+  const along = (id: string) => !id.endsWith('_bwd');
+  const edges = g.linkIds.map(id => area.network.edges.get(id)).filter((e): e is NonNullable<typeof e> => !!e);
+  const seeds = new Set(area.seedRoadIds);
+  let starts = edges.filter(e => seeds.has(e.roadId));
+  if (!starts.length) {
+    const seedPts = area.seedRoadIds.flatMap(id => roads.get(id)?.coordinates ?? []);
+    if (!seedPts.length) return;
+    const near = (e: (typeof edges)[number]) => Math.min(...seedPts.map(p => pointToLineM(p, e.coordinates)));
+    starts = edges.length ? [edges.reduce((a, b) => (near(b) < near(a) ? b : a))] : [];
+  }
+  const list = [...roads.values()];
+  const keep = new Set<string>();
+  for (const e of starts) for (const p of carriagewayRun(list, e.roadId, along(e.id))) keep.add(`${p.road.id}|${p.along}`);
+  const kept = g.linkIds.filter(id => { const e = area.network.edges.get(id); return !!e && keep.has(`${e.roadId}|${along(id)}`); });
+  if (kept.length) g.linkIds = kept;
+}
+
+/**
  * Directions of travel on a section: its links grouped by bearing (two
  * carriageways of a divided road, or both directions of a two-way one).
  * Each link's points are taken in travel order (the network stores a
@@ -363,6 +390,7 @@ export function sectionDirections(area: StudyArea, section: RoadSection, roads?:
     const g = groups.find(x => angleDiff(groupBearing(x), b) < 70);
     if (g) { g.e += de; g.n += dn; g.linkIds.push(e.id); } else groups.push({ e: de, n: dn, linkIds: [e.id] });
   }
+  if (roads) for (const g of groups) carriagewayOnly(area, roads, g);
   const sectionNames = new Set<string>();
   if (roads) for (const id of section.roadIds) for (const k of nameKeys(roads.get(id))) sectionNames.add(k);
   const labelled = labelBearings(groups.map(groupBearing));
