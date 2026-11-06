@@ -69,7 +69,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   const t0 = Date.now();
   const segs = new Set(job.area.segments.map(s => s.key));
   const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor }));
-  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints });
+  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits });
   const assignmentMs = Date.now() - t0;
   await new Promise<void>(r => setTimeout(r, 0));
   if (cancelled?.()) throw new Error('cancelled');

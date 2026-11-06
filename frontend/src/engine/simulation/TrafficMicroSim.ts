@@ -8,6 +8,7 @@ import { isAccessRestricted, RESTRICTED_ENTRY_S } from './accessRestriction';
 import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector, type LanePose } from './LaneConnector';
 import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
 import type { Cardinal } from '../calibration/observedCounts';
+import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, type JunctionEditSpec, type TurnBans } from './junctionControl';
 
 /**
  * Microscopic traffic simulation on a study area.
@@ -281,6 +282,8 @@ export interface MicroSimOptions {
    */
   focusLoad?: number;
   junctions?: readonly JunctionObject[];
+  /** Edits to imported junctions (junctionControl.ts, docs/OVERHAUL.md §23): control, fixed plan, priority, banned turns, lane connections. */
+  junctionEdits?: readonly JunctionEditSpec[];
   /** Explicit estimated OD arrivals replace the capacity-based synthetic fallback. */
   demandTrips?: readonly MicroDemandTrip[];
   /**
@@ -580,6 +583,11 @@ interface Control {
   fixed?: boolean;
   /** Last Webster design for this junction, for reporting. */
   design?: WebsterResult;
+  /** An edited junction's own amber and all-red (s); else SIGNAL_AMBER_S, SIGNAL_ALL_RED_S. */
+  amberS?: number;
+  allRedS?: number;
+  /** An edited priority junction: the incoming links with priority (else by road class, majorRank). */
+  majorLinks?: Set<number>;
 }
 
 interface Source {
@@ -688,6 +696,11 @@ export class TrafficMicroSim {
   /** The study area's own network nodes, before junctions were joined. */
   private readonly areaNodes: ReadonlyMap<string, TrafficNode>;
   private readonly routeCache = new Map<string, { route: number[]; freeFlowS: number } | null>();
+  /** Banned turns of edited junctions, and the graph to route around them (junctionControl.ts). */
+  private turnBans: TurnBans | null = null;
+  private banGraph: { outStart: Int32Array; outLinks: Int32Array; cost: Float64Array } | null = null;
+  /** Edited lane connections: "link>next" -> entry lane -> exit lanes [lo, hi]. */
+  private laneMap = new Map<string, Map<number, [number, number]>>();
   /** Junction id -> number, for the route trees. */
   private readonly nodeIndex = new Map<string, number>();
   private readonly trees: RouteTrees;
@@ -822,6 +835,7 @@ export class TrafficMicroSim {
 
     this.buildControls(options.signalPoints ?? null);
     this.applyPlacedControls(options.junctions ?? []);
+    this.applyJunctionEdits(net, options.junctionEdits, cost);
     this.signalLinks = this.links.filter(l => this.controls.get(l.to)?.kind === 'signal').map(l => l.index);
     this.buildSourcesAndSinks(net, included, roads);
     const watch = new Set(options.watchRoadIds ?? []);
@@ -906,6 +920,30 @@ export class TrafficMicroSim {
         majorRank: null, offset: 0, busyUntil: 0, busyFrom: -1,
         cycleS: Math.max(MIN_SIGNAL_CYCLE_S, Number.isFinite(junction.signalTiming) ? junction.signalTiming : SIGNAL_CYCLE_S),
         fixed: Number.isFinite(junction.signalTiming) });
+    }
+  }
+
+  /** Edited imported junctions override mapped, estimated and placed control on every simulated junction they cover. */
+  private applyJunctionEdits(net: TrafficNetwork, edits: readonly JunctionEditSpec[] | undefined, cost: Float64Array) {
+    const compiled = compileJunctionEdits(net, edits);
+    if (!compiled.length) return;
+    const membersOf = (id: string) => this.junctionMembers.get(id) ?? [id];
+    const { setups, laneMap } = simJunctionSetups(compiled, this.links.map(l => ({ index: l.index, id: l.id, from: l.from, to: l.to, roadId: l.roadId, lanes: l.lanes.length })), membersOf);
+    for (const s of setups) {
+      if (s.control === 'signal' && s.greensS.length) {
+        this.controls.set(s.simNode, { kind: 'signal', groups: s.phaseOfLink, phases: s.greensS.length, cycleS: s.cycleS, greens: [...s.greensS], amberS: s.amberS, allRedS: s.allRedS,
+          majorRank: null, offset: this.signalOffsetUnit(s.junctionId) * s.cycleS, busyUntil: 0, busyFrom: -1, fixed: true });
+      } else {
+        this.controls.set(s.simNode, { kind: 'priority', groups: new Map(), majorRank: null, offset: 0, busyUntil: 0, busyFrom: -1, majorLinks: s.control === 'priority' ? s.majorLinks : new Set() });
+      }
+    }
+    this.laneMap = laneMap;
+    const nodeIds = [...this.nodeIndex.keys()];
+    const linkFrom = Int32Array.from(this.links, l => this.nodeIndex.get(l.from)!), linkTo = Int32Array.from(this.links, l => this.nodeIndex.get(l.to)!);
+    const bans = turnBansFor(compiled, nodeIds, this.links.map(l => l.id), linkFrom, linkTo, membersOf);
+    if (bans && !bans.empty) {
+      this.turnBans = bans;
+      this.banGraph = { ...outRows(nodeIds.length, linkFrom), cost };
     }
   }
 
@@ -1300,7 +1338,9 @@ export class TrafficMicroSim {
     if (!this.routeCache.has(key)) {
       // A focus trip may enter right at the watched road, or leave right after it: an empty leg
       const from = this.nodeIndex.get(fromNode), to = this.nodeIndex.get(toNode);
-      const route = from === undefined || to === undefined ? null : this.trees.path(from, to);
+      let route = from === undefined || to === undefined ? null : this.trees.path(from, to);
+      // A fastest route through a banned turn of an edited junction: the fastest one without it
+      if (route && this.turnBans && this.banGraph && this.turnBans.violates(route)) route = this.turnBans.path(from!, to!, this.banGraph.outStart, this.banGraph.outLinks, this.banGraph.cost);
       if (!route) {
         this.routeCache.set(key, null);
       } else {
@@ -1671,13 +1711,16 @@ export class TrafficMicroSim {
   /** Start and length of a phase's green within its junction's cycle (local time: t + offset). */
   private phaseWindow(c: Control, group: number): { start: number; green: number; cycle: number } {
     const cycle = c.cycleS ?? SIGNAL_CYCLE_S;
+    // A piece inside an edited junction (group < 0) is never stopped
+    if (group < 0) return { start: 0, green: cycle, cycle };
+    const amber = c.amberS ?? SIGNAL_AMBER_S, allRed = c.allRedS ?? SIGNAL_ALL_RED_S;
     if (c.greens && c.greens.length === (c.phases ?? 2)) {
       let start = 0;
-      for (let g = 0; g < group; g++) start += c.greens[g] + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S;
+      for (let g = 0; g < group; g++) start += c.greens[g] + amber + allRed;
       return { start, green: c.greens[group], cycle };
     }
     const slot = cycle / (c.phases ?? 2);
-    return { start: group * slot, green: slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S, cycle };
+    return { start: group * slot, green: slot - amber - allRed, cycle };
   }
 
   /**
@@ -1749,7 +1792,7 @@ export class TrafficMicroSim {
     this.controls.forEach((c, nodeId) => {
       if (c.kind !== 'signal') return;
       const phases = c.phases ?? 2, cycle = c.cycleS ?? SIGNAL_CYCLE_S;
-      out.push({ nodeId, cycleS: cycle, greensS: c.greens ?? new Array(phases).fill(cycle / phases - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S),
+      out.push({ nodeId, cycleS: cycle, greensS: c.greens ?? new Array(phases).fill(cycle / phases - (c.amberS ?? SIGNAL_AMBER_S) - (c.allRedS ?? SIGNAL_ALL_RED_S)),
         flowRatioSum: c.design?.flowRatioSum ?? null, oversaturated: c.design?.oversaturated ?? false });
     });
     return out;
@@ -1762,7 +1805,8 @@ export class TrafficMicroSim {
     if (!c || c.kind !== 'signal') return null;
     const phases = c.phases ?? 2, cycle = c.cycleS ?? SIGNAL_CYCLE_S;
     const group = c.groups.get(linkIndex) ?? 0;
-    const green = c.greens && c.greens.length === phases ? c.greens[group] : cycle / phases - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
+    if (group < 0) return 1;
+    const green = c.greens && c.greens.length === phases ? c.greens[group] : cycle / phases - (c.amberS ?? SIGNAL_AMBER_S) - (c.allRedS ?? SIGNAL_ALL_RED_S);
     return Math.max(0, Math.min(1, green / cycle));
   }
 
@@ -1770,11 +1814,15 @@ export class TrafficMicroSim {
     const link = this.links[linkIndex];
     const c = this.controls.get(link.to);
     if (!c || c.kind !== 'signal') return null;
-    const { start, green, cycle } = this.phaseWindow(c, c.groups.get(linkIndex) ?? 0);
+    const group = c.groups.get(linkIndex) ?? 0;
+    // A piece inside an edited junction: never stopped (its traffic got green where it entered)
+    if (group < 0) return 'green';
+    const { start, green, cycle } = this.phaseWindow(c, group);
+    const amber = c.amberS ?? SIGNAL_AMBER_S;
     const tc = (this.t + c.offset) % cycle;
     const local = (tc - start + cycle) % cycle;
     if (local < green) return 'green';
-    if (local < green + SIGNAL_AMBER_S) return 'amber';
+    if (local < green + amber) return 'amber';
     return 'red';
   }
 
@@ -1832,8 +1880,9 @@ export class TrafficMicroSim {
       // across that lane's platoon, so both stalled at the line.
       if (link.lanes.length === next.lanes.length && rearMoving(next.lanes[lane])) return this.refuse(link, 'room-wait', veh, next.index);
       let best = -1, bestRoom = -Infinity;
+      const edited = this.laneMap.size ? this.laneMap.get(`${link.index}>${next.index}`)?.get(veh.lane) : undefined;
       for (let k = 0; k < next.lanes.length; k++) {
-        if (k === lane) continue;
+        if (k === lane || (edited && (k < edited[0] || k > edited[1]))) continue;
         const c = this.connectorFor(link, veh.lane, next, k);
         const r = room(k, c.start - veh.pos, c) - need(c);
         if (r > bestRoom) { bestRoom = r; best = k; }
@@ -1892,6 +1941,7 @@ export class TrafficMicroSim {
   private hasPriorityOver(other: Link, link: Link, c: Control): boolean {
     // Roundabout: entering traffic gives way to traffic already circulating
     if (other.roundabout !== link.roundabout) return other.roundabout;
+    if (c.majorLinks) return c.majorLinks.has(other.index) && !c.majorLinks.has(link.index);
     if (c.majorRank !== null) return other.rank > link.rank;
     return false;
   }
@@ -2376,6 +2426,8 @@ export class TrafficMicroSim {
    * widening, as SUMO builds them).
    */
   private mappedLanes(link: Link, lane: number, next: Link): [number, number] {
+    const edited = this.laneMap.size ? this.laneMap.get(`${link.index}>${next.index}`)?.get(lane) : undefined;
+    if (edited) return edited;
     const m = link.lanes.length, n = next.lanes.length;
     if (m === n) return [lane, lane];
     const lo = Math.min(n - 1, Math.floor((lane * n) / m));

@@ -16,6 +16,15 @@ import { DirectionArrows } from '../rendering/renderers/DirectionArrows';
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
+import { splitJunctionObjects, type JunctionEditSpec } from './junctionControl';
+import { junctionApproachDeltas } from './junctionCompare';
+import type { JunctionObject } from '../objects/types';
+
+/** Simulator options for the scenario's junction objects: placed junctions as before, imported-junction edits apart (docs/OVERHAUL.md §23). */
+const junctionOptions = (junctions: readonly JunctionObject[] | undefined) => {
+  const { placed, edits } = splitJunctionObjects(junctions);
+  return { junctions: placed, junctionEdits: edits.length ? edits : undefined };
+};
 import { snapDemandPlan, contentKey, networkContentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
@@ -125,6 +134,8 @@ export interface TrafficRunSnapshot {
   analysis: AnalysisOutput;
   /** Demand, hour, seeds and duration the run actually used: a comparison checks them equal. */
   inputs: RunInputs;
+  /** Edits of imported junctions the run had in force (docs/OVERHAUL.md §23); absent on older snapshots. */
+  junctionEdits?: JunctionEditSpec[];
 }
 export interface TrafficComparisonState {
   baseline: TrafficRunSnapshot | null;
@@ -708,6 +719,11 @@ export class SimulationMode {
     this.visualizer.flyToRoad(this.getRoads().filter(r => seeds.has(r.id)).flatMap(r => r.coordinates));
   }
 
+  /** Mapped traffic signals of the current study area, once loaded (null before, or when they could not be loaded). */
+  public mappedSignalPoints(): readonly SignalPoint[] | null {
+    return this.signalPoints;
+  }
+
   public flyTo(location: [number, number, number]) {
     this.visualizer.flyToPoint(location);
   }
@@ -911,7 +927,7 @@ export class SimulationMode {
       seed: this.state.traffic.seed,
       watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
       signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
-      junctions: context.junctions,
+      ...junctionOptions(context.junctions),
       demandTrips: snapDemandPlan(plan, corridor.network, 60, new Set(corridor.segments.map(s => s.key))),
     });
     sim.setHourFactor(1);
@@ -1075,7 +1091,7 @@ export class SimulationMode {
 
   private simOptions(): AnalysisJob['options'] {
     const traffic = this.state.traffic;
-    return { demandLevel: traffic.demandLevel, seed: traffic.seed, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming, junctions: structuredClone(this.getContext().junctions) };
+    return { demandLevel: traffic.demandLevel, seed: traffic.seed, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming, ...junctionOptions(structuredClone(this.getContext().junctions)) };
   }
 
   private analysisJob(plan: DemandPlan, area: StudyArea, section: RoadSection, measureS: number = DEFAULT_ANALYSIS.measureS, o: { hourFactor?: number; seeds?: readonly number[] } = {}): AnalysisJob {
@@ -1229,7 +1245,29 @@ export class SimulationMode {
       demandKey: contentKey(plan), networkKey: this.currentNetworkKey(),
       metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output,
       inputs: { demandKey: contentKey(plan), trips: plan.trips.length, plannedVph: plan.provenance.vehiclesPerHour, hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
-        seeds: output.result.perSeed.map(s => s.seed), measureS } };
+        seeds: output.result.perSeed.map(s => s.seed), measureS },
+      junctionEdits: structuredClone(splitJunctionObjects(context.junctions).edits) };
+  }
+
+  /**
+   * Before and after at each imported junction whose edit differs between the
+   * baseline and the proposal of the comparison on show: delay and traffic per
+   * approach (docs/OVERHAUL.md §23). Empty without a comparison or such edits.
+   */
+  public junctionComparisons(): { junctionId: string; label: string; edit: JunctionEditSpec; deltas: NonNullable<ReturnType<typeof junctionApproachDeltas>> }[] {
+    const { baseline, current } = this.state.comparison;
+    const net = this.state.area?.network;
+    if (!baseline || !current || !net) return [];
+    const before = new Map((baseline.junctionEdits ?? []).map(e => [e.junctionId, e]));
+    const after = new Map((current.junctionEdits ?? []).map(e => [e.junctionId, e]));
+    const ids = [...new Set([...before.keys(), ...after.keys()])].filter(id => JSON.stringify(before.get(id)) !== JSON.stringify(after.get(id)));
+    const out: { junctionId: string; label: string; edit: JunctionEditSpec; deltas: NonNullable<ReturnType<typeof junctionApproachDeltas>> }[] = [];
+    for (const id of ids) {
+      const edit = after.get(id) ?? before.get(id)!;
+      const deltas = junctionApproachDeltas(net, edit, baseline.analysis.result, current.analysis.result);
+      if (deltas) out.push({ junctionId: id, label: edit.label, edit, deltas });
+    }
+    return out;
   }
 
   private currentNetworkKey() {
@@ -1525,7 +1563,7 @@ export class SimulationMode {
     const traffic = this.state.traffic;
     const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
       demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,
-      focusLoad: focusLoadFor(traffic), junctions: context.junctions, signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
+      focusLoad: focusLoadFor(traffic), ...junctionOptions(context.junctions), signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
     });
     const trips = sim.getDemandTrips().flatMap(t => {
       const from = area.network.nodes.get(t.fromNodeId), to = area.network.nodes.get(t.toNodeId);
@@ -1540,7 +1578,7 @@ export class SimulationMode {
     return { area, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])),
       // Counted junctions are timed from their observed approach flows
       signalDesignCounts: this.signalTiming === 'webster' && ds ? junctionsIn(ds, area.bounds) : undefined,
-      options: { demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds, junctions: structuredClone(this.getContext().junctions), signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming } };
+      options: { demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds, ...junctionOptions(structuredClone(this.getContext().junctions)), signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming } };
   }
 
   private countedInArea(area: StudyArea) {

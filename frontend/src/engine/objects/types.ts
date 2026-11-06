@@ -203,6 +203,13 @@ export interface JunctionObject extends BaseCityObject {
   hasSignals: boolean;
   signalTiming: number; // cycle length in seconds
   hasPedestrianCrossing: boolean;
+  /**
+   * Set on an edit of an imported (OpenStreetMap) junction as a whole: its
+   * control, signal plan, priority, banned turns and lane connections,
+   * matched to the network by the junction's member nodes (docs/OVERHAUL.md
+   * §23). Such an object draws nothing on the map and is not a placed junction.
+   */
+  importedJunction?: import('../simulation/junctionControl').JunctionEditSpec;
 }
 
 export interface FlyoverObject extends BaseCityObject {

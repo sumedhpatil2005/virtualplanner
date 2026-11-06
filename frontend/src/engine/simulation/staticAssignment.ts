@@ -4,6 +4,8 @@ import { VEHICLE_TYPES } from './TrafficMicroSim';
 import { midblockCapacityPcu } from './roadParameters';
 import { indoHcmSaturationFlow } from './signalTiming';
 import { RESTRICTED_ENTRY_S, isAccessRestricted } from './accessRestriction';
+import { compileJunctionEdits, armGreenRatio, connectedEntryLanes, turnBansFor, cycleOf, type JunctionEditSpec, type CompiledJunction, type TurnBans } from './junctionControl';
+import { STARTUP_LOST_S } from './signalTiming';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -101,6 +103,8 @@ export interface AssignmentResult {
 
 export interface AssignmentOptions {
   signalPoints?: readonly (readonly [number, number])[];
+  /** Edits to imported junctions (junctionControl.ts): their signal plans, connected lanes and banned turns. */
+  junctionEdits?: readonly JunctionEditSpec[];
   maxIterations?: number;
   targetGap?: number;
   /** Stop after this long (ms) and report the gap reached. */
@@ -115,7 +119,7 @@ const segKey = (id: string) => id.replace(/_(fwd|bwd)$/, '');
 export const bprTime = (t0: number, x: number, c: number) => t0 * (1 + BPR_ALPHA * Math.pow(Math.max(0, x) / Math.max(1, c), BPR_BETA));
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
-export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[]) {
+export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[]) {
   const included = new Set(area.segments.map(s => s.key));
   const edges = [...area.network.edges.values()].filter(e => included.has(segKey(e.id)));
   const nodeIndex = new Map<string, number>();
@@ -135,8 +139,12 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     if (!c) return false;
     return signalPoints.some(p => distM(p, c) < SIGNAL_MATCH_M);
   };
+  // Edited junctions (docs/OVERHAUL.md §23) are controlled as edited, not by the mapped signals
+  const compiled = compileJunctionEdits(area.network, junctionEdits);
+  const editedAt = new Map<string, CompiledJunction>();
+  for (const c of compiled) for (const n of c.nodeIds) editedAt.set(n, c);
   const signalised = new Set<string>();
-  for (const [id, s] of arms) if (s.size >= 3 && signalNear(id)) signalised.add(id);
+  for (const [id, s] of arms) if (!editedAt.has(id) && s.size >= 3 && signalNear(id)) signalised.add(id);
   // Approaches per signalised node: links ending there whose start is not itself signalised (not an internal link of the junction)
   const approaches = new Map<string, number>();
   for (const e of edges) if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) approaches.set(e.toNodeId, (approaches.get(e.toNodeId) ?? 0) + 1);
@@ -151,7 +159,21 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay, divided);
     const speed = Math.max(10, e.speedLimit || 30);
     let stopLinePcu: number | null = null, gC: number | null = null, sigDelay = 0;
-    if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) {
+    const edited = editedAt.get(e.toNodeId);
+    if (edited) {
+      // An approach of an edited signal: its green from the plan (effective green = green + amber - start-up lost time, per phase serving it),
+      // saturation flow from the entry lanes that feed an exit
+      const arm = edited.nodeIds.has(e.fromNodeId) ? undefined : edited.approachOfEdge.get(e.id) ?? edited.chainOfEdge.get(e.id);
+      const plan = edited.spec.signal;
+      const ratio = arm ? armGreenRatio(edited, arm) : null;
+      if (arm && plan && ratio !== null) {
+        const cyc = cycleOf(plan);
+        const phasesServing = plan.phases.filter(p => p.arms.includes(arm)).length;
+        gC = Math.max(0.02, Math.min(1, ratio + phasesServing * (plan.amberS - STARTUP_LOST_S) / cyc));
+        stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC;
+        sigDelay = cyc * (1 - gC) ** 2 / 2;
+      }
+    } else if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) {
       const n = Math.min(4, Math.max(2, approaches.get(e.toNodeId) ?? 2));
       gC = Math.max(0.1, (ASSIGN_CYCLE_S - n * ASSIGN_LOST_PER_PHASE_S) / ASSIGN_CYCLE_S / n);
       stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC;
@@ -168,7 +190,9 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   const outLinks = new Int32Array(links.length);
   const fill = outStart.slice(0, nodes.length);
   for (const l of links) outLinks[fill[l.from]++] = l.index;
-  return { nodes, nodeIndex, nodeCoords, links, outStart, outLinks, signalised };
+  // Banned turns of edited junctions, over the numbered graph
+  const bans = turnBansFor(compiled, nodes, links.map(l => l.id), Int32Array.from(links, l => l.from), Int32Array.from(links, l => l.to));
+  return { nodes, nodeIndex, nodeCoords, links, outStart, outLinks, signalised, bans: bans && !bans.empty ? bans : null };
 }
 
 class Heap {
@@ -195,7 +219,7 @@ class Heap {
  */
 export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, trips: readonly MicroDemandTrip[], o: AssignmentOptions = {}): AssignmentResult {
   const t0 = Date.now();
-  const net = buildAssignmentNetwork(area, roads, o.signalPoints);
+  const net = buildAssignmentNetwork(area, roads, o.signalPoints, o.junctionEdits);
   const { links, outStart, outLinks, nodes } = net;
   const L = links.length, N = nodes.length;
   // OD pairs (by node), vehicles and PCU, kinds kept for the corridor demand
@@ -229,9 +253,29 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
   const heap = new Heap();
   const scratch: number[] = [];
 
+  // With banned turns the search runs over (node, restricted run, link the path entered a junction by): see turnSearch
+  const turnSearch = net.bans ? bannedTurnSearch(net.bans, N, S, links, outStart, outLinks) : null;
   /** All-or-nothing load on the current costs; returns each OD's path id (or -1). */
   const allOrNothing = (target: Float64Array, targetVeh: Float64Array): Int32Array => {
     target.fill(0); targetVeh.fill(0);
+    if (turnSearch) {
+      const chosen = new Int32Array(ods.length).fill(-1);
+      for (const orig of origins) {
+        const tree = turnSearch(orig, cost);
+        for (const oi of byOrigin.get(orig)!) {
+          const od = ods[oi];
+          const p = tree(od.to);
+          if (!p) continue;
+          reachable[oi] = 1;
+          for (const li of p) { target[li] += od.pcu; targetVeh[li] += od.veh; }
+          const key = p.join(',');
+          let pid = pathKey.get(key);
+          if (pid === undefined) { pid = paths.length; pathKey.set(key, pid); paths.push(Int32Array.from(p)); }
+          chosen[oi] = pid;
+        }
+      }
+      return chosen;
+    }
     const chosen = new Int32Array(ods.length).fill(-1);
     for (const orig of origins) {
       dist.fill(Infinity); pred.fill(-1);
@@ -314,6 +358,69 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     nodes, nodeCoords: net.nodeCoords, links, volPcu: x, volVeh: xv, timeS: Float64Array.from(cost), ods,
     paths, odPaths: odPaths.map(m => [...m].filter(([, w]) => w > 1e-4).map(([pathId, share]) => ({ pathId, share }))),
     iterations: Math.min(it, maxIt), relativeGap: gap, gapHistory, unroutedVeh, elapsedMs: Date.now() - t0,
+  };
+}
+
+/**
+ * One-to-all shortest paths that make no banned turn (TurnBans), with the same
+ * restricted-run rule as the plain search. States: per node, S restricted
+ * states times (1 + the junction's entry links that take part in a ban); only
+ * nodes of junctions with bans get more than S. Returns a function from an
+ * origin and the link costs to a path lookup by destination.
+ */
+function bannedTurnSearch(bans: TurnBans, N: number, S: number, links: readonly AssignLink[], outStart: Int32Array, outLinks: Int32Array) {
+  const L = links.length;
+  // Entry links per junction (those in a banned pair), numbered within the junction
+  const entryLocal = new Map<number, number>();
+  const entriesOf = new Map<number, number[]>();
+  for (const key of bans.banned) {
+    const a = Math.floor(key / L);
+    const k = bans.nodeJunction[links[a].to];
+    const list = entriesOf.get(k) ?? entriesOf.set(k, []).get(k)!;
+    if (!entryLocal.has(a)) { entryLocal.set(a, list.length); list.push(a); }
+  }
+  const width = new Int32Array(N), base = new Int32Array(N + 1);
+  for (let n = 0; n < N; n++) { const k = bans.nodeJunction[n]; width[n] = 1 + (k >= 0 ? entriesOf.get(k)?.length ?? 0 : 0); base[n + 1] = base[n] + S * width[n]; }
+  const total = base[N];
+  const stateNode = new Int32Array(total), stateR = new Uint8Array(total), stateE = new Int32Array(total);
+  for (let n = 0; n < N; n++) for (let r = 0; r < S; r++) for (let e = 0; e < width[n]; e++) { const st = base[n] + r * width[n] + e; stateNode[st] = n; stateR[st] = r; stateE[st] = e - 1; }
+  const restricted = Uint8Array.from(links, l => (l.restricted ? 1 : 0));
+  const dist = new Float64Array(total), pred = new Int32Array(total), predState = new Int32Array(total);
+  const heap = new Heap();
+  return (orig: number, cost: Float64Array) => {
+    dist.fill(Infinity); pred.fill(-1);
+    let startR = 0;
+    if (S === 2 && outStart[orig + 1] > outStart[orig]) {
+      startR = 1;
+      for (let k = outStart[orig]; k < outStart[orig + 1]; k++) if (!restricted[outLinks[k]]) { startR = 0; break; }
+    }
+    const start = base[orig] + startR * width[orig];
+    dist[start] = 0; heap.size = 0; heap.push(0, start);
+    while (heap.size) {
+      const dk = heap.topKey(), us = heap.pop();
+      if (dk > dist[us]) continue;
+      const u = stateNode[us], inRestricted = S === 2 && stateR[us] === 1;
+      const eLocal = stateE[us], ku = bans.nodeJunction[u];
+      const entry = eLocal >= 0 ? entriesOf.get(ku)![eLocal] : -1;
+      for (let k = outStart[u]; k < outStart[u + 1]; k++) {
+        const li = outLinks[k];
+        const ne = bans.step(entry, li);
+        if (ne === -2) continue;
+        const v = links[li].to, r = S === 2 ? restricted[li] : 0;
+        const local = ne >= 0 ? entryLocal.get(ne) ?? -1 : -1;
+        const vs = base[v] + r * width[v] + (local + 1 < width[v] ? local + 1 : 0);
+        const nd = dk + cost[li] + (r && !inRestricted ? RESTRICTED_ENTRY_S : 0);
+        if (nd < dist[vs]) { dist[vs] = nd; pred[vs] = li; predState[vs] = us; heap.push(nd, vs); }
+      }
+    }
+    return (to: number): number[] | null => {
+      let end = -1;
+      for (let st = base[to]; st < base[to + 1]; st++) if (dist[st] < (end < 0 ? Infinity : dist[end])) end = st;
+      if (end < 0 || !Number.isFinite(dist[end])) return null;
+      const p: number[] = [];
+      for (let vs = end; vs !== start; vs = predState[vs]) p.push(pred[vs]);
+      return p.reverse();
+    };
   };
 }
 
