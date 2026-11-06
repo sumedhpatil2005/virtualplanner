@@ -1925,13 +1925,15 @@ export class TrafficMicroSim {
    *  - priority junction: higher-class roads over lower; circulating roundabout
    *    traffic over entries; among equal roads, oncoming traffic over a right turn.
    */
-  private mustGiveWay(veh: Vehicle, link: Link, next: Link, connector: LaneConnector, c: Control, dist: number): boolean {
+  private mustGiveWay(veh: Vehicle, link: Link, next: Link, connector: LaneConnector, c: Control, dist: number, timeToLineS?: number): boolean {
     const myRight = this.isRightTurn(link, next);
     // Time to reach the line from where it is now, accelerating from its speed
     // (dist / max(v, 1 m/s) took a vehicle rolling up at walking pace 6 s for 6 m).
     // A driver waiting at the line (it stops 0.3 m short) is at it: the critical gap
     // is the gap such a driver accepts, its own start included.
-    const timeToLine = timeToCover(Math.max(0, dist - AT_LINE_M), veh.v, veh.type.maxAccel, turnSpeed(veh.type));
+    // (A vehicle judging the next junction from before this one passes its own estimate: the way
+    // there is not all at turning speed.)
+    const timeToLine = timeToLineS ?? timeToCover(Math.max(0, dist - AT_LINE_M), veh.v, veh.type.maxAccel, turnSpeed(veh.type));
     for (const [otherIdx, other] of this.incomingOf(link.to)) {
       if (otherIdx === link.index) continue;
       let priority: boolean;
@@ -2110,7 +2112,11 @@ export class TrafficMicroSim {
     let back = reach - front.type.lengthM;
     for (let i = 1; i < lane.length; i++) {
       const v = lane[i];
-      if (v.abreast) continue;
+      // A rider abreast of its partner takes no length of its own, but only while it is
+      // beside it: one riding several metres behind it stops there too (counting it as
+      // beside put the queue's back 5 m too far forward, and a two-wheeler entered behind
+      // it and stood half a minute in the junction box at the red)
+      if (v.abreast && lane[i - 1].pos - v.pos < v.type.lengthM) continue;
       back -= v.type.minGapM + v.type.lengthM;
     }
     return Math.max(back, this.backSpace(lane));
@@ -2118,16 +2124,17 @@ export class TrafficMicroSim {
 
   /**
    * packedBack for the vehicles that stay in the lane: those at its front that
-   * are leaving it (`leaving`: they leave the area at its end, or are cleared through the
-   * next junction, can no longer stop and beat the red) are left out, and the rest are packed
-   * against the stop line. Infinity when every vehicle in it is leaving.
+   * are leaving it (they leave the area at its end, or are cleared through the next
+   * junction and can no longer stop; with `beatsRed`, as the long-vehicle check uses
+   * it, also reach their line before the red: `leaving`) are left out, and the rest
+   * are packed against the stop line. Infinity when every vehicle in it is leaving.
    * (Counting the whole lane as free once its front vehicle was leaving let the
    * vehicles behind that front, which would still stop at a red, be projected
    * on: a follower entered a 12 m link and stood with its rear in the box.)
    */
-  private packedBackStaying(link: Link, lane: Vehicle[]): number {
+  private packedBackStaying(link: Link, lane: Vehicle[], beatsRed = false): number {
     let i = 0;
-    while (i < lane.length && this.leaving(lane[i])) i++;
+    while (i < lane.length && (lane[i].routeIdx >= lane[i].route.length - 1 || this.committed(lane[i])) && (!beatsRed || this.leaving(lane[i]))) i++;
     if (i >= lane.length) return Infinity;
     return i === 0 ? this.packedBack(link, lane) : this.packedBack(link, lane.slice(i));
   }
@@ -2148,7 +2155,7 @@ export class TrafficMicroSim {
     const [lo, hi] = this.mappedLanes(next, k, next2);
     const c2 = this.connectorFor(next, k, next2, lo);
     const lane = next.lanes[k];
-    const staying = this.packedBackStaying(next, lane);
+    const staying = this.packedBackStaying(next, lane, true);
     // Behind a vehicle that stays it keeps its standstill gap; first in the lane it stops at the line
     const pend = this.pendingInto(next.index, k, veh);
     const behind = staying < c2.start - AT_LINE_M || pend > 0;
@@ -2164,10 +2171,10 @@ export class TrafficMicroSim {
     const c = this.controls.get(next.to);
     // It must reach the next line on green, with a margin for the estimate (a red there now that turns green before it arrives will do)
     if (c?.kind === 'signal' && this.greenLeft(next.index, this.t + t2) < THROUGH_GREEN_MARGIN_S) return false;
-    if (c?.kind === 'priority' && this.yieldsAt(next, next2, c) && this.mustGiveWay(veh, next, next2, c2, c, toLine2)) return false;
+    if (c?.kind === 'priority' && this.yieldsAt(next, next2, c) && this.mustGiveWay(veh, next, next2, c2, c, toLine2, c2.turn ? Math.max(t2, timeToCover(toLine2, veh.v, veh.type.maxAccel, turnSpeed(veh.type))) : t2)) return false;
     for (let k2 = lo; k2 <= hi; k2++) {
       const ck = this.connectorFor(next, k, next2, k2);
-      if (this.packedBackStaying(next2, next2.lanes[k2]) - this.pendingInto(next2.index, k2, veh) >= this.exitNeed(veh, ck)) return true;
+      if (this.packedBackStaying(next2, next2.lanes[k2], true) - this.pendingInto(next2.index, k2, veh) >= this.exitNeed(veh, ck)) return true;
     }
     return false;
   }
