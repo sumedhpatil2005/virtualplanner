@@ -24,7 +24,7 @@ export interface AnalysisActions {
   pinDirection: (index: number) => void;
   flyTo: (c: [number, number, number]) => void;
   setOverlay: (o: MapOverlay) => void;
-  editInBuild: (roadIds: string[], at: [number, number, number] | null) => void;
+  editInBuild: (roadIds: string[], at: [number, number, number] | null, junction?: boolean) => void;
 }
 
 const STATUS_DOT: Record<Tone, string> = { neutral: 'bg-slate-400', good: 'bg-emerald-400', ok: 'bg-lime-400', warn: 'bg-amber-400', alert: 'bg-orange-400', bad: 'bg-rose-400', info: 'bg-cyan-400', accent: 'bg-indigo-400' };
@@ -420,7 +420,7 @@ export const SuggestionCard: React.FC<{ s: Suggestion; full?: boolean; onTest?: 
         <div className="flex gap-1.5 flex-wrap">
           {onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Build, then compare">Test it<ChevronRight size={13} /></Button>}
           {onTest && s.kind === 'times' && <Button size="sm" variant="secondary" onClick={onTest} title="Go to Improve & compare, where the road can be analysed at other times of day">Other times of day<ChevronRight size={13} /></Button>}
-          {s.action && <Button size="sm" variant={onTest ? 'secondary' : 'secondary'} icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at)}>{s.action.label}</Button>}
+          {s.action && <Button size="sm" variant={onTest ? 'secondary' : 'secondary'} icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at, s.action!.junction)}>{s.action.label}</Button>}
         </div>
       )}
     </li>

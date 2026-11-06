@@ -16,7 +16,7 @@ export interface Suggestion {
   kind: 'junction' | 'signal' | 'widen' | 'divert' | 'investigate' | 'none' | 'times';
   /** The headline number of the evidence, for a compact card (the same figure the evidence text gives). */
   figure?: { value: string; label: string };
-  action?: { label: string; roadIds: string[]; at: [number, number, number] | null };
+  action?: { label: string; roadIds: string[]; at: [number, number, number] | null; /** Opens the whole junction at `at` in Build's junction editor (docs/OVERHAUL.md §23). */ junction?: boolean };
 }
 
 export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[], at: [number, number, number] | null): Suggestion[] {
@@ -40,7 +40,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
         return { value: `${Math.round(100 * (dd && dd.total > 0 ? dd.blocked / dd.total : chain.blockedShare))}%`, label: `of the delay ${chain.direction} is queueing behind it` };
       })(),
       why: root.cause === 'signal' ? 'Try retiming its signal or giving the queued approach a longer green; compare the delay on this road and at the junction\'s other approaches.' : 'Try signal control, a turn ban or a separate turning lane there; compare the whole neighbourhood, not only this road.',
-      action: { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [root.coordinates[0], root.coordinates[1], 0] } });
+      action: { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [root.coordinates[0], root.coordinates[1], 0], junction: true } });
   }
   if (r.cause.kind === 'own-signal' && worst?.delay) {
     const j = r.junctions.find(x => x.atSection && x.signalised);
@@ -48,7 +48,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
       evidence: `${Math.round(worst.delay.signal)} s of the ${Math.round(worst.delay.total)} s delay per vehicle ${worst.label} is signal waiting; the stop line passes about ${worst.capacityPcu.toLocaleString()} PCU/h against ${worst.demandPcu.toLocaleString()} routed.`,
       figure: { value: `${Math.round(worst.delay.signal)} s`, label: `of ${Math.round(worst.delay.total)} s delay per vehicle is signal waiting` },
       why: 'A longer green for this approach shortens its wait but lengthens the others\': compare all approaches of the junction.',
-      action: j ? { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [j.coordinates[0], j.coordinates[1], 0] } : undefined });
+      action: j ? { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [j.coordinates[0], j.coordinates[1], 0], junction: true } : undefined });
   }
   const overCap = r.directions.find(d => d.vc > 0.85 && d.capacityBasis === 'midblock');
   if (overCap) {

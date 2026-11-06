@@ -53,6 +53,10 @@ import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing
 import { apiGet } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
 import { RoadHighlight, type RoadHighlightKind } from './rendering/renderers/RoadHighlight';
+import { JunctionHighlight, cutPath, ARM_DRAW_M } from './rendering/renderers/JunctionHighlight';
+import { junctionAt, junctionOfRoad, applyJunctionEdit, removeJunctionEdit, junctionEditOf, type LocalJunctions } from './editing/junctionEdits';
+import type { LogicalJunction } from './simulation/junctionGroups';
+import type { JunctionEditSpec } from './simulation/junctionControl';
 import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
 
 export class TwinCityEngine {
@@ -76,6 +80,11 @@ export class TwinCityEngine {
   private snapReticleEntity: Entity | null = null;
   private gapPreviewEntity: Entity | null = null;
   private readonly roadHighlight = new RoadHighlight();
+  private readonly junctionHighlight = new JunctionHighlight();
+  /** The imported junction open in Build's junction editor (selection id `ljunction:<id>`), docs/OVERHAUL.md §23. */
+  private openJunction: { junction: LogicalJunction; local: LocalJunctions } | null = null;
+  private readonly junctionListeners = new Set<() => void>();
+  private signalSource: TrafficSignalSource | null = null;
   private rubberbandEntity: Entity | null = null;
   private snapFrameHandle: number | null = null;
   private pendingSnapPoint: [number, number, number] | null = null;
@@ -129,7 +138,7 @@ export class TwinCityEngine {
         load: (boxes, signal) => this.editing.loadOsmRoadsForStudyArea(boxes, signal),
       },
       // Real traffic signals from OpenStreetMap, kept on this device
-      new TrafficSignalSource(localOsm),
+      (this.signalSource = new TrafficSignalSource(localOsm)),
       () => this.getSimulationContext()
     );
     this.history = new HistoryManager(this.objects);
@@ -176,6 +185,12 @@ export class TwinCityEngine {
     });
     this.selection.onChange(() => {
       const activeSel = this.selection.getSelection();
+      // Selecting anything else closes the junction editor and its preview
+      if (this.openJunction && activeSel[0] !== `ljunction:${this.openJunction.junction.id}`) {
+        this.openJunction = null;
+        this.junctionHighlight.clear();
+        this.emitJunction();
+      }
       renderManagerInstance.setSelection(activeSel[0] || null, true);
       this.syncSavedAreasWithCesium();
       this.syncZonesAndGatewaysWithCesium();
@@ -208,7 +223,8 @@ export class TwinCityEngine {
 
     // 2. Filter by layer visibility (legacy ids resolve to their registry layer)
     const visibility = new Map(this.layers.getAll().map(l => [l.id, l.visible]));
-    return scenarioFiltered.filter(obj => visibility.get(resolveLayerId(obj.layerId)) ?? true);
+    // Edits of imported junctions are settings, not objects on the map (docs/OVERHAUL.md §23)
+    return scenarioFiltered.filter(obj => !(obj.type === 'junction' && obj.importedJunction) && (visibility.get(resolveLayerId(obj.layerId)) ?? true));
   }
 
   private getSimulationContext(): SimulationContext {
@@ -272,6 +288,7 @@ export class TwinCityEngine {
   public dispose() {
     this.junctionOverlay.dispose();
     this.roadHighlight.dispose();
+    this.junctionHighlight.dispose();
     if (this.simulations.isRunning('traffic')) this.simulations.stopSimulation('traffic');
     this.interactionHandler?.destroy();
     this.interactionHandler = null;
@@ -320,6 +337,7 @@ export class TwinCityEngine {
     this.trafficVisualizer.setViewer(viewer);
     this.junctionOverlay.setViewer(viewer);
     this.roadHighlight.setViewer(viewer);
+    this.junctionHighlight.setViewer(viewer);
     renderManagerInstance.initialize(viewer);
     this.simMode.setViewer(viewer);
 
@@ -770,6 +788,7 @@ export class TwinCityEngine {
   public setAppMode(mode: AppMode): void {
     if (mode === this.getAppMode()) return;
     this.roadHighlight.clear();
+    this.closeImportedJunction();
     if (mode === 'simulate') {
       this.enterSimulationMode();
       return;
@@ -880,11 +899,126 @@ export class TwinCityEngine {
     return this.roadHighlight.shown();
   }
 
+  // ── Imported junctions as a whole (docs/OVERHAUL.md §23) ─────────────────
+
+  public onJunctionChange(cb: () => void): () => void {
+    this.junctionListeners.add(cb);
+    return () => { this.junctionListeners.delete(cb); };
+  }
+  private emitJunction() { this.junctionListeners.forEach(cb => cb()); }
+
+  /** Mapped signals for grouping: those the simulation loaded, else from the signal source near the point (null if unavailable in time). */
+  private async signalsNear(at: readonly number[]): Promise<[number, number][] | undefined> {
+    const loaded = this.simMode.mappedSignalPoints();
+    if (loaded?.length) return loaded as [number, number][];
+    if (!this.signalSource) return undefined;
+    const d = 0.004;
+    try {
+      const pts = await Promise.race([
+        this.signalSource.signalsIn({ minLng: at[0] - d, maxLng: at[0] + d, minLat: at[1] - d, maxLat: at[1] + d }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      ]);
+      return pts as [number, number][];
+    } catch { return undefined; }
+  }
+
+  private buildObjects() {
+    return filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId()).filter(o => !isSampleObject(o));
+  }
+
+  /** The logical junction a road belongs to (a piece inside it, or a short piece next to it), for Build's "Select junction" offer. */
+  public async importedJunctionOfRoad(roadId: string): Promise<LogicalJunction | null> {
+    const road = this.objects.getById(roadId);
+    if (!road || !isDrivable(road)) return null;
+    const cs = road.coordinates;
+    const hit = junctionOfRoad(this.buildObjects(), road, await this.signalsNear(cs[Math.floor(cs.length / 2)]));
+    return hit?.junction ?? null;
+  }
+
+  /** Opens the junction at a point in Build's junction editor (whole junction selected, previewed, camera on it). Returns it, or null. */
+  public async openImportedJunctionAt(at: readonly number[], fly = true): Promise<LogicalJunction | null> {
+    const hit = junctionAt(this.buildObjects(), at, await this.signalsNear(at));
+    if (!hit) return null;
+    this.openJunction = hit;
+    this.selection.selectSingle(`ljunction:${hit.junction.id}`);
+    this.previewImportedJunction();
+    if (fly) this.simMode.flyTo([hit.junction.centre[0], hit.junction.centre[1], 0]);
+    this.emitJunction();
+    return hit.junction;
+  }
+
+  /** Opens the junction a road belongs to. */
+  public async openImportedJunctionOfRoad(roadId: string, fly = false): Promise<LogicalJunction | null> {
+    const j = await this.importedJunctionOfRoad(roadId);
+    return j ? this.openImportedJunctionAt(j.centre, fly) : null;
+  }
+
+  public getOpenImportedJunction(): { junction: LogicalJunction; local: LocalJunctions } | null {
+    return this.openJunction;
+  }
+
+  public closeImportedJunction() {
+    if (!this.openJunction) return;
+    this.openJunction = null;
+    this.junctionHighlight.clear();
+    if (this.selection.getSelection()[0]?.startsWith('ljunction:')) this.selection.clearSelection();
+    this.emitJunction();
+  }
+
+  /** Shows every approach (arrow in), exit (arrow out) and internal piece of the open junction; `focus` arms drawn emphasised. */
+  public previewImportedJunction(focusArmIds: readonly string[] = []) {
+    const open = this.openJunction;
+    if (!open) { this.junctionHighlight.clear(); return; }
+    const { junction: j, local } = open;
+    const path = (edgeId: string) => local.network.edges.get(edgeId)?.coordinates ?? [];
+    this.junctionHighlight.show({
+      junctionId: j.id,
+      approaches: j.approaches.flatMap(a => a.edgeIds.map(id => ({ id: a.id, path: cutPath(path(id), ARM_DRAW_M, true) }))),
+      exits: j.exits.flatMap(a => a.edgeIds.map(id => ({ id: a.id, path: cutPath(path(id), ARM_DRAW_M, false) }))),
+      internal: j.internalEdgeIds.map(id => ({ id, path: path(id) })),
+      focusArmIds,
+    });
+  }
+
+  /** The junction preview on show (ids), for tests and the browser check. */
+  public getJunctionHighlight() {
+    return this.junctionHighlight.shown();
+  }
+
+  /** The edit in force for an imported junction in the active scenario, or null. */
+  public getImportedJunctionEdit(junctionId: string): JunctionEditSpec | null {
+    return junctionEditOf(this.objects, junctionId, this.scenarios.getActiveScenarioId())?.importedJunction ?? null;
+  }
+
+  /** Applies a whole-junction edit (one Undo step); the network changes, so Simulate re-runs. */
+  public applyImportedJunctionEdit(spec: JunctionEditSpec) {
+    const open = this.openJunction;
+    const centre = open?.junction.id === spec.junctionId ? open.junction.centre : [0, 0];
+    applyJunctionEdit(this.objects, this.history, spec, this.scenarios.getActiveScenarioId(), centre);
+    this.emitJunction();
+  }
+
+  /** Removes the active scenario's edit of a junction (back to OpenStreetMap; one Undo step). */
+  public resetImportedJunctionEdit(junctionId: string): boolean {
+    const done = removeJunctionEdit(this.objects, this.history, junctionId, this.scenarios.getActiveScenarioId());
+    this.emitJunction();
+    return done;
+  }
+
   /** Leaves Simulate for Build with the problem's road selected and in view. */
-  /** Leaves Simulate for Build with a road selected (or none) and the camera at `location`: "try an improvement". */
-  public editInBuild(roadIds: readonly string[], location: [number, number, number] | null): void {
+  /** Leaves Simulate for Build with a road selected (or none) and the camera at `location`: "try an improvement". With `junction`, the whole junction at `location` opens in the junction editor. */
+  public editInBuild(roadIds: readonly string[], location: [number, number, number] | null, o: { junction?: boolean } = {}): void {
     this.exitSimulationMode();
     this.setPlanningModeActive(true);
+    if (o.junction && location) {
+      void this.openImportedJunctionAt(location, true).then(j => {
+        if (j) return;
+        const roadId = roadIds.find(id => this.objects.getById(id));
+        if (roadId) this.selection.selectSingle(roadId);
+        this.simMode.flyTo(location);
+      });
+      return;
+    }
     const roadId = roadIds.find(id => this.objects.getById(id));
     if (roadId) this.selection.selectSingle(roadId);
     if (location) this.simMode.flyTo(location);

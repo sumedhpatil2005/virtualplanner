@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Viewport3D } from './components/Viewport3D';
 import { Toolbar } from './components/Toolbar';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { JunctionPanel } from './components/JunctionPanel';
 import { InfoPanel } from './components/InfoPanel';
 import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
@@ -65,6 +66,7 @@ function App() {
   const isDebugSelection = !!selectedId && selectedId.startsWith('debug_');
   const panel =
     mode === 'simulate' ? <SimulationPanel />
+    : mode === 'build' && selectedId?.startsWith('ljunction:') ? <JunctionPanel />
     : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
     : isProjectsOpen || selectedId ? <InfoPanel onClose={() => setIsProjectsOpen(false)} />
     : null;

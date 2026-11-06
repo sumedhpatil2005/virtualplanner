@@ -21,6 +21,7 @@ import { sourceOf } from './ui/dataSource';
 import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
 import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
+import { JunctionCompareCard } from './JunctionCompareCard';
 import {
   StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, AccountingCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
 } from './RoadAnalysisPieces';
@@ -57,7 +58,7 @@ const useActions = (): AnalysisActions => {
     pinDirection: i => mode.pinDirection(i, true),
     flyTo: c => mode.flyTo(c),
     setOverlay: o => mode.setOverlay(o),
-    editInBuild: (ids, at) => engineInstance.editInBuild(ids, at),
+    editInBuild: (ids, at, junction) => engineInstance.editInBuild(ids, at, { junction }),
   };
 };
 
@@ -374,6 +375,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
         {kpis.map(d => <DeltaKpi key={d.label} d={d} label={LEVEL_KPI[d.label]} />)}
       </div>
       <LaneInsightCard insights={c.laneInsights ?? []} onShow={ids => engineInstance.highlightRoads(ids, 'binding')} />
+      <JunctionCompareCard items={mode.junctionComparisons()} />
       {otherSection.length > 0 && <DeltaRows rows={otherSection} />}
       {c.newBottlenecks.length > 0 && (
         <div className="flex flex-wrap gap-1.5 items-center"><span className="text-[11px] text-rose-200">New bottleneck{c.newBottlenecks.length > 1 ? 's' : ''}:</span>{c.newBottlenecks.map(b => <Chip key={b.label} tone="bad" title={b.label}>{b.roadName} {Math.round(b.vc * 100)}%</Chip>)}</div>

@@ -15,6 +15,7 @@ import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObj
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 import { roadFieldUpdates, laneEditPlan } from '../engine/editing/roadEdits';
 import { LaneScopeControl } from './LaneScopeControl';
+import { JunctionOffer } from './JunctionPanel';
 import { getLaneEditScope, laneEditApplied } from './laneScopeStore';
 
 /** Build mode: edit the selected object. */
@@ -376,6 +377,7 @@ export const PropertiesPanel: React.FC = () => {
               )
             )}
 
+            {selectedObj.type === 'road' && (selectedObj as RoadObject).osmProvenance && <JunctionOffer road={selectedObj as RoadObject} />}
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
