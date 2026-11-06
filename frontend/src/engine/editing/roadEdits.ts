@@ -1,5 +1,5 @@
 import type { RoadObject, RoadSectionProfile } from '../objects/types';
-import { carriagewayRun, SECTION_MAX_M } from '../simulation/roadSection';
+import { carriagewayRun, SECTION_MAX_M, type CarriagewayPiece } from '../simulation/roadSection';
 
 /**
  * The changes a Build properties edit of one field makes to a road (moved here
@@ -135,6 +135,12 @@ export type LaneField = 'lanesForward' | 'lanesBackward';
 
 /** Pieces of one carriageway followed at most this far from the edited piece (m), as a road section (roadSection.ts). */
 export const LANE_EDIT_MAX_M = SECTION_MAX_M;
+/**
+ * The roads as the analysis sees them (SimulationMode.roadView: the network corrections applied on top of the
+ * stored roads, which stay unchanged). Given to a lane edit so its "Entire carriageway" is the carriageway the
+ * analysis reads a direction's capacity from; road ids are kept, geometry may be reversed.
+ */
+export type RoadView = (roads: readonly RoadObject[]) => readonly RoadObject[];
 const M_PER_DEG_LAT = 111320;
 const lengthM = (c: readonly (readonly number[])[]) => {
   let n = 0;
@@ -160,15 +166,34 @@ export function directionLanes(r: RoadObject, field: LaneField): number {
  * §21). Returns each piece with the field to edit on it (a two-way way drawn
  * the other way round has its directions swapped).
  */
-export function carriagewayPieces(roads: readonly RoadObject[], roadId: string, field: LaneField): { road: RoadObject; field: LaneField }[] {
+export function carriagewayPieces(roads: readonly RoadObject[], roadId: string, field: LaneField, view?: RoadView): { road: RoadObject; field: LaneField }[] {
   const sel = roads.find(r => r.id === roadId);
   if (!sel || sel.coordinates.length < 2) return [];
   // A one-way road has no lanes against its direction to edit
   if (sel.isOneWay && field === 'lanesBackward') return [{ road: sel, field }];
-  const lanes = directionLanes(sel, field);
+  // The run is found on the roads as the analysis sees them (the network corrections applied: a way reversed,
+  // made one-way or two-way), so the edit reaches the stretch the analysis reads the capacity from; each piece's
+  // field is then turned back to the stored way's drawing direction
+  const seen = view ? view(roads) : roads;
+  const rawById = new Map(roads.map(r => [r.id, r]));
+  const reversed = (v: RoadObject) => {
+    const r = rawById.get(v.id);
+    if (!r || r === v || r.coordinates.length < 2) return false;
+    const a = r.coordinates, b = v.coordinates;
+    return a[0] !== a[a.length - 1] && b[0][0] === a[a.length - 1][0] && b[0][1] === a[a.length - 1][1] && !(b[0][0] === a[0][0] && b[0][1] === a[0][1]);
+  };
+  const flip = (f: LaneField): LaneField => (f === 'lanesForward' ? 'lanesBackward' : 'lanesForward');
+  const selSeen = seen.find(r => r.id === roadId) ?? sel;
+  const fieldSeen = reversed(selSeen) ? flip(field) : field;
+  if (selSeen.isOneWay && fieldSeen === 'lanesBackward') return [{ road: sel, field }];
+  const lanes = directionLanes(selSeen, fieldSeen);
   const fieldOf = (along: boolean): LaneField => (along ? 'lanesForward' : 'lanesBackward');
-  const run = carriagewayRun(roads, roadId, field === 'lanesForward', p => directionLanes(p.road as RoadObject, fieldOf(p.along)) === lanes);
-  return run.map(p => ({ road: p.road as RoadObject, field: p.road.id === roadId ? field : fieldOf(p.along) }));
+  const storedField = (p: CarriagewayPiece) => (p.road.id === roadId ? field : reversed(p.road as RoadObject) ? flip(fieldOf(p.along)) : fieldOf(p.along));
+  // A stored one-way way that a correction makes two-way has no lanes against its stored direction to set (and
+  // lanes set in Build switch the correction's lane and two-way fix off): the edit stops before it
+  const editable = (p: CarriagewayPiece) => { const raw = rawById.get(p.road.id); return !!raw && !(raw.isOneWay && storedField(p) === 'lanesBackward'); };
+  const run = carriagewayRun(seen, roadId, fieldSeen === 'lanesForward', p => directionLanes(p.road as RoadObject, fieldOf(p.along)) === lanes && editable(p));
+  return run.map(p => ({ road: rawById.get(p.road.id)!, field: storedField(p) }));
 }
 
 /**
@@ -180,12 +205,12 @@ export type LaneEditScope = 'carriageway' | 'segment';
 export const DEFAULT_LANE_EDIT_SCOPE: LaneEditScope = 'carriageway';
 
 /** The pieces a lane edit with this scope changes, the selected road first. */
-export function laneEditPieces(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { road: RoadObject; field: LaneField }[] {
+export function laneEditPieces(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE, view?: RoadView): { road: RoadObject; field: LaneField }[] {
   if (scope === 'segment') {
     const sel = roads.find(r => r.id === roadId);
     return sel ? [{ road: sel, field }] : [];
   }
-  return carriagewayPieces(roads, roadId, field);
+  return carriagewayPieces(roads, roadId, field, view);
 }
 
 /**
@@ -193,8 +218,8 @@ export function laneEditPieces(roads: readonly RoadObject[], roadId: string, fie
  * applied: the road ids (exactly those laneEditPlan then edits), how many, and
  * their total length ("3 pieces · 564 m").
  */
-export function laneEditPreview(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { roadIds: string[]; count: number; lengthM: number; label: string } {
-  const pieces = laneEditPieces(roads, roadId, field, scope);
+export function laneEditPreview(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE, view?: RoadView): { roadIds: string[]; count: number; lengthM: number; label: string } {
+  const pieces = laneEditPieces(roads, roadId, field, scope, view);
   const len = Math.round(pieces.reduce((n, p) => n + lengthM(p.road.coordinates), 0));
   return { roadIds: pieces.map(p => p.road.id), count: pieces.length, lengthM: len, label: `${pieces.length} piece${pieces.length === 1 ? '' : 's'} · ${len.toLocaleString('en-US')} m` };
 }
@@ -204,6 +229,6 @@ export function laneEditPreview(roads: readonly RoadObject[], roadId: string, fi
  * selected road first, then (scope 'carriageway', the default) the other
  * pieces of its carriageway (carriagewayPieces).
  */
-export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[], scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { id: string; updates: Partial<RoadObject> }[] {
-  return laneEditPieces(roads, roadId, field, scope).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
+export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[], scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE, view?: RoadView): { id: string; updates: Partial<RoadObject> }[] {
+  return laneEditPieces(roads, roadId, field, scope, view).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
 }

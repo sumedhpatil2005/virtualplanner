@@ -21,6 +21,7 @@ export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
 import { apiGet } from '../../lib/api';
 import { applyNetworkCorrections, validateCorrectionLayer, type NetworkCorrectionLayer, type CorrectionReport } from './networkCorrections';
+import type { RoadObject } from '../objects/types';
 import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, junctionChecks, observedFlows, type CalibrationRow, type JunctionCheck, type SimSetup } from '../calibration/calibration';
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
@@ -435,6 +436,16 @@ export class SimulationMode {
     this.signalSource = signalSource;
     this.getContext = getContext;
   }
+
+  /**
+   * The roads as the analysis builds its network from them: the correction layer (and the OSM one-way
+   * implications) applied when enabled, the stored roads unchanged. A Build lane edit finds its carriageway on
+   * this view (roadEdits.carriagewayPieces), so "Entire carriageway" is the stretch a direction's capacity is
+   * read from even where a correction reverses a way or changes it to one-way or two-way (docs/OVERHAUL.md §21).
+   * Free-flow speeds, also applied for the analysis, change nothing the carriageway definition reads.
+   */
+  public roadView = (raw: readonly RoadObject[]): RoadObject[] =>
+    applyNetworkCorrections(raw, this.correctionLayer, this.correctionsEnabled).roads as RoadObject[];
 
   /** For React's useSyncExternalStore. */
   public subscribe = (callback: () => void) => {

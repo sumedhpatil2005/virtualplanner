@@ -254,7 +254,7 @@ export const PropertiesPanel: React.FC = () => {
     // the same road running the same way), or the selected way only (engine/editing/roadEdits.ts, LaneScopeControl.tsx)
     if (selectedObj.type === 'road' && (field === 'lanesForward' || field === 'lanesBackward')) {
       const roads = engineInstance.objects.getAll().filter((o): o is RoadObject => o.type === 'road');
-      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r), getLaneEditScope());
+      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r), getLaneEditScope(), engineInstance.simMode.roadView);
       laneEditApplied();
       if (plan.length > 1) {
         const before = plan.map(p => engineInstance.objects.getById(p.id)!);

@@ -5,7 +5,7 @@ import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { laneEditPlan, laneEditPreview } from '../editing/roadEdits';
 import { StudyAreaExplorer, type DrivableObject } from '../simulation/StudyAreaExplorer';
-import { applyNetworkCorrections } from '../simulation/networkCorrections';
+import { applyNetworkCorrections, type NetworkCorrectionLayer } from '../simulation/networkCorrections';
 import { applyUrbanSpeeds } from '../simulation/roadParameters';
 import { compileAreaDemand } from '../simulation/AreaDemand';
 import { roadSection } from '../simulation/roadSection';
@@ -34,8 +34,8 @@ const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/sangamwadi.
 const SEED = 'osm_22841055', WEST_PIECE = 'osm_750335054', STUB = 'osm_657054226';
 const ONE_WAY = ['osm_1359564185', 'osm_1524250062'];
 
-function analyse(roads: DrivableObject[]) {
-  const sim = applyUrbanSpeeds(applyNetworkCorrections(roads, null).roads).roads;
+function analyse(roads: DrivableObject[], layer: NetworkCorrectionLayer | null = null) {
+  const sim = applyUrbanSpeeds(applyNetworkCorrections(roads, layer).roads).roads;
   const map = new Map(sim.map(r => [r.id, r]));
   const area = new StudyAreaExplorer().explore(sim, 1, { seedRoadIds: [SEED], rangeMeters: 700, direction: 'both' });
   const plan = compileAreaDemand({ buildings: [] }, area, map)!;
@@ -85,5 +85,63 @@ describe('Nyaymurti Ranade Path: the analysis and the edit scope agree on the ca
     expect(ne1.lanes).toBe(2);
     expect(ne1.midblockPcu).toBeGreaterThan(ne0.midblockPcu * 1.5);
     expect(ne1.bindingSegments.every(b => b.roadId === SEED || b.roadId === WEST_PIECE)).toBe(true);
+  });
+});
+
+/**
+ * The analysis builds its network from the roads with the network corrections
+ * applied; a lane edit used to find its carriageway on the stored roads, so a
+ * correction that reverses a way or makes it one-way or two-way could make
+ * "Entire carriageway" and the direction's capacity stretch differ. Both now
+ * read the same road view (SimulationMode.roadView, docs/OVERHAUL.md §21).
+ * Hypothetical layers on the real ways: the shipped layer (pune_west_v1) does
+ * reverse ways and change one-way status, elsewhere in the city.
+ */
+describe('network corrections: the edit scope and the analysis read the same roads', () => {
+  const roads = () => structuredClone(fx.roads) as RoadObject[];
+  const layer = (corrections: Partial<NetworkCorrectionLayer['corrections'][number]>[]): NetworkCorrectionLayer => ({
+    schema: 'twincity.network_corrections/v1', id: 'test', version: '0', title: 'test', osm_snapshot: 'test',
+    corrections: corrections.map((c, i) => ({ id: `c${i}`, junction_id: 'j', osm_way_id: 0, action: 'reverse', params: {}, evidence: ['test'], confidence: 'high', proposed_osm_edit: '', enabled: true, ...c })),
+  });
+  const viewOf = (l: NetworkCorrectionLayer) => (rs: readonly RoadObject[]) => applyNetworkCorrections(rs, l).roads as RoadObject[];
+
+  it('a correction making a two-way way one-way: the edit stops where the analysis\' carriageway does', () => {
+    // Hypothetical: Nyaymurti Ranade Path's two-way osm_750335054 one-way west (its drawn direction), as the stretch beyond it
+    const l = layer([{ osm_way_id: Number(WEST_PIECE.slice(4)), action: 'set_oneway' }]);
+    const { ctx, ne, sw } = analyse(roads(), l);
+    for (const [field, d] of [['lanesForward', ne], ['lanesBackward', sw]] as const) {
+      const scope = laneEditPreview(roads(), SEED, field, 'carriageway', viewOf(l)).roadIds;
+      expect(scope).toEqual([SEED]);
+      expect(new Set(ctx.directions[d].roadIds)).toEqual(new Set(scope));
+    }
+    // On the stored roads the edit took the way in, which in the analysis is the one-way stretch's first piece
+    expect(new Set(laneEditPreview(roads(), SEED, 'lanesForward').roadIds)).toEqual(new Set([SEED, WEST_PIECE]));
+    // Selected, the corrected way's westbound lanes reach on along the one-way stretch, edited in each stored way's direction
+    const west = laneEditPlan(roads(), WEST_PIECE, 'lanesForward', 3, r => new ObjectManager().synthesizeDefaultSections(r), 'carriageway', viewOf(l));
+    expect(new Set(west.map(p => p.id))).toEqual(new Set([WEST_PIECE, ...ONE_WAY]));
+  });
+
+  it('a correction making a stored one-way way two-way: the edit stops before it (its stored way has no lanes the other way)', () => {
+    const l = layer(ONE_WAY.map(id => ({ osm_way_id: Number(id.slice(4)), action: 'set_two_way' as const, params: { lanes_forward: 1, lanes_backward: 1 } })));
+    expect(new Set(laneEditPreview(roads(), SEED, 'lanesForward', 'carriageway', viewOf(l)).roadIds)).toEqual(new Set([SEED, WEST_PIECE]));
+    // The analysis counts the corrected two-way ways in the north-east direction (docs/OVERHAUL.md §21, residual case)
+    const { ctx, ne } = analyse(roads(), l);
+    for (const id of ONE_WAY) expect(ctx.directions[ne].roadIds).toContain(id);
+  });
+
+  it('a correction reversing a way: the same pieces, each edited in the stored way\'s own direction', () => {
+    const l = layer([{ osm_way_id: Number(WEST_PIECE.slice(4)), action: 'reverse' }]);
+    const view = viewOf(l);
+    expect(view(roads()).find(r => r.id === WEST_PIECE)!.coordinates[0]).toEqual(roads().find(r => r.id === WEST_PIECE)!.coordinates.at(-1));
+    for (const field of ['lanesForward', 'lanesBackward'] as const) {
+      const om = new ObjectManager();
+      om.addMultiple(roads(), true);
+      const synth = (r: RoadObject) => om.synthesizeDefaultSections(r);
+      const plain = laneEditPlan(om.getAll() as RoadObject[], SEED, field, 2, synth);
+      const viewed = laneEditPlan(om.getAll() as RoadObject[], SEED, field, 2, synth, 'carriageway', view);
+      expect(viewed).toEqual(plain);
+      const { ctx, ne, sw } = analyse(roads(), l);
+      expect(new Set(ctx.directions[field === 'lanesForward' ? ne : sw].roadIds)).toEqual(new Set(viewed.map(p => p.id)));
+    }
   });
 });

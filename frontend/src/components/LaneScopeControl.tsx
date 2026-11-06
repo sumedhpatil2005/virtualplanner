@@ -45,7 +45,7 @@ export const LaneScopeControl: React.FC<{ road: RoadObject; children: React.Reac
 
   const preview = useMemo(() => {
     const roads = engineInstance.objects.getAll().filter((o): o is RoadObject => o.type === 'road');
-    return laneEditPreview(roads, road.id, field, current);
+    return laneEditPreview(roads, road.id, field, current, engineInstance.simMode.roadView);
   }, [road, field, current]);
 
   const active = (hover || focus || pinned) && !suppressed;

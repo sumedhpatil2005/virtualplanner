@@ -882,3 +882,118 @@ Share of the neighbourhood's demand that got onto its roads: 47% at the peaks, 5
 - AM = PM under the uncalibrated estimate remains (§19): edge flows have no morning/evening pattern and each peak is the reference of its half of the day. The panel says so.
 - The four periods take 1.5–3 minutes in the browser with three seeds (one seed took about 50 s).
 - `TrafficMicroSim.test.ts` "keeps up with a large area" (a ms-per-step limit) failed in the full run and alone while other agents' browsers kept the load average near 7 on 2 CPUs; not related to this change.
+## 21. Connectivity and carriageway definition
+
+Follow-up to §17 and §19: why the flyover chain beside COEP Road could fall apart in a session, and why the
+analysis and Build's "Entire carriageway" could disagree on what a carriageway is. Figures are model output on
+estimated demand (09:00 unless stated), measured headless in vitest on a project database export
+(`objects.json`, 18,273 roads) and the real OSM ways; no browser run has been made for this section yet.
+
+### Database findings
+- The six ways of the chain (Trunk Road `osm_22841398`, Mokshagundam Vishweshvarayya Flyover `osm_661187172`,
+  `osm_317550167`, `osm_327073027`, Trunk Road `osm_815335438`, Old Pune–Mumbai Highway `osm_208099367`) are in
+  the project database whole (no clipped `_in_area_cut_` pieces), in the base scenario, imported 2026-11-03
+  15:10:12 UTC and never edited (`created_at` = `updated_at`, no lane edits, heights as imported).
+- On that intact database the old code (20cf16f) gives COEP Road 199% at 09:00 (352 links over capacity), and a
+  route from Trunk Road to the Old Pune–Mumbai Highway exists without COEP Road. The 887–970% the user saw is
+  therefore not explained by the database alone.
+
+### Reproduced sequences (old code 20cf16f, then this branch)
+| Sequence | Old code | This branch |
+|---|---|---|
+| Database as loaded | chain intact; COEP Road 199% | chain intact; COEP Road 0% (access rule, §17/§19) |
+| Approach `osm_22841398` reshaped in Build, saved, reloaded | approach end at 4.25 m, deck start at 0 m: unjoined; no route round COEP Road; **COEP Road 935%** | deck meets the approach at its stored 4.25 m (§19 item 4); route round COEP Road exists; 0% |
+| Deleted-OSM list holds `osm_661187172` (a delete, or an earlier undone import) | 937% | 965%: a real deletion still forces the traffic, now labelled forced with the gap named (§19 item 7) |
+| Deleted-OSM list holds `osm_327073027` | 970% | 0%, route round COEP Road exists |
+| Whole import, undo, then a study-area load | undo recorded all six ways as deleted by the user; the load did not bring them back | undo marks nothing deleted; the load restores the chain (§19 item 3) |
+| Clipped Map Selected Area cutting `osm_661187172`, then a study-area load | piece `osm_661187172_in_area_cut_0` kept; `osm_22841398` missing after the clip; no route round COEP Road | the load replaces the piece by the whole way; network as a direct import (§19 item 2) |
+
+### What remains unknown
+Which of these happened in the user's session. The database rules out a reshaped approach and a clipped piece
+there (whole ways, never edited); what it cannot show is the browser-local deleted-OSM list (IndexedDB) and
+anything unsaved. The one-line check, pasted into the user's browser console (also
+`vp-conn-e2e/js/c00_chain_check.js`):
+
+```js
+(async () => { const C = ['osm_22841398', 'osm_661187172', 'osm_317550167', 'osm_327073027', 'osm_815335438', 'osm_208099367'], o = window.engineInstance.objects, d = await o.deletedOsmIds(); return { chain: C.map(id => { const r = o.getById(id); return { id, present: !!r, deletedByUser: d.has(id), edited: !!r?.sections?.[0]?.provenance?.profileModified, heights: r ? r.coordinates.map(p => +(+p[2]).toFixed(1)).join('/') : null }; }), clippedPieces: o.getAll().filter(r => C.some(id => r.id.startsWith(id + '_'))).map(r => r.id) }; })()
+```
+
+All six present, none `deletedByUser`, no clipped pieces: the chain is intact in that session.
+
+### New bug found: heights not worked out again on delete (b0d33e2)
+Bridge and approach heights were recomputed when OSM roads were added, not when they were deleted. Two effects:
+the whole way that replaced a clipped piece was lifted while the piece was still present, so its heights were
+up to 1 m off a direct import's and the same network keyed apart; and an approach kept its ramp after its deck
+was deleted. `ObjectManager.delete`/`deleteMultiple` now re-run `liftBridges` when an OSM road goes.
+
+Tests `ImportConnectivity.test.ts` (real ways round COEP Road and Sangamwadi Bridge, `fixtures/coep_osm_ways.json`):
+a direct import joins every pair of ways sharing an OSM node at any height (bridges, nine underpass ways, 42
+bridge ways) and does not join level-separated crossings without one; a clipped area then a larger load equals a
+direct import key for key; undo/redo of an import (nothing marked deleted, keys restored); a reshaped approach
+still meets the flyover after a reload; deleting a flyover piece lowers its approach as a reload would, and
+undoing the deletion restores the key.
+
+### Carriageway definition (2023870)
+**Stub root cause.** On Nyaymurti Ranade Path (`osm_22841055`) the north-east capacity stayed at 643 PCU/h after
+"Entire carriageway" +1 lane widened every way the edit reached. The section had taken in `osm_657054226`, an
+11 m two-way stub of the same name across Shivaji Road's median, past a major junction and past the road's
+one-way stretch: the "other carriageway alongside" rule took any same-name piece whose midpoint lay within 45 m
+of the section's line (`ALONGSIDE_M`), and the stub's midpoint lay 5 m beyond the section's end. Its single lane
+set the direction's capacity. Fix: alongside means beside the line, not beyond a free end of it.
+
+**One definition.** `carriagewayRun` (`roadSection.ts`) is now the carriageway for both the analysis (a
+direction's capacity, lanes and binding stretch, `RoadAnalysis.carriagewayOnly`) and the lane edit scope
+(`roadEdits.carriagewayPieces`). Section links outside it still count for the traffic through the road but do
+not set a direction's capacity. From the selected way, in the direction of travel, downstream and upstream, the
+run continues onto a way only if it is the same road (name, alt/official/old name or ref); of the same kind
+(one-way or two-way); travelled the same way from the shared node (a one-way piece only along its drawing); a
+slip road exactly when the start is. It stops at:
+- a fork: more than one way of the same road continues, of any kind or level (a flyover and its at-grade road, a
+  same-name slip road);
+- a main road of another name through the joint, or through an inner node of the next way;
+- a turn of more than 135° (a U-turn onto the opposite carriageway);
+- 900 m (`SECTION_MAX_M`) from the start's midpoint;
+- for a lane edit, where the lanes in the edited direction change.
+
+**Interpretation.** "Main road" is collector or above (`roadClass` rank ≥ 2): a residential or local street
+crossing does not end a carriageway, a collector, arterial or highway does. A modelling choice, not an OSM rule.
+
+**Property tests** (`CarriagewayProperties.test.ts`, `carriagewayInvariants.ts`), checked independently of how
+the run walks (contiguous in the direction of travel, no fork or main road at a joint or inside a piece, never
+the opposite carriageway, same road and kind, preview equals edit):
+
+| Set | Old scope | New scope |
+|---|---|---|
+| Every named way round Sangamwadi, both directions (229 cases) | 13 violations (11 main road inside a piece, 2 forks) | 0 |
+| 200 random arterial/highway ways of the database export (221 cases; runs only with `VP_OBJECTS` set) | 100 violations (40 main road inside a piece, 35 opposite carriageway, 16 forks, 8 main road at a joint, 1 not contiguous) | 0 |
+
+`CarriagewayDefinition.test.ts`: on Nyaymurti Ranade Path the edit scope is the two two-way ways in either
+direction, the stub is in no direction, each direction is the scope of that direction, and the edit raises the
+north-east capacity above 1.5× 643 PCU/h with the binding stretch on the edited ways.
+
+### Corrected roads (residual closed)
+The analysis builds its network from the roads with the network corrections applied
+(`backend/data/network_corrections`); the lane edit scope read the stored roads. The shipped layer
+(`pune_west_v1`) does reverse ways (kasturi, infosys), make one two-way (`kasturi-ne-3`) and one one-way
+(`infosys-ring-1`), so they could differ. Both now read the same view: `SimulationMode.roadView` (corrections
+applied; free-flow speeds, also applied for the analysis, change nothing the run reads) is passed to
+`laneEditPreview`/`laneEditPlan`; the run is found on that view and each piece's field is turned back to the
+stored way's drawing direction. Tests on the real Nyaymurti ways with hypothetical layers: a two-way way made
+one-way ends the scope where the analysis' direction ends (on the stored roads it had reached one way further);
+a reversed way gives the same pieces and fields as without the layer.
+
+### Residual cases
+- A stored one-way way that a correction makes two-way: the edit stops before it (the stored way has no lanes
+  against its direction, and lanes set in Build switch the correction's lane and two-way fix off), while the
+  analysis counts it in that direction. Its capacity can then bind a direction the edit cannot widen; the
+  binding segment names it. Tested as such.
+- Unnamed roads (no name or ref) are a single way: the run has nothing to match on.
+- Ways that meet without a shared OSM node (keyed at ~0.1 m) do not continue a run.
+- Carriageways longer than 900 m are cut at 900 m from the start.
+
+### Verification
+`npx tsc -b` clean; `npx oxlint` 0 errors (5 warnings, none in these files); `npx vite build` passes; vitest
+470 passed, 4 skipped (60 files, run in groups on 2 shared CPUs; the long Simulate tests in `EditScope` and
+`EditRecompute` rerun alone when a group hit the 120 s limit). `TimeProfileLoad` "Midday chosen" fails on the
+base in another checkout (fixed on the vp-day branch); it passed in these runs. Browser verification is
+pending the final integration pass (scripts and expected values: `/workspace/work/vp-conn-e2e/README.md`).
