@@ -14,6 +14,8 @@ import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../en
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 import { roadFieldUpdates, laneEditPlan } from '../engine/editing/roadEdits';
+import { LaneScopeControl } from './LaneScopeControl';
+import { getLaneEditScope, laneEditApplied } from './laneScopeStore';
 
 /** Build mode: edit the selected object. */
 export const PropertiesPanel: React.FC = () => {
@@ -248,10 +250,12 @@ export const PropertiesPanel: React.FC = () => {
       }
     }
 
-    // A lane edit is for the whole carriageway: the other OSM pieces of the same road running the same way (engine/editing/roadEdits.ts)
+    // A lane edit covers the scope chosen under the lane controls: by default the whole carriageway (the other OSM pieces of
+    // the same road running the same way), or the selected way only (engine/editing/roadEdits.ts, LaneScopeControl.tsx)
     if (selectedObj.type === 'road' && (field === 'lanesForward' || field === 'lanesBackward')) {
       const roads = engineInstance.objects.getAll().filter((o): o is RoadObject => o.type === 'road');
-      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r));
+      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r), getLaneEditScope());
+      laneEditApplied();
       if (plan.length > 1) {
         const before = plan.map(p => engineInstance.objects.getById(p.id)!);
         engineInstance.history.pushDiff({ type: 'batch', description: `Update ${selectedObj.name || selectedObj.id} lanes (${plan.length} pieces)`,
@@ -261,6 +265,7 @@ export const PropertiesPanel: React.FC = () => {
         (window as any).showToast?.(`Lanes changed on ${plan.length} pieces of ${selectedObj.name || 'this road'} running this way.`, 'info');
         return;
       }
+      if (getLaneEditScope() === 'segment') (window as any).showToast?.('Lanes changed on the selected segment only.', 'info');
     }
 
     // Apply & trigger updates
@@ -1267,6 +1272,10 @@ const BuildingEditorDraft: React.FC<{
 
 
 
+/** The lane controls of a road, with the lane edit scope and its preview; a flyover's are shown as they are. */
+const LaneEditGroup: React.FC<{ r: RoadObject | FlyoverObject; children: React.ReactNode }> = ({ r, children }) =>
+  r.type === 'road' ? <LaneScopeControl road={r as RoadObject}>{children}</LaneScopeControl> : <>{children}</>;
+
 const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: string, val: any) => void; isFlyover?: boolean }> = ({ r, onUpdate, isFlyover }) => {
   // The ramp connection check reads the city-wide graph
   useEffect(() => {
@@ -1323,8 +1332,10 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
         <span className="text-xs font-mono font-bold text-slate-200 bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">{r.laneCount}</span>
       </div>
 
+      {/* Forward and backward lanes, with the scope of a lane change (roads only) */}
+      <LaneEditGroup r={r}>
       {/* Forward Lanes */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" data-lane-field="lanesForward">
         <label className="text-xs text-slate-400 uppercase font-semibold">
           {r.isOneWay ? "Lanes" : "Lanes (Forward)"}
         </label>
@@ -1345,7 +1356,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
 
       {/* Backward Lanes */}
       {!r.isOneWay && (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1" data-lane-field="lanesBackward">
           <label className="text-xs text-slate-400 uppercase font-semibold">Lanes (Backward)</label>
           <select
             value={bwdLanes}
@@ -1362,6 +1373,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           </select>
         </div>
       )}
+      </LaneEditGroup>
 
       {/* Lane Width */}
       <div className="flex flex-col gap-1">

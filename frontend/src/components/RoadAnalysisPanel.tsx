@@ -18,6 +18,7 @@ import { SourceBadge } from './ui/SourceBadge';
 import { sourceOf } from './ui/dataSource';
 import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
+import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
 import {
   StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
 } from './RoadAnalysisPieces';
@@ -95,6 +96,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
       <StatusHeader r={r} when={`${period} · ${hourLabel(hour)} ${sim.timeOfDay.day}`} badges={<DataBadges r={r} proposal={sim.comparison.showingProposal} />} />
       <WorstKpis r={r} />
       <DirectionsGrid r={r} heading={heading} focus={sim.directionFocus} actions={actions} />
+      <CapacityStretchCard r={r} onShow={ids => engineInstance.highlightRoads(ids, 'binding')} />
       <WhyCard r={r} overlay={sim.overlay} actions={actions} />
       <LoadCard r={r} />
       <Measured sim={sim} r={r} />
@@ -328,6 +330,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
       <div className="grid grid-cols-2 gap-1.5" data-testid="delta-kpis">
         {kpis.map(d => <DeltaKpi key={d.label} d={d} label={LEVEL_KPI[d.label]} />)}
       </div>
+      <LaneInsightCard insights={c.laneInsights ?? []} onShow={ids => engineInstance.highlightRoads(ids, 'binding')} />
       {otherSection.length > 0 && <DeltaRows rows={otherSection} />}
       {c.newBottlenecks.length > 0 && (
         <div className="flex flex-wrap gap-1.5 items-center"><span className="text-[11px] text-rose-200">New bottleneck{c.newBottlenecks.length > 1 ? 's' : ''}:</span>{c.newBottlenecks.map(b => <Chip key={b.label} tone="bad" title={b.label}>{b.roadName} {Math.round(b.vc * 100)}%</Chip>)}</div>

@@ -52,6 +52,7 @@ import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
+import { RoadHighlight, type RoadHighlightKind } from './rendering/renderers/RoadHighlight';
 import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
 
 export class TwinCityEngine {
@@ -74,6 +75,7 @@ export class TwinCityEngine {
   private drawMarkers: Entity[] = [];
   private snapReticleEntity: Entity | null = null;
   private gapPreviewEntity: Entity | null = null;
+  private readonly roadHighlight = new RoadHighlight();
   private rubberbandEntity: Entity | null = null;
   private snapFrameHandle: number | null = null;
   private pendingSnapPoint: [number, number, number] | null = null;
@@ -269,6 +271,7 @@ export class TwinCityEngine {
    */
   public dispose() {
     this.junctionOverlay.dispose();
+    this.roadHighlight.dispose();
     if (this.simulations.isRunning('traffic')) this.simulations.stopSimulation('traffic');
     this.interactionHandler?.destroy();
     this.interactionHandler = null;
@@ -316,6 +319,7 @@ export class TwinCityEngine {
     this.startFpsMonitor();
     this.trafficVisualizer.setViewer(viewer);
     this.junctionOverlay.setViewer(viewer);
+    this.roadHighlight.setViewer(viewer);
     renderManagerInstance.initialize(viewer);
     this.simMode.setViewer(viewer);
 
@@ -765,6 +769,7 @@ export class TwinCityEngine {
 
   public setAppMode(mode: AppMode): void {
     if (mode === this.getAppMode()) return;
+    this.roadHighlight.clear();
     if (mode === 'simulate') {
       this.enterSimulationMode();
       return;
@@ -852,6 +857,27 @@ export class TwinCityEngine {
         depthFailMaterial: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#34d399').withAlpha(0.6), dashLength: 10 }),
       },
     });
+  }
+
+  /**
+   * Highlights whole roads on the map (the ways a lane edit will change, or the
+   * stretch that sets a direction's capacity); null or [] clears it. Only
+   * clears when `kind` is given and another kind is on show.
+   */
+  public highlightRoads(roadIds: readonly string[] | null, kind: RoadHighlightKind = 'lane-scope'): void {
+    if (!roadIds?.length) {
+      const on = this.roadHighlight.shown();
+      if (!on || on.kind === kind) this.roadHighlight.clear();
+      return;
+    }
+    const roads = roadIds.map(id => this.objects.getById(id)).filter((o): o is NonNullable<typeof o> => !!o && 'coordinates' in o && Array.isArray((o as { coordinates?: unknown }).coordinates))
+      .map(o => ({ id: o.id, coordinates: (o as { coordinates: [number, number, number][] }).coordinates }));
+    this.roadHighlight.show(kind, roads);
+  }
+
+  /** The road highlight on show (road ids, kind, colour), or null. */
+  public getRoadHighlight() {
+    return this.roadHighlight.shown();
   }
 
   /** Leaves Simulate for Build with the problem's road selected and in view. */
