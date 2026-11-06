@@ -76,10 +76,30 @@ export const periodOfHour = (hour: number): DayPeriodId | null => DAY_PERIODS.fi
 export interface TimelineState {
   status: 'idle' | 'running' | 'ready' | 'error';
   progress: number;
-  rows: { period: DayPeriodId; label: string; hour: number; demandVph: number; result: AnalysisOutput['result'] | null }[];
+  rows: TimelineRow[];
   error: string | null;
   /** Network and demand the rows are for; a change makes them stale. */
   key: string | null;
+  /** The network, demand or settings changed since the rows were computed: they describe another case until run again. */
+  outdated?: boolean;
+}
+
+/** One period of the day: its own demand (hour factor on the period's plan), its own assignment and corridor runs. */
+export interface TimelineRow {
+  period: DayPeriodId; label: string; hour: number;
+  /** Area demand at the hour (veh/h): the plan's veh/h times hourFactor. */
+  demandVph: number;
+  /** Profile share at the hour over the share at referenceHour (the hour the plan represents). */
+  hourFactor?: number;
+  referenceHour?: number;
+  /** The plan before the hour factor (veh/h), its source and land-use half of the day. */
+  plannedVph?: number;
+  demandSource?: string;
+  landUsePeriod?: 'AM_Peak' | 'PM_Peak';
+  /** Origin-destination pairs in the period's plan. */
+  odPairs?: number;
+  seeds?: number[];
+  result: AnalysisOutput['result'] | null;
 }
 
 /** What is computing right now, for the panel and for tests: nothing should be listed while Simulate is closed or stopped. */
@@ -719,6 +739,7 @@ export class SimulationMode {
         if (shown.output && !outdated && shown.status === 'ready') this.clearAnalysisStopNotice();
       }
       this.refreshCountedJunctions();
+      this.refreshTimelineOutdated();
       this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
       // The selected road is the subject: the camera goes to it, not the whole area
       if (fly) this.focusView();
@@ -1006,13 +1027,13 @@ export class SimulationMode {
    * its edge and through traffic on its main roads) for the land-use peak of
    * the clock hour; the hypothetical multiplier, if set, on top (labelled so).
    */
-  public studyPlan(area: StudyArea | null = this.state.area): DemandPlan | null {
+  public studyPlan(area: StudyArea | null = this.state.area, landUse: 'AM_Peak' | 'PM_Peak' = this.landUsePeriod()): DemandPlan | null {
     if (!area) return null;
     const settings = this.state.demandSettings;
     let plan: DemandPlan | null;
     if (this.calibratedPlan) plan = this.calibratedPlan;
     else {
-      const period = this.landUsePeriod();
+      const period = landUse;
       const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled });
       if (this.planCache?.key !== key) {
         const ctx = { ...this.getContext(), period };
@@ -1033,6 +1054,7 @@ export class SimulationMode {
     if (next.hypotheticalScale !== null && (!Number.isFinite(next.hypotheticalScale) || next.hypotheticalScale <= 0)) next.hypotheticalScale = null;
     this.invalidateComparison('Demand settings changed. Restore them or save a new baseline.');
     this.setState({ demandSettings: next });
+    this.refreshTimelineOutdated();
     this.stopTraffic();
     this.analysisStale = true;
     this.scheduleAnalysis();
@@ -1095,9 +1117,12 @@ export class SimulationMode {
     if (this.state.timeOfDay.status !== 'ready') {
       // The hour's demand factor comes from the profile: load it first (its arrival schedules a re-run; this run is it)
       await this.ensureTimeProfile();
-      if (this.analysisTimer) { clearTimeout(this.analysisTimer); this.analysisTimer = null; }
-      if (this.state.area !== area || this.state.section !== section) return null;
     }
+    // The road or area changed while this waited: this run would compute the old one under the new key
+    if (this.state.area !== area || this.state.section !== section) return null;
+    // This run reads the clock, profile and demand as they are now: a re-run scheduled while it waited
+    // (e.g. by the profile arriving during the count load) would only cancel it and repeat it
+    if (this.analysisTimer) { clearTimeout(this.analysisTimer); this.analysisTimer = null; }
     const plan = this.studyPlan(area);
     if (!plan?.trips.length) {
       this.setState({ analysis: { status: 'error', progress: 0, output: null, error: 'No traffic can be estimated for this area: no roads cross its edge and it holds no buildings or zones with activity.', hour: this.state.timeOfDay.hour, demandVph: 0, key: null } });
@@ -1296,13 +1321,21 @@ export class SimulationMode {
 
   // ── Time of day ──────────────────────────────────────────────────────────
 
+  /**
+   * The hour the demand plan represents: calibrated demand is the counted peak
+   * hour; the area estimate is the peak of the clock's half of the day (09:00
+   * before noon, 19:00 after). Used by the analysis and the time-of-day runs alike.
+   */
+  private referenceHour(hour: number, countPeak: 'AM' | 'PM' = this.state.timeOfDay.countPeak): number {
+    return this.calibratedPlan ? COUNT_HOURS[countPeak] : COUNT_HOURS[hour < 12 ? 'AM' : 'PM'];
+  }
+
   private setTimeOfDay(patch: Partial<TimeOfDayState>) {
     const prev = this.state.timeOfDay;
     const next = { ...prev, ...patch };
-    // Calibrated demand is the counted peak hour; the area estimate is the peak of the clock's half of the day
-    const reference = this.calibratedPlan ? COUNT_HOURS[next.countPeak] : COUNT_HOURS[next.hour < 12 ? 'AM' : 'PM'];
-    next.factor = next.profile ? hourFactor(next.profile, next.hour, reference, next.day) : 1;
+    next.factor = next.profile ? hourFactor(next.profile, next.hour, this.referenceHour(next.hour, next.countPeak), next.day) : 1;
     this.setState({ timeOfDay: next });
+    if (next.day !== prev.day || next.countPeak !== prev.countPeak || next.status !== prev.status) this.refreshTimelineOutdated();
     if (next.hour !== prev.hour || next.day !== prev.day || next.factor !== prev.factor) {
       // A different hour is different demand and routes: the live view of the old hour stops; the analysis re-runs
       const wasLive = this.state.traffic.status !== 'idle';
@@ -1359,11 +1392,13 @@ export class SimulationMode {
 
   /**
    * Runs the analysis at each period of the day (morning peak, midday,
-   * evening peak, night) on the same network: one run each (seed 42), so
-   * differences under about 10% are within run-to-run noise. This replaces the
-   * earlier "Play 24 h", which only scaled arrival rates once a simulated
-   * minute: no hour ever reached its own traffic state, and the morning to
-   * evening switch at noon cleared every vehicle.
+   * evening peak, night) on the same network, with the same seeds as the
+   * analysis (docs/OVERHAUL.md §22). Each period is computed on its own: the
+   * plan for its half of the day (the same one the analysis uses, calibrated
+   * or hypothetical included) times its hour factor, a fresh area assignment
+   * and fresh corridor runs from an empty network after a warm-up. Nothing is
+   * carried over or scaled from another period. This replaces the earlier
+   * "Play 24 h", which only scaled arrival rates once a simulated minute.
    */
   public async runTimeline(): Promise<boolean> {
     this.flushPendingRecompute();
@@ -1373,26 +1408,26 @@ export class SimulationMode {
     if (!area || !section || !profile) return false;
     this.cancelTimeline();
     const generation = ++this.timelineGeneration;
-    const key = contentKey({ net: this.currentNetworkKey(), study: this.studyKey(), settings: this.state.demandSettings, day: this.state.timeOfDay.day });
-    const rows: TimelineState['rows'] = DAY_PERIODS.map(p => ({ period: p.id, label: p.label, hour: p.hour, demandVph: 0, result: null }));
-    this.setState({ timeline: { status: 'running', progress: 0, rows, error: null, key } });
+    const key = this.timelineKey();
+    const seeds = [...this.analysisSeeds];
+    const rows: TimelineRow[] = DAY_PERIODS.map(p => ({ period: p.id, label: p.label, hour: p.hour, demandVph: 0, result: null }));
+    this.setState({ timeline: { status: 'running', progress: 0, rows, error: null, key, outdated: false } });
     try {
       for (let i = 0; i < DAY_PERIODS.length; i++) {
         const p = DAY_PERIODS[i];
-        // Land-use trips follow the half of the day; the hour's share of daily traffic scales them
-        const period = p.hour < 12 ? 'AM_Peak' : 'PM_Peak';
-        const ctx = { ...this.getContext(), period } as SimulationContext;
-        const base = this.calibratedPlan ?? compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: this.state.demandSettings.through });
-        if (!base) throw new Error('No traffic can be estimated for this area.');
-        const reference = this.calibratedPlan ? COUNT_HOURS[this.state.timeOfDay.countPeak] : COUNT_HOURS[p.hour < 12 ? 'AM' : 'PM'];
-        const factor = hourFactor(profile, p.hour, reference, this.state.timeOfDay.day);
-        const run = startAnalysisJob(this.analysisJob(base, area, section, DEFAULT_ANALYSIS.measureS, { hourFactor: factor, seeds: [DEFAULT_TRAFFIC_SEED] }), progress => {
+        const landUsePeriod = p.hour < 12 ? 'AM_Peak' as const : 'PM_Peak' as const;
+        const plan = this.studyPlan(area, landUsePeriod);
+        if (!plan?.trips.length) throw new Error('No traffic can be estimated for this area.');
+        const referenceHour = this.referenceHour(p.hour);
+        const factor = hourFactor(profile, p.hour, referenceHour, this.state.timeOfDay.day);
+        const run = startAnalysisJob(this.analysisJob(plan, area, section, DEFAULT_ANALYSIS.measureS, { hourFactor: factor, seeds }), progress => {
           if (generation === this.timelineGeneration) this.setState({ timeline: { ...this.state.timeline, progress: (i + progress) / DAY_PERIODS.length } });
         });
         this.timelineRun = run;
         const out = await run.promise;
         if (generation !== this.timelineGeneration) return false;
-        rows[i] = { ...rows[i], demandVph: base.provenance.vehiclesPerHour * factor, result: out.result };
+        rows[i] = { ...rows[i], demandVph: plan.provenance.vehiclesPerHour * factor, hourFactor: factor, referenceHour, plannedVph: plan.provenance.vehiclesPerHour,
+          demandSource: plan.provenance.source, landUsePeriod, odPairs: plan.trips.length, seeds, result: out.result };
         this.setState({ timeline: { ...this.state.timeline, rows: [...rows], progress: (i + 1) / DAY_PERIODS.length } });
       }
       this.timelineRun = null;
@@ -1404,6 +1439,22 @@ export class SimulationMode {
       this.setState({ timeline: { ...this.state.timeline, status: 'error', error: err instanceof Error ? err.message : String(err) } });
       return false;
     }
+  }
+
+  /** What the time-of-day rows depend on (everything the analysis key holds except the clock hour). */
+  private timelineKey() {
+    const plan = this.studyPlan();
+    return contentKey({ net: this.currentNetworkKey(), study: this.studyKey(), plan: plan ? contentKey({ n: plan.trips.length, v: Math.round(plan.provenance.vehiclesPerHour), src: plan.provenance.source }) : null,
+      day: this.state.timeOfDay.day, countPeak: this.calibratedPlan ? this.state.timeOfDay.countPeak : null, seeds: this.analysisSeeds, settings: this.state.demandSettings,
+      profile: this.state.timeOfDay.status === 'ready', corrections: this.correctionsEnabled });
+  }
+
+  /** Marks the rows outdated when what they were computed for has changed (and current again after an undo). */
+  private refreshTimelineOutdated() {
+    const tl = this.state.timeline;
+    if (!tl.key || tl.status === 'running' || !tl.rows.some(r => r.result)) return;
+    const outdated = tl.key !== this.timelineKey();
+    if (!!tl.outdated !== outdated) this.setState({ timeline: { ...tl, outdated } });
   }
 
   /** Stops the time-of-day runs (clear: also forget their rows). */
@@ -1446,6 +1497,7 @@ export class SimulationMode {
     const c = this.state.calibration;
     const hadResults = c.rows.length > 0 || this.calibratedPlan !== null || c.status === 'measuring' || c.status === 'fitting';
     this.calibratedPlan = null;
+    this.refreshTimelineOutdated();
     if (!hadResults) return;
     this.setCalibration({ rows: [], before: null, after: null, fit: null, applied: false, status: 'idle', progress: 0, error: null, staleReason: reason });
   }
@@ -1527,6 +1579,7 @@ export class SimulationMode {
       const fitted = result.ipf.factors.length ? result.ipf.factors : [1];
       // The calibrated demand is the counted peak hour, whichever peak the user says the counts are
       this.calibratedPlan = { ...result.plan, provenance: { ...result.plan.provenance, period: countPeakPeriod(this.state.timeOfDay.countPeak) } };
+      this.refreshTimelineOutdated();
       this.setCalibration({
         status: 'idle', progress: 1, junctions: checks, rows, before: summarize(rows, 'gehBefore'), after: summarize(rows, 'gehAfter'), windowS: after.windowS, applied: true, runMetrics: { before: before.metrics, after: after.metrics },
         fit: {
@@ -1550,6 +1603,7 @@ export class SimulationMode {
     const wasApplied = this.calibratedPlan !== null;
     this.calibrationGeneration++;
     this.calibratedPlan = null;
+    this.refreshTimelineOutdated();
     this.setCalibration({ rows: [], before: null, after: null, fit: null, applied: false, status: 'idle', progress: 0, error: null, staleReason: null });
     if (wasApplied && this.state.traffic.status !== 'idle') this.restartTraffic();
   }

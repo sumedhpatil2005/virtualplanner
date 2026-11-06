@@ -92,6 +92,13 @@ export interface DirectionFlow {
   /** Indo-HCM level of service per seed, and overall (from the mean speed). */
   los: string | null;
   losBySeed: (string | null)[];
+  /**
+   * What set the level of service: the travel speed as a share of free-flow
+   * speed ('speed'), or F because the demand routed onto it exceeds its
+   * capacity and under 90% of it got through ('over-capacity'). Null without a
+   * speed sample. The same rule per seed and overall (docs/OVERHAUL.md §22).
+   */
+  losBasis?: 'speed' | 'over-capacity' | null;
   /** Per seed: vehicles per hour through it and mean speed (km/h). */
   vphBySeed: number[];
   speedBySeed: (number | null)[];
@@ -691,6 +698,15 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
 
 // ── Combining the area and the corridor runs ────────────────────────────────
 
+/** Demand v/c when it decides the level of service: over capacity and under 90% of it got through; else null (speed decides). */
+const forcedVc = (vc: number, servedPcu: number, demandPcu: number) => vc > 1 && servedPcu < 0.9 * demandPcu ? vc : null;
+function losBasisOf(speedRatio: number | null, vc: number, servedPcu: number, demandPcu: number): DirectionFlow['losBasis'] {
+  if (speedRatio === null || !Number.isFinite(speedRatio)) return null;
+  if (forcedVc(vc, servedPcu, demandPcu) === null) return 'speed';
+  // Over capacity and unserved: F either way; say so only when the speed alone would have rated it better
+  return speedLos(speedRatio, null) === 'F' ? 'speed' : 'over-capacity';
+}
+
 export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { bearing: number; label: string; compass?: string; labelBearing?: number; towards?: Landmark | null; paths?: [number, number, number][][] }[], section: RoadSection, corridorInfo: RoadAnalysisResult['corridor'], demand: DemandProvenance | null): RoadAnalysisResult {
   const n = runs.length;
   const directions: DirectionFlow[] = dirs.map((d, i) => {
@@ -715,8 +731,9 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
       midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock',
       vc, servedVc: pcuph / Math.max(1, capacityPcu),
       meanSpeedKmh, speedRange: speeds.length ? [Math.min(...speeds), Math.max(...speeds)] as [number, number] : null, freeSpeedKmh, speedRatio,
-      travelTimeS, freeTimeS, los: speedLos(speedRatio, vc > 1 && pcuph < 0.9 * a.demandPcu ? vc : null),
-      losBySeed: rs.map(r => speedLos(r.travelTimeS ? r.freeTimeS / r.travelTimeS : null, null)),
+      travelTimeS, freeTimeS, los: speedLos(speedRatio, forcedVc(vc, pcuph, a.demandPcu)), losBasis: losBasisOf(speedRatio, vc, pcuph, a.demandPcu),
+      // Per seed by the same rule as overall: before, a seed ignored an unserved overload, so "runs disagree" could be the rule, not the runs
+      losBySeed: rs.map(r => speedLos(r.travelTimeS ? r.freeTimeS / r.travelTimeS : null, forcedVc(vc, r.pcuph, a.demandPcu))),
       vphBySeed: rs.map(r => Math.round(r.vph)), speedBySeed: rs.map(r => r.meanSpeedKmh === null ? null : Math.round(r.meanSpeedKmh * 10) / 10),
       delay: avgDelay, queuedNow: Math.round(mean(rs.map(r => r.queuedNow))) };
   }).sort((x, y) => y.vph - x.vph);

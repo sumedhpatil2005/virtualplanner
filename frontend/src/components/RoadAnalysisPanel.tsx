@@ -3,9 +3,11 @@ import {
   Loader2, AlertTriangle, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, CheckCircle2,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
-import type { SimulationModeState } from '../engine/simulation/SimulationMode';
+import type { SimulationModeState, TimelineState } from '../engine/simulation/SimulationMode';
 import { DAY_PERIODS, periodOfHour } from '../engine/simulation/SimulationMode';
-import type { RoadAnalysisResult } from '../engine/simulation/RoadAnalysis';
+import { STATUS_WORD, type RoadAnalysisResult } from '../engine/simulation/RoadAnalysis';
+import { DEFAULT_ANALYSIS } from '../engine/simulation/analysisJob';
+import { dayRowView, daySummary } from './timeOfDayView';
 import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation/ScenarioComparison';
 import { improvementsFor } from '../engine/simulation/improvements';
 import { screenlineChecks } from '../engine/calibration/screenlines';
@@ -200,10 +202,40 @@ const Suggestions: React.FC<{ r: RoadAnalysisResult; sim: SimulationModeState }>
   );
 };
 
+const DayRow: React.FC<{ row: TimelineState['rows'][number]; maxVph: number }> = ({ row, maxVph }) => {
+  const v = dayRowView(row);
+  if (!v) return <li className="text-[11px] text-slate-500" data-testid="timeline-row" data-period={row.period}>{row.label} <span className="tabular-nums">{hourLabel(row.hour)}</span> …</li>;
+  const tone = TONE_FILL[STATUS[v.status].tone];
+  return (
+    <li className="space-y-1 text-[11px]" data-testid="timeline-row" data-period={row.period} data-status={v.status}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-slate-200">{row.label} <span className="text-slate-500 tabular-nums">{v.hourText}</span> <span className="text-slate-500 tabular-nums" data-testid="timeline-factor">{v.factorText}</span></span>
+        <StatusChip status={v.status} short />
+      </div>
+      <div className="grid grid-cols-[5.2rem_1fr_auto] items-center gap-x-2 gap-y-0.5 tabular-nums">
+        <span className="text-slate-400">Demand</span>
+        <Meter value={v.demandVph} max={maxVph} color="#64748b" height="xs" title="Routed onto the road by the area assignment (both directions)" />
+        <span className="text-slate-300 justify-self-end" data-testid="timeline-demand">{fmt(v.demandVph)} veh/h</span>
+        <span className="text-slate-400">Got through</span>
+        <Meter value={v.throughputVph} max={maxVph} color={tone} height="xs" title="Vehicles the simulation got along the road in the counted window (both directions)" />
+        <span className="text-slate-300 justify-self-end" data-testid="timeline-throughput">{fmt(v.throughputVph)} veh/h</span>
+      </div>
+      <p className="text-slate-400" data-testid="timeline-metric">
+        {v.direction ? <>{v.direction}: {v.speedKmh !== null ? `${Math.round(v.speedKmh)} of ${Math.round(v.freeSpeedKmh ?? 0)} km/h` : 'no speed'} · </> : null}{v.metric}
+        {v.seeds > 1 && !v.statusConsistent ? <span className="text-amber-200/90"> · runs disagree ({v.statusBySeed.map(x => STATUS_WORD[x]).join(', ')})</span> : null}
+      </p>
+      {v.unservedVph !== null && <p className="text-amber-200/90" data-testid="timeline-unserved">{fmt(v.unservedVph)} veh/h of the demand did not get along it in the counted window{v.unservedWhy ? `: ${v.unservedWhy}` : ' (queued behind it or held further back)'}.</p>}
+      {v.heldBy && <p className="text-rose-200/90" data-testid="timeline-held">Held by a queue traced to {v.heldBy}.</p>}
+    </li>
+  );
+};
+
 const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
   const tl = sim.timeline;
-  const maxVph = Math.max(1, ...tl.rows.map(r => r.result?.totalVph ?? 0));
+  const maxVph = Math.max(1, ...tl.rows.flatMap(r => { const v = dayRowView(r); return v ? [v.demandVph, v.throughputVph] : []; }));
+  const summary = tl.status !== 'running' ? daySummary(tl.rows) : [];
+  const seeds = tl.rows.find(r => r.seeds)?.seeds ?? mode.analysisSeeds;
   return (
     <section className="space-y-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3>
@@ -213,29 +245,36 @@ const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           <Button size="sm" icon={tl.status === 'running' ? Loader2 : Clock} spin={tl.status === 'running'} disabled={tl.status === 'running'} onClick={() => void mode.runTimeline()}>{tl.rows.some(r => r.result) ? 'Run again' : 'Compare times of day'}</Button>
           {tl.status === 'running' && <><span className="text-xs text-slate-400 tabular-nums">{Math.round(tl.progress * 100)}%</span><Button size="sm" variant="ghost" onClick={() => mode.cancelTimeline()}>Stop</Button></>}
         </div>
+        {tl.outdated && tl.status !== 'running' && <p className="text-[11px] text-amber-200 flex items-center gap-1" role="status" data-testid="timeline-outdated"><AlertTriangle size={12} />The network or demand changed since these were computed: they describe the earlier case. Run again.</p>}
         {tl.rows.some(r => r.result) && (
-          <ul className="space-y-1.5" data-testid="timeline-rows">
-            {tl.rows.map(row => {
-              const r = row.result, top = r?.directions[0];
-              return (
-                <li key={row.period} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-2 text-[11px]" title={r ? `${row.label}, ${hourLabel(row.hour)}: ${fmt(row.demandVph)} veh/h routed over the whole area; ${fmt(r.totalVph)} veh/h through the road (both directions); busier direction ${top?.meanSpeedKmh ? `${Math.round(top.meanSpeedKmh)} km/h` : 'no speed'}` : undefined}>
-                  <span className="text-slate-300 truncate">{row.label} <span className="text-slate-500">{hourLabel(row.hour)}</span></span>
-                  <div className="space-y-0.5">
-                    <Meter value={r?.totalVph ?? 0} max={maxVph} color={r ? TONE_FILL[STATUS[r.status].tone] : '#334155'} height="sm" />
-                    <div className="flex justify-between tabular-nums text-slate-500"><span>{r ? `${fmt(r.totalVph)} veh/h` : '…'}</span><span>{top?.meanSpeedKmh ? `${Math.round(top.meanSpeedKmh)} km/h` : r ? '—' : ''}</span></div>
-                  </div>
-                  <span className="justify-self-end">{r ? <StatusChip status={r.status} short /> : ''}</span>
-                </li>
-              );
-            })}
+          <ul className={`space-y-2.5 ${tl.outdated ? 'opacity-60' : ''}`} data-testid="timeline-rows">
+            {tl.rows.map(row => <DayRow key={row.period} row={row} maxVph={maxVph} />)}
           </ul>
         )}
+        {summary.length > 0 && <div className="text-[11px] text-slate-200 space-y-1 border-t border-white/10 pt-2" data-testid="timeline-summary">{summary.map(t => <p key={t}>{t}</p>)}</div>}
         {tl.status === 'error' && <p className="text-xs text-rose-300">{tl.error}</p>}
         {(() => { const am = tl.rows.find(r => r.period === 'am'), pm = tl.rows.find(r => r.period === 'pm');
           return am?.result && pm?.result && Math.abs(am.demandVph - pm.demandVph) < 1
-            ? <div className="text-[11px] text-amber-200/90 space-y-1" data-testid="peaks-identical"><p className="flex items-center gap-1"><AlertTriangle size={12} />Morning and evening peaks match: same estimated demand.</p><InfoToggle label="Why"><p>The morning and evening peaks carry the same estimated demand here, so their results match: the traffic crossing the area's edge is estimated per lane from counts, without a morning or evening direction pattern (see Details). Real tidal flows would make them differ.</p></InfoToggle></div>
+            ? <div className="text-[11px] text-amber-200/90 space-y-1" data-testid="peaks-identical"><p className="flex items-center gap-1"><AlertTriangle size={12} />Morning and evening peaks match: same estimated demand.</p><InfoToggle label="Why"><p>The morning and evening peaks carry the same estimated demand here, so their results match: the traffic crossing the area's edge is estimated per lane from counts, without a morning or evening direction pattern (see Details). Each peak is taken as the peak of its half of the day (09:00 and 19:00), so both get factor 1. Real tidal flows would make them differ.</p></InfoToggle></div>
             : null; })()}
-        {tl.rows.some(r => r.result) && <InfoToggle label="How to read this"><p>Bars: vehicles per hour through the road (both directions); speed is the busier direction's. Area veh/h per period is in each row's tooltip. One run per period (seed 42): differences under about 10% are within run-to-run noise. Each period is analysed on its own, from a warm-up. Pick a period above to see it in full.</p></InfoToggle>}
+        {tl.rows.some(r => r.result) && (
+          <Disclosure title="Per direction and per run" tone="subtle" testId="timeline-detail">
+            <table className="w-full text-[10px] tabular-nums" data-testid="timeline-table">
+              <thead className="text-slate-500"><tr><th className="text-left font-normal pr-1">Hour</th><th className="text-left font-normal">Direction</th><th className="text-right font-normal">Demand</th><th className="text-right font-normal">Got through</th><th className="text-right font-normal">km/h</th><th className="text-right font-normal">LOS</th></tr></thead>
+              <tbody className="text-slate-300">
+                {tl.rows.flatMap(row => { const v = dayRowView(row); return v ? v.directions.map((d, i) => (
+                  <tr key={`${row.period}-${d.label}`} className="align-top">
+                    <td>{i === 0 ? `${v.hourText}` : ''}</td><td>{d.label}</td><td className="text-right">{fmt(d.demandVph)}</td>
+                    <td className="text-right">{fmt(d.throughputVph)}{d.vphBySeed.length > 1 && <span className="block text-slate-500">{d.vphBySeed.map(fmt).join(' / ')}</span>}</td>
+                    <td className="text-right">{d.speedKmh === null ? '—' : Math.round(d.speedKmh)}{d.speedBySeed.length > 1 && <span className="block text-slate-500">{d.speedBySeed.map(x => x === null ? '—' : Math.round(x)).join(' / ')}</span>}</td>
+                    <td className="text-right">{d.los ?? '—'}{d.losBySeed.length > 1 && <span className="block text-slate-500">{d.losBySeed.map(x => x ?? '—').join(' ')}</span>}</td>
+                  </tr>)) : []; })}
+              </tbody>
+            </table>
+            <p className="text-[10px] text-slate-500">Grey: each run (seeds {seeds.join(', ')}). Demand is the same in every run (the routing is deterministic); only the simulation varies.</p>
+          </Disclosure>
+        )}
+        {tl.rows.some(r => r.result) && <InfoToggle label="How to read this"><p>Each period is computed on its own: the demand for its half of the day times the hour's share of daily traffic (the factor, from the Pune hour profile; measured counts 08:00–19:00, estimated other hours), a fresh routing of the whole area and {seeds.length} fresh simulation runs (seeds {seeds.join(', ')}) from an empty network after a {Math.round(DEFAULT_ANALYSIS.warmupS / 60)}-minute warm-up, counted over {Math.round(DEFAULT_ANALYSIS.measureS / 60)} minutes. Demand is what the routing sends along the road; got through is what the simulation actually moved along it. Where got through is well below demand, traffic is held, by the road or by a queue reaching back from further on. Speed and level of service are for the direction the status comes from (Indo-HCM: travel speed as a share of free-flow speed; F as well when demand exceeds capacity and under 90% of it gets through). Pick a period above to see it in full.</p></InfoToggle>}
       </Card>
     </section>
   );
