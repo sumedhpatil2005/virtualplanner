@@ -208,10 +208,38 @@ export function carriagewayPieces(roads: readonly RoadObject[], roadId: string, 
 }
 
 /**
- * The roads a Build lane edit changes and how: `[{ id, updates }]`, the
- * selected road first, then the other pieces of its carriageway
- * (carriagewayPieces).
+ * How far a Build lane edit reaches (docs/OVERHAUL.md §16): the whole
+ * connected carriageway (carriagewayPieces, the default) or only the selected
+ * OpenStreetMap way.
  */
-export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[]): { id: string; updates: Partial<RoadObject> }[] {
-  return carriagewayPieces(roads, roadId, field).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
+export type LaneEditScope = 'carriageway' | 'segment';
+export const DEFAULT_LANE_EDIT_SCOPE: LaneEditScope = 'carriageway';
+
+/** The pieces a lane edit with this scope changes, the selected road first. */
+export function laneEditPieces(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { road: RoadObject; field: LaneField }[] {
+  if (scope === 'segment') {
+    const sel = roads.find(r => r.id === roadId);
+    return sel ? [{ road: sel, field }] : [];
+  }
+  return carriagewayPieces(roads, roadId, field);
+}
+
+/**
+ * What a lane edit with this scope would change, for the preview before it is
+ * applied: the road ids (exactly those laneEditPlan then edits), how many, and
+ * their total length ("3 pieces · 564 m").
+ */
+export function laneEditPreview(roads: readonly RoadObject[], roadId: string, field: LaneField, scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { roadIds: string[]; count: number; lengthM: number; label: string } {
+  const pieces = laneEditPieces(roads, roadId, field, scope);
+  const len = Math.round(pieces.reduce((n, p) => n + lengthM(p.road.coordinates), 0));
+  return { roadIds: pieces.map(p => p.road.id), count: pieces.length, lengthM: len, label: `${pieces.length} piece${pieces.length === 1 ? '' : 's'} · ${len.toLocaleString('en-US')} m` };
+}
+
+/**
+ * The roads a Build lane edit changes and how: `[{ id, updates }]`, the
+ * selected road first, then (scope 'carriageway', the default) the other
+ * pieces of its carriageway (carriagewayPieces).
+ */
+export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[], scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE): { id: string; updates: Partial<RoadObject> }[] {
+  return laneEditPieces(roads, roadId, field, scope).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
 }

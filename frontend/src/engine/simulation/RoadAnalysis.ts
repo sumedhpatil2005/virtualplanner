@@ -63,6 +63,17 @@ export interface DirectionFlow {
   /** Length of the direction at its narrowest (m), and its whole length in the section (m). */
   narrowestM: number;
   lengthM: number;
+  /**
+   * The OpenStreetMap way whose mid-block capacity is the direction's (the
+   * longest of its narrowest stretches), and every way at that capacity. When
+   * only part of a carriageway was widened, these name the stretch that still
+   * limits it (docs/OVERHAUL.md §16). Model output, from the compiled network.
+   */
+  binding?: BindingSegment | null;
+  bindingSegments?: BindingSegment[];
+  /** Ways the direction runs along in the section, and each with its lanes, length and capacity. */
+  roadIds?: string[];
+  segments?: BindingSegment[];
   /** Mid-block capacity (IRC:106-1990) and, at a signalised end, the stop-line capacity (PCU/h). */
   midblockPcu: number;
   stopLinePcu: number | null;
@@ -87,6 +98,9 @@ export interface DirectionFlow {
   delay: DelayBreakdown | null;
   queuedNow: number;
 }
+
+/** One OpenStreetMap way of a direction, with its lanes, length in the direction (m) and mid-block capacity (PCU/h). */
+export interface BindingSegment { roadId: string; name: string; lanes: number; lengthM: number; capacityPcu: number }
 
 export interface Place { label: string; coordinates: [number, number, number]; vph: number; share: number; edge: boolean }
 export interface RoadUse { roadName: string; roadClass: string; vph: number; share?: number; vc?: number; speedRatio?: number | null; distanceM: number; segmentKeys: string[] }
@@ -403,8 +417,23 @@ const nodeLngLat = (sim: TrafficMicroSim, id: string): [number, number] => { con
 
 // ── Area context from the assignment ────────────────────────────────────────
 
+/** The ways of a direction, and which of them set its mid-block capacity (the longest first). */
+function bindingOf(ls: readonly { roadId: string; lengthM: number; lanes: number; midblockPcu: number }[], narrowest: readonly { roadId: string }[], roads: ReadonlyMap<string, DrivableObject>) {
+  const byRoad = new Map<string, BindingSegment>();
+  for (const l of ls) {
+    const e = byRoad.get(l.roadId);
+    if (e) { e.lengthM += l.lengthM; e.lanes = Math.min(e.lanes, l.lanes); e.capacityPcu = Math.min(e.capacityPcu, l.midblockPcu); }
+    else byRoad.set(l.roadId, { roadId: l.roadId, name: roads.get(l.roadId)?.name || 'Unnamed road', lanes: l.lanes, lengthM: l.lengthM, capacityPcu: l.midblockPcu });
+  }
+  const ids = new Set(narrowest.map(l => l.roadId));
+  const segments = [...byRoad.values()].map(b => ({ ...b, lengthM: Math.round(b.lengthM), capacityPcu: Math.round(b.capacityPcu) }));
+  const bindingSegments = segments.filter(b => ids.has(b.roadId)).sort((a, b) => b.lengthM - a.lengthM);
+  return { binding: bindingSegments[0] ?? null, bindingSegments, roadIds: [...byRoad.keys()], segments };
+}
+
 export interface AreaContext {
-  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; lanes: number; lanesRange: [number, number]; narrowestM: number; lengthM: number }[];
+  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; lanes: number; lanesRange: [number, number]; narrowestM: number; lengthM: number;
+    binding: BindingSegment | null; bindingSegments: BindingSegment[]; roadIds: string[]; segments: BindingSegment[] }[];
   origins: Place[]; destinations: Place[];
   composition: { throughShare: number; localShare: number };
   selectLinkVph: Map<string, number>;
@@ -436,7 +465,8 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     return { demandVph: w(l => res.volVeh[l.index]), demandPcu: w(l => res.volPcu[l.index]), midblockPcu,
       stopLinePcu: stop.length ? Math.min(...stop) : null, lanes: narrowest.length ? Math.min(...narrowest.map(l => l.lanes)) : 0,
       lanesRange: (ls.length ? [Math.min(...laneList), Math.max(...laneList)] : [0, 0]) as [number, number],
-      narrowestM: narrowest.reduce((n, l) => n + l.lengthM, 0), lengthM: ls.reduce((n, l) => n + l.lengthM, 0) };
+      narrowestM: narrowest.reduce((n, l) => n + l.lengthM, 0), lengthM: ls.reduce((n, l) => n + l.lengthM, 0),
+      ...bindingOf(ls, narrowest, roads) };
   });
   // Select-link analysis on the section's links
   const secIdx = new Set(res.links.filter(l => sectionKeys.has(l.segmentKey)).map(l => l.index));
@@ -537,7 +567,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     const delays = rs.map(r => r.delay).filter((x): x is DelayBreakdown => !!x);
     const avgDelay = delays.length ? { signal: mean(delays.map(x => x.signal)), blocked: mean(delays.map(x => x.blocked)), giveWay: mean(delays.map(x => x.giveWay)), conflict: mean(delays.map(x => x.conflict)), other: mean(delays.map(x => x.other)), total: mean(delays.map(x => x.total)) } : null;
     return { label: d.label, bearingDeg: d.bearing, compass: d.compass ?? compassWord(d.labelBearing ?? d.bearing), labelBearingDeg: d.labelBearing ?? d.bearing, towards: d.towards ?? null, paths: d.paths ?? [], vph: Math.round(mean(vphs)), vphRange: [Math.round(Math.min(...vphs)), Math.round(Math.max(...vphs))] as [number, number], pcuph: Math.round(pcuph),
-      demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1, lanesRange: a.lanesRange, narrowestM: Math.round(a.narrowestM), lengthM: Math.round(a.lengthM),
+      demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1, lanesRange: a.lanesRange, narrowestM: Math.round(a.narrowestM), lengthM: Math.round(a.lengthM), binding: a.binding, bindingSegments: a.bindingSegments, roadIds: a.roadIds, segments: a.segments,
       midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock',
       vc, servedVc: pcuph / Math.max(1, capacityPcu),
       meanSpeedKmh, speedRange: speeds.length ? [Math.min(...speeds), Math.max(...speeds)] as [number, number] : null, freeSpeedKmh, speedRatio,

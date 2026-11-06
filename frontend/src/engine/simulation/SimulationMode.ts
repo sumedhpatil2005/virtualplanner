@@ -279,6 +279,8 @@ const EMPTY_CALIBRATION: CalibrationState = {
 /** Wait after a road edit before re-mapping, so a burst of changes maps once. */
 export const DEFAULT_CORRECTION_LAYER = 'pune_west_v1';
 const NETWORK_CHANGE_DEBOUNCE_MS = 250;
+/** Finished analysis results kept by key (Undo/Redo of a Build edit shows them again). */
+const KEPT_RESULTS = 6;
 /** How often live figures reach the UI, and how often road stretches are recoloured (real ms). */
 const METRICS_EVERY_MS = 500;
 const RECOLOUR_EVERY_MS = 1000;
@@ -679,8 +681,14 @@ export class SimulationMode {
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       this.setState({ area, corridor, error: null, seedRoadIds: area.seedRoadIds, section, speeds: this.speedReport });
       // A kept result for another network or demand stays on show until its re-run lands: say so
-      const shown = this.state.analysis;
-      if (shown.output && !shown.outdated && shown.key !== this.analysisKey()) this.setState({ analysis: { ...shown, outdated: true } });
+      const shown = this.state.analysis, key = this.analysisKey();
+      // A result already computed for this exact network, demand and hour (e.g. after Undo or Redo of a Build edit) comes back at once (docs/OVERHAUL.md §16)
+      const kept = shown.key !== key ? this.keptResults.get(key) : undefined;
+      if (kept) {
+        this.analysisNetworkKey = kept.networkKey;
+        this.analysisStale = false;
+        this.setState({ analysis: kept.analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
+      } else if (shown.output && !shown.outdated && shown.key !== key) this.setState({ analysis: { ...shown, outdated: true } });
       this.refreshCountedJunctions();
       this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
       // The selected road is the subject: the camera goes to it, not the whole area
@@ -706,6 +714,14 @@ export class SimulationMode {
   }
   /** The area, network or demand changed since the last analysis. */
   private analysisStale = true;
+
+  /** The last few finished results by analysis key, so Undo/Redo of an edit shows its result again without a re-run. */
+  private keptResults = new Map<string, { networkKey: string | null; analysis: RoadAnalysisState }>();
+  private keepResult(key: string, networkKey: string | null, analysis: RoadAnalysisState) {
+    this.keptResults.delete(key);
+    this.keptResults.set(key, { networkKey, analysis });
+    while (this.keptResults.size > KEPT_RESULTS) this.keptResults.delete(this.keptResults.keys().next().value!);
+  }
 
   // ── Real traffic signals ──────────────────────────────────────────────────
 
@@ -1066,6 +1082,7 @@ export class SimulationMode {
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
       this.analysisNetworkKey = networkKey;
+      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key });
       this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.redrawOverlay();

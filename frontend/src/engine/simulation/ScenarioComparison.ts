@@ -1,4 +1,4 @@
-import type { RoadAnalysisResult, Bottleneck } from './RoadAnalysis';
+import type { RoadAnalysisResult, Bottleneck, BindingSegment, DirectionFlow } from './RoadAnalysis';
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
 import { isGenericRoadName } from './roadSection';
@@ -40,11 +40,93 @@ export interface ComparisonResult {
   losers: RoadChange[];
   /** Over-capacity places in the proposal that were not in the existing city. */
   newBottlenecks: Bottleneck[];
+  /** Per direction of the selected road whose lanes were edited: whether its capacity followed, and which stretch sets it (docs/OVERHAUL.md §16). */
+  laneInsights: LaneInsight[];
   /** Change in volume/capacity by stretch (after - before), for the map. */
   segmentChange: Map<string, number>;
   verdict: { section: Verdict; network: Verdict; area: Verdict; overall: Verdict; summary: string };
   confidence: { level: 'low' | 'medium' | 'high'; text: string };
   caveats: string[];
+}
+
+/**
+ * What a lane edit did to the capacity of one direction of the selected road
+ * (model output: IRC:106 mid-block capacity of the direction's narrowest
+ * stretch). `unchanged_elsewhere`: lanes were edited on part of the direction
+ * but its capacity did not move, because a stretch that was not edited still
+ * sets it (widening only a bridge deck leaves its 2-lane approaches as the
+ * limit). `raised` / `lowered`: it moved; `binding` says which stretch sets it
+ * now. `newBottlenecksNearby`: over-capacity places new in the proposal within
+ * NEAR_EDIT_M of an edited way (the queue may have moved downstream).
+ */
+export interface LaneInsight {
+  direction: string;
+  editedRoadIds: string[];
+  /** The edited ways in this direction, with their lanes after the edit. */
+  edited: BindingSegment[];
+  lanesBefore: [number, number];
+  lanesAfter: [number, number];
+  capacityBefore: number;
+  capacityAfter: number;
+  capacityChanged: boolean;
+  /** The stretch that sets the capacity after the edit, and whether it is one of the edited ways. */
+  binding: BindingSegment | null;
+  bindingSegments: BindingSegment[];
+  bindingEdited: boolean;
+  /** The binding way differs from the existing city's. */
+  bindingMoved: boolean;
+  /** The stop line at a signalised end, not the mid-block, sets the capacity after the edit. */
+  signalLimited: boolean;
+  newBottlenecksNearby: Bottleneck[];
+  kind: 'unchanged_elsewhere' | 'unchanged' | 'raised' | 'lowered';
+  text: string;
+}
+
+const NEAR_EDIT_M = 800;
+const laneSig = (r: DrivableObject | undefined) => {
+  if (!r) return null;
+  const sec = 'sections' in r ? r.sections?.[0] : undefined;
+  return JSON.stringify([r.laneCount, sec?.carriagewayA?.lanes ?? null, sec?.carriagewayB?.lanes ?? null, r.isOneWay]);
+};
+const fmtN = (n: number) => Math.round(n).toLocaleString('en-US');
+const ways = (bs: readonly BindingSegment[]) => bs.map(b => `${b.roadId}, ${fmtN(b.lengthM)} m`).join('; ');
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Lane insights for the directions of the selected road whose ways had their lanes changed between the two networks. */
+export function laneInsights(before: readonly DirectionFlow[], after: readonly DirectionFlow[], roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, newBottlenecks: readonly Bottleneck[]): LaneInsight[] {
+  const changed = new Set<string>();
+  for (const [id, r] of roads.after) if (laneSig(r) !== laneSig(roads.before.get(id))) changed.add(id);
+  if (!changed.size) return [];
+  const M = 111320;
+  const dist = (p: readonly number[], q: readonly number[]) => Math.hypot((p[0] - q[0]) * M * Math.cos(p[1] * Math.PI / 180), (p[1] - q[1]) * M);
+  const out: LaneInsight[] = [];
+  for (const d of after) {
+    const editedRoadIds = (d.roadIds ?? []).filter(id => changed.has(id));
+    if (!editedRoadIds.length) continue;
+    const b = before.find(x => x.label === d.label) ?? before.find(x => Math.abs((((x.bearingDeg - d.bearingDeg) % 360) + 540) % 360 - 180) < 30);
+    if (!b) continue;
+    const capacityBefore = b.midblockPcu, capacityAfter = d.midblockPcu;
+    const capacityChanged = Math.abs(capacityAfter - capacityBefore) >= 1;
+    const binding = d.binding ?? null;
+    const bindingEdited = !!binding && editedRoadIds.includes(binding.roadId);
+    const edited = (d.segments ?? []).filter(s => editedRoadIds.includes(s.roadId));
+    const pts = editedRoadIds.flatMap(id => roads.after.get(id)?.coordinates ?? []);
+    const newBottlenecksNearby = newBottlenecks.filter(x => pts.some(p => dist(p, x.coordinates) < NEAR_EDIT_M));
+    const kind: LaneInsight['kind'] = capacityChanged ? (capacityAfter > capacityBefore ? 'raised' : 'lowered') : binding && !bindingEdited ? 'unchanged_elsewhere' : 'unchanged';
+    const signalLimited = d.capacityBasis === 'signal';
+    const lim = binding ? `a ${binding.lanes}-lane stretch of ${binding.name} (${binding.roadId}, ${fmtN(binding.lengthM)} m${(d.bindingSegments?.length ?? 1) > 1 ? `, and ${(d.bindingSegments!.length - 1)} more at the same capacity: ${ways(d.bindingSegments!.slice(1))}` : ''})` : 'another stretch';
+    const editedPhrase = edited.length ? edited.map(e => `${e.lanes}-lane ${e.roadId} (${fmtN(e.lengthM)} m)`).join(', ') : editedRoadIds.join(', ');
+    let text: string;
+    if (kind === 'unchanged_elsewhere') text = `${capital(d.label)} capacity is still ${fmtN(capacityAfter)} PCU/h: it is set by ${lim}. The edited ${editedPhrase} ${edited.length === 1 ? "isn't" : "aren't"} the constraint.`;
+    else if (kind === 'unchanged') text = `${capital(d.label)} mid-block capacity did not change (${fmtN(capacityAfter)} PCU/h).`;
+    else text = `${capital(d.label)} mid-block capacity ${kind === 'raised' ? 'rises' : 'falls'} from ${fmtN(capacityBefore)} to ${fmtN(capacityAfter)} PCU/h${binding && !bindingEdited ? `, now set by ${lim}, which was not edited` : ''}.`;
+    if (signalLimited) text += ` The signal at its end (${fmtN(d.stopLinePcu ?? 0)} PCU/h at the stop line) limits it more than the road does.`;
+    if (newBottlenecksNearby.length) text += ` A new over-capacity stretch appears nearby: ${newBottlenecksNearby.map(x => `${x.roadName} (${Math.round(x.vc * 100)}%)`).join(', ')}; the queue may have moved there.`;
+    text += ' Model output (IRC:106 capacity of the narrowest stretch, estimated demand).';
+    out.push({ direction: d.label, editedRoadIds, edited, lanesBefore: b.lanesRange, lanesAfter: d.lanesRange, capacityBefore, capacityAfter, capacityChanged, binding, bindingSegments: d.bindingSegments ?? [],
+      bindingEdited, bindingMoved: (b.binding?.roadId ?? null) !== (binding?.roadId ?? null), signalLimited, newBottlenecksNearby, kind, text });
+  }
+  return out;
 }
 
 const pct = (a: number | null, b: number | null) => (a === null || b === null || Math.abs(a) < 1e-9 ? null : (b - a) / Math.abs(a));
@@ -166,5 +248,6 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (10% for junction delay, 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange,
+    laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks),
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats };
 }
