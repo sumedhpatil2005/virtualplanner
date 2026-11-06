@@ -615,6 +615,14 @@ The panel captures were taken with the render loop stopped and the canvas hidden
 - With the hour-of-day profile not loaded, the hour factor is 1 at any hour. That is the §17 recommendation 3 problem, owned elsewhere; both comparisons matched on factor 1.
 - No comparison in this run produced a better, worse or mixed verdict, or a `newBottlenecksNearby` entry.
 
+**Final browser verification, 2026-11-06** (merged build `cec5b53` lineage, headless Chromium, backend on a database copy; Overpass answered HTTP 429 so roads came from the database; Sangamwadi deck, 1 km, seeds 42/7/11; traffic figures are model output, page values measured):
+- 09:00 baseline: hour profile loaded on entering Simulate (Details never opened); hourFactor 1 because 09:00 is the reference peak; key `f46f89b3`; demand 10,800 veh/h; 54 stretches over capacity; eastbound 2,571 PCU/h v/c 0.676, westbound 2,571 v/c 0.585.
+- Segment scope: preview "1 piece · 367 m" equals the only changed way `osm_208004768`; eastbound stays 2,571 with `osm_1151682763` (2 lanes, 136 m) named as binding; outdated banner shown, cleared when key `20edd2eb` landed at 48.9 s (37.9 s compute).
+- Carriageway scope: the 3 eastbound ways changed; eastbound 3,857; key `cfd5d6e5`.
+- Undo/redo: exact key at once, same result object, deep-equal result, empty road diff (all roads, timestamps excluded). Undo of an uncached edit (4 lanes, both scopes) before its re-run landed: key restored at once, no banner, nothing running 5 s later.
+- Improve & compare (carriageway): `inputs.matched: true`; both sides demand key `f14f495c`, 420 trips, 10,800 veh/h, hour 9, factor 1, seeds [42, 7, 11], 900 s. Verdict "No clear change" (low confidence): traffic through the road 2,331 → 2,350 veh/h, removals 4 → 4, over capacity 54 → 54. 432 px panel, nothing cut, caveats collapsed.
+- The 222 s slow landing seen earlier did not recur: re-runs landed in 25–49 s after a 3–10 s wait (likely debounce plus a failing Overpass study-area load; not confirmed).
+
 ## 17. COEP Road over-capacity investigation
 
 **Observed.** In the user's browser, the Sangamwadi Bridge analysis (2 km area, clock at 14:00, weekday) listed under *Worst places in the wider area*: "347 stretches over capacity — 1. COEP Road, south-east of the road, 500 m: 959%; 2. Kushabhau Jejurikar Road 788%; 3. COEP Road, 200 m: 959%; Unnamed road 1200 m 595%". A later agent run (project-database roads, Overpass unreachable) found COEP Road at about 207%, and a browser run at 09:00 listed Kushabhau Jejurikar 728%, unnamed 590%, 492%, 492%, 352 over capacity, with no COEP Road in the top four (§14).
@@ -766,3 +774,39 @@ About 247 removals per 1,500 s at Shivaji (≈590 veh/h, 4% of the 13,800 veh/h 
 - A vehicle longer than a very short link (a bus on a 9 m link) still hangs back over the previous junction while it waits: 20 vehicle-minutes per three Shivaji runs (432 before). The room check counts an empty short link as having room, and looking two links ahead was not attempted.
 - A few vehicles still stop inside a box at Shivaji (4–6 per run), cleared on the rolling tail of a lane whose front vehicle was leaving it and was then held at its own line.
 - `MERGE_TURN_S` = 60 s is a judgement, not a calibrated value: long enough that ordinary platoon closing-up changes nothing (isolated junctions unchanged), well under the 180 s removal.
+
+**Final browser verification, 2026-11-06** (fix commit `bd97cdf` appears as `1b11fbe` in the pushed history). Sangamwadi, 1 km, live sim stepped 900 s, seeds 42/7/11; box-stuck time read from simulator internals (model output, measured on the page):
+
+| | 29f1ca4 | junction fix only (same network) | final build |
+|---|---|---|---|
+| Vehicle-minutes standing > 60 s inside a junction box | 16.3 / 90.6 / 31.5 | 0 / 0 / 0 | 0 / 0 / 0 |
+| Gridlock removals per seed | 0 / 4 / 3 | 1 / 3 / 1 | 8 / 1 / 4 |
+
+The final build's removals are not comparable with the other columns: its demand is 10,800 veh/h against 7,800 (network repairs in §19 add entry roads); which repair adds it was not isolated. Shivaji was not run in the browser (its roads need Overpass).
+
+## 19. Network gaps, demand profile and forced overloads
+
+Follow-up to §17. Everything below is model output on estimated demand unless marked measured.
+
+### What was wrong, why, and the fix
+1. **Live micro-simulation ignored access restrictions.** §17 kept private/destination roads out of the area assignment only. The live sim still routed 193–252 vehicles per seed through COEP Road per 480 s. Fix: the rule moved to `simulation/accessRestriction.ts` and is used by both (prohibitive but finite cost per restricted stretch). After: 0 for all 3 seeds. Trips that start or end on the campus are still routed (60 veh/h test trips at 09:00, 42 at 14:00; unrouted 0). The old whole-city `SimulationManager`/`Pathfinder` still has no access rule.
+2. **Roads cut at a "Map Selected Area" boundary were never completed.** Later loads skipped any way already present as a piece. Fix: a way held only as unedited clipped pieces is replaced by the whole way on later loads (local extract, Overpass, whole-road import). A deleted piece keeps its way out.
+3. **Undoing an import recorded its roads as deleted by the user,** so they never came back. Fixed.
+4. **Ways sharing an OSM node did not join when their heights differed by > 3 m.** Reproduced on the database: an approach whose shape had been edited kept its stored lifted height (4.25 m) while the deck was at 0 m there. Fix: OSM ways join at a shared node whatever their heights, and a deck meets an edited approach at the approach's stored height.
+5. **Underpass ramps were dropped.** A ramp down (negative heights) was taken for a flat approach, leaving four underpasses round Shivajinagar unjoined (Sadguru Morya Gosavi, Bankimchandra Chatopadhyay Path, Mula Road, G. D. Madgulkar). Effect at 09:00: area 1,415 → 1,520 segments, demand 28,718 → 29,620 veh/h, Kushabhau Jejurikar Road 730% → 303%, Ganeshkhind Road 513% → 439%, over capacity 317 → 365.
+6. **The hour-of-day profile loaded only when the Details tab was opened,** so choosing Midday in the run bar ran 14:00 at factor 1 (morning-level demand). This matches the user's 14:00 figures. Fix: the profile loads when Simulate opens and before every analysis; results record `hourFactor` and `timeProfile`; the analysis key includes whether the profile was loaded; the run bar shows an amber "profile not loaded" line with Retry.
+7. **Forced overloads read as flows.** The worst-places list now labels v/c above 150% as "demand X× its capacity: more than can pass, not a flow", and for forced stretches names the nearest main road that ends without a connection, within 500 m of the stretch's own line (`GAP_NEAR_M`; 1,200 m attached a gap to stretches already forced on the intact network). The gap note has its own amber line so the label clamp cannot hide it.
+8. **Network key depended on road list order.** Undoing a deletion put the road back at the end, so the same network keyed apart, re-ran and read as a proposal. The key now hashes roads and junctions in id order.
+
+### Verification
+Unit tests: `NetworkGaps.test.ts`, `TimeProfileLoad.test.ts`, clipped-import and underpass tests, access-rule tests, order-independent key test in `EditRecompute.test.ts` (each failed on the old code). Full suite 456 passed, 3 skipped.
+
+Browser (measured on the page, 2026-11-06; roads from the database, Overpass HTTP 429):
+- Midday chosen in the run bar with Details never opened: hourFactor 0.6956, demand 7,512 veh/h, 21 stretches over capacity on the 1 km Sangamwadi area (54 at 09:00).
+- 2 km Sangamwadi, 14:00, intact network: 243 over capacity, COEP Road 0% (no assigned or simulated traffic).
+- Flyover piece `osm_661187172` deleted in Build: COEP Road first at "demand 6.7× its capacity", 100% no other route, gap line naming the Mokshagundam Vishweshvarayya Flyover 100 m away; 252 over capacity. Stretches 813, 946 and 1,273 m away, already 100% forced before the deletion, get no gap note. Undo restores the exact key and the same result object (shown after a 16 s wait whose cause was not found).
+
+### Uncertainty
+- Which of causes 2–5 broke the flyover chain in the user's session is not proven, nor that their 14:00 run lacked the profile; the user's database and session were not available.
+- The 500 m rule is distance-only: it can name a nearby gap the traffic does not use, or miss a farther one that matters. A rule based on which paths would use the missing link needs the network without the gap, which is exactly what is unknown.
+- Edge demand is still not limited by what the area's boundary roads can carry, so forced overloads remain possible on intact networks (they are now labelled as such).
