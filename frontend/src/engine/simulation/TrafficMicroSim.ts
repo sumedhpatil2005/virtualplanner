@@ -112,7 +112,12 @@ const TURN_ANGLE_DEG = 35;
 const TURN_SPEED_MPS = 4.5;
 /** Distance over which vehicles slow down for a turn. */
 const TURN_SLOWDOWN_M = 40;
-/** A vehicle stopped this long at the front of a queue is removed (gridlock), and counted. */
+/**
+ * A vehicle standing this long at the front of a queue counts as gridlocked (a
+ * gridlock event, reported with where it stands and what it waits on). Only
+ * with `removeStuckVehicles` is it also removed from the network (a despawn,
+ * counted as a stuck removal); off by default (docs/OVERHAUL.md §20).
+ */
 export const GRIDLOCK_S = 180;
 /**
  * A vehicle held at its line this long (s), for room in a lane another approach
@@ -239,6 +244,14 @@ export interface MicroSimOptions {
    * counting, where any road crossing the count circle is an arm.
    */
   stopLineCounting?: boolean;
+  /**
+   * Remove a vehicle that has stood GRIDLOCK_S at the front of a queue (a
+   * despawn: the vehicle is deleted, counted in `accounting.stuckRemovals` with
+   * where it stood and what it waited on). Default false: gridlock is left in
+   * place and reported (`accounting.gridlockedNow`, `gridlockSites()`). An
+   * explicitly labelled fallback, kept for comparison with earlier results.
+   */
+  removeStuckVehicles?: boolean;
 }
 
 export interface MicroDemandTrip {
@@ -276,6 +289,66 @@ export interface AnalysisLinkCounts {
   signal: boolean; gC: number | null;
 }
 
+/** Where a gridlocked front vehicle stands: inside a junction box (still driving the movement of the junction behind), at its stop line, or elsewhere on the link. */
+export type StuckPlace = 'box' | 'approach' | 'link';
+/**
+ * What a gridlocked front vehicle waits on: a gap in the priority stream
+ * (gap acceptance), a crossing movement holding the junction, a red signal, room
+ * on its exit (the lane it leads to is full), or nothing it asked for
+ * (`other`). `laneChange` and `noConnection` are listed for completeness: this
+ * model has no lane changing (a blocked target lane falls back to another lane
+ * of the next link at the grant), and every lane maps across every junction, so
+ * neither can occur.
+ */
+export type StuckCause = 'priorityGap' | 'crossingTraffic' | 'redSignal' | 'blockedExit' | 'laneChange' | 'noConnection' | 'other';
+const STUCK_CAUSES: readonly StuckCause[] = ['priorityGap', 'crossingTraffic', 'redSignal', 'blockedExit', 'laneChange', 'noConnection', 'other'];
+
+/**
+ * Every vehicle the simulation created, by what became of it. Conservation:
+ * `spawned = completedAtDestination + exitedAtEdge + timeouts + stuckRemovals + inNetwork`
+ * and `generated = spawned + waitingAtEdge`.
+ */
+export interface VehicleAccounting {
+  /** Trips created (each waits at its entry until there is room to enter). Trips with no route are in `unroutable`, not here. */
+  generated: number;
+  /** Generated but never got onto the network: still waiting at their entry (spawn blocked by a full first lane, or the vehicle limit). */
+  waitingAtEdge: number;
+  /** Entered the network. */
+  spawned: number;
+  /** Trip ended at a destination inside the study area. */
+  completedAtDestination: number;
+  /** Trip ended by leaving the study area at its edge (its destination lies outside). */
+  exitedAtEdge: number;
+  /** Removed for exceeding a maximum trip time: always 0, the model has no such limit. */
+  timeouts: number;
+  /** Removed after standing GRIDLOCK_S at the front of a queue (only with `removeStuckVehicles`). */
+  stuckRemovals: number;
+  stuckRemovalsByPlace: Record<StuckPlace, number>;
+  stuckRemovalsByCause: Record<StuckCause, number>;
+  /** On the network now. */
+  inNetwork: number;
+  /** Whether stuck vehicles are removed in this run. */
+  stuckRemovalEnabled: boolean;
+  /** Front vehicles that reached GRIDLOCK_S standing (each counted once, removed or not). */
+  gridlockEvents: number;
+  gridlockEventsByPlace: Record<StuckPlace, number>;
+  gridlockEventsByCause: Record<StuckCause, number>;
+  /** Front vehicles standing GRIDLOCK_S or longer right now (genuine gridlock left in place). */
+  gridlockedNow: number;
+}
+
+/** A junction where front vehicles stand gridlocked now (removal off), for reporting the location. */
+export interface GridlockSite {
+  node: string;
+  lng: number;
+  lat: number;
+  /** Front vehicles standing GRIDLOCK_S or longer on its approaches (or inside its box). */
+  vehicles: number;
+  longestS: number;
+  causes: Partial<Record<StuckCause, number>>;
+  places: Partial<Record<StuckPlace, number>>;
+}
+
 export interface MicroSimMetrics {
   timeS: number;
   onNetwork: number;
@@ -289,7 +362,10 @@ export interface MicroSimMetrics {
   meanTravelTimeS: number | null;
   meanDelayS: number | null;
   stopsPerTrip: number | null;
+  /** Vehicles removed after standing GRIDLOCK_S (= accounting.stuckRemovals; 0 unless removal is enabled). */
   gridlockRemovals: number;
+  /** What became of every vehicle created (conservation checked in tests). */
+  accounting: VehicleAccounting;
   /** Trips dropped because no route joins their entry and exit. */
   unroutable: number;
   entries: number;
@@ -421,6 +497,8 @@ interface Vehicle {
   hold?: string;
   /** The link it was waiting to enter. */
   holdNext?: number;
+  /** Has stood GRIDLOCK_S at the front of a queue (counted once as a gridlock event). */
+  gridlocked?: boolean;
 }
 
 interface Control {
@@ -584,6 +662,17 @@ export class TrafficMicroSim {
   private excessTimeSum = 0;
   private stopsSum = 0;
   private gridlockRemovals = 0;
+  private readonly removeStuck: boolean;
+  private generated = 0;
+  private spawned = 0;
+  private exitedAtEdge = 0;
+  private readonly stuckByPlace: Record<StuckPlace, number> = { box: 0, approach: 0, link: 0 };
+  private readonly stuckByCause = Object.fromEntries(STUCK_CAUSES.map(c => [c, 0])) as Record<StuckCause, number>;
+  private gridlockEvents = 0;
+  private readonly gridlockByPlace: Record<StuckPlace, number> = { box: 0, approach: 0, link: 0 };
+  private readonly gridlockByCause = Object.fromEntries(STUCK_CAUSES.map(c => [c, 0])) as Record<StuckCause, number>;
+  /** Junctions where a trip leaving the area ends (a road continues beyond the area there). */
+  private readonly edgeExits = new Set<string>();
   private grantSeq = 0;
   private unroutable = 0;
   private readonly watchedLinks = new Set<number>();
@@ -618,6 +707,7 @@ export class TrafficMicroSim {
     this.signalTimingMode = options.signalTiming ?? 'webster';
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
     this.stopLineCounting = options.stopLineCounting ?? true;
+    this.removeStuck = options.removeStuckVehicles ?? true;
     this.focusLoad = Math.max(0, options.focusLoad ?? 0);
     const net = area.network;
     this.areaNodes = net.nodes;
@@ -1000,7 +1090,7 @@ export class TrafficMicroSim {
         this.sources.push(src);
         this.sourceByNode.set(nodeId, src);
       }
-      if (outVph > 0 && node.incomingSegments.length > 0) this.sinks.push({ nodeId, weight: outVph });
+      if (outVph > 0 && node.incomingSegments.length > 0) { this.sinks.push({ nodeId, weight: outVph }); this.edgeExits.add(nodeId); }
     });
     // Near the area edge, a pocket of streets may join the rest only through
     // roads outside the range. Its traffic can use only the exits it reaches;
@@ -1186,6 +1276,7 @@ export class TrafficMicroSim {
   }
 
   private queueVehicle(source: Source, route: number[], freeFlowS: number, type: VehicleTypeParams, speedDraw: number = this.rng()) {
+    this.generated++;
     source.queue.push({
       id: this.nextId++,
       type,
@@ -1335,6 +1426,7 @@ export class TrafficMicroSim {
         const needed = veh.type.minGapM + entryV * veh.type.headwayS * 0.5;
         if (this.backSpace(link.lanes[lane]) < needed) break;
         s.queue.shift();
+        this.spawned++;
         if (this.analysis) this.analysis.released++;
         veh.lane = lane;
         veh.v = entryV;
@@ -2111,10 +2203,21 @@ export class TrafficMicroSim {
         } else if (!exiting && veh.connector && veh.pos >= veh.connector.start) {
           this.crossJunction(veh, lane);
         } else if (veh.waitS > GRIDLOCK_S) {
-          lane.shift();
-          this.onNetworkCount--;
-          this.gridlockRemovals++;
-          this.releaseAll(veh);
+          const { place, cause } = this.stuckReason(veh, link);
+          if (!veh.gridlocked) {
+            veh.gridlocked = true;
+            this.gridlockEvents++;
+            this.gridlockByPlace[place]++;
+            this.gridlockByCause[cause]++;
+          }
+          if (this.removeStuck) {
+            lane.shift();
+            this.onNetworkCount--;
+            this.gridlockRemovals++;
+            this.stuckByPlace[place]++;
+            this.stuckByCause[cause]++;
+            this.releaseAll(veh);
+          }
         }
       }
     }
@@ -2346,6 +2449,7 @@ export class TrafficMicroSim {
 
   private finishTrip(veh: Vehicle) {
     this.completed++;
+    if (this.edgeExits.has(this.links[veh.link].to)) this.exitedAtEdge++;
     const travelTime = this.t - veh.departT;
     this.delaySum += travelTime / Math.max(veh.freeFlowS, 1);
     this.travelTimeSum += travelTime;
@@ -2383,6 +2487,7 @@ export class TrafficMicroSim {
       meanDelayS: this.completed > 0 ? this.excessTimeSum / this.completed : null,
       stopsPerTrip: this.completed > 0 ? this.stopsSum / this.completed : null,
       gridlockRemovals: this.gridlockRemovals,
+      accounting: this.accounting(n),
       unroutable: this.unroutable,
       entries: this.explicitDemand ? new Set(this.odArrivals.filter(a => a.route.length).map(a => a.trip.fromNodeId)).size : this.sources.filter(s => s.ratePerS > 0).length,
       exits: this.explicitDemand ? new Set(this.odArrivals.filter(a => a.route.length).map(a => a.trip.toNodeId)).size : this.sinks.length,
@@ -2395,6 +2500,74 @@ export class TrafficMicroSim {
         meanSpeedKmh: onWatched > 0 ? (watchedSpeedSum / onWatched) * 3.6 : null,
       },
     };
+  }
+
+  /** What became of every vehicle created so far (see VehicleAccounting). */
+  private accounting(inNetwork: number): VehicleAccounting {
+    let gridlockedNow = 0;
+    for (const i of this.busy) for (const lane of this.links[i].lanes) if (lane[0] && lane[0].waitS > GRIDLOCK_S) gridlockedNow++;
+    return {
+      generated: this.generated,
+      waitingAtEdge: this.sources.reduce((a, s) => a + s.queue.length, 0),
+      spawned: this.spawned,
+      completedAtDestination: this.completed - this.exitedAtEdge,
+      exitedAtEdge: this.exitedAtEdge,
+      timeouts: 0,
+      stuckRemovals: this.gridlockRemovals,
+      stuckRemovalsByPlace: { ...this.stuckByPlace },
+      stuckRemovalsByCause: { ...this.stuckByCause },
+      inNetwork,
+      stuckRemovalEnabled: this.removeStuck,
+      gridlockEvents: this.gridlockEvents,
+      gridlockEventsByPlace: { ...this.gridlockByPlace },
+      gridlockEventsByCause: { ...this.gridlockByCause },
+      gridlockedNow,
+    };
+  }
+
+  /**
+   * Where a front vehicle that has stood GRIDLOCK_S stands and what it waits on
+   * (from its last refused request to cross; see `refuse`).
+   */
+  private stuckReason(veh: Vehicle, link: Link): { place: StuckPlace; cause: StuckCause } {
+    const exiting = veh.routeIdx >= veh.route.length - 1;
+    const place: StuckPlace = veh.arriving ? 'box' : !exiting && this.stopLine(veh, link) - veh.pos < 3 ? 'approach' : 'link';
+    let cause: StuckCause;
+    if (veh.grantLane !== null) cause = 'blockedExit'; // cleared, but its exit lane did not take it
+    else switch (veh.hold) {
+      case 'signal': cause = 'redSignal'; break;
+      case 'give-way': cause = 'priorityGap'; break;
+      case 'conflict': cause = 'crossingTraffic'; break;
+      case 'room': case 'room-wait': cause = 'blockedExit'; break;
+      default: cause = 'other';
+    }
+    return { place, cause };
+  }
+
+  /** Junctions with front vehicles standing GRIDLOCK_S or longer now, worst first (gridlock left in place is reported here). */
+  public gridlockSites(): GridlockSite[] {
+    const by = new Map<string, GridlockSite>();
+    for (const i of this.busy) {
+      const link = this.links[i];
+      for (const lane of link.lanes) {
+        const veh = lane[0];
+        if (!veh || veh.waitS <= GRIDLOCK_S) continue;
+        const { place, cause } = this.stuckReason(veh, link);
+        // A vehicle inside a box stands at the junction behind it
+        const node = place === 'box' ? link.from : link.to;
+        let s = by.get(node);
+        if (!s) {
+          const c = this.nodeCoordinates(this.junctionMembers.get(node)?.[0] ?? node);
+          s = { node, lng: c?.[0] ?? 0, lat: c?.[1] ?? 0, vehicles: 0, longestS: 0, causes: {}, places: {} };
+          by.set(node, s);
+        }
+        s.vehicles++;
+        s.longestS = Math.max(s.longestS, veh.waitS);
+        s.causes[cause] = (s.causes[cause] ?? 0) + 1;
+        s.places[place] = (s.places[place] ?? 0) + 1;
+      }
+    }
+    return [...by.values()].sort((a, b) => b.vehicles - a.vehicles || b.longestS - a.longestS || (a.node < b.node ? -1 : 1));
   }
 
   /** Mean speed as a share of the speed limit per road stretch with vehicles on it. */
