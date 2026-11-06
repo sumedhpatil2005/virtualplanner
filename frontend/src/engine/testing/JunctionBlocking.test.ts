@@ -105,7 +105,7 @@ function merge(seed: number) {
 }
 
 describe('merging in turn', () => {
-  it('a straight-on queue beside a dense turning stream into one short link gets its turn: its front waits about a minute, nobody is removed, and the link passes as much', () => {
+  it('a straight-on queue beside a dense turning stream into one short link gets its turn: its front waits about a minute, nobody is gridlocked, and the link passes as much', () => {
     for (const seed of [42, 11]) {
       const { sim, straight } = merge(seed);
       let maxWait = 0;
@@ -114,7 +114,10 @@ describe('merging in turn', () => {
         for (const l of straight) for (const lane of l.lanes) if (lane[0]) maxWait = Math.max(maxWait, lane[0].waitS);
       }
       const m = sim.getMetrics();
-      // Before the fix: the straight-on front waited the full 180 s and was removed as gridlock (3 and 5 removals)
+      // Before the fix: the straight-on front waited the full 180 s and was removed as gridlock (3 and 5 removals).
+      // Stuck vehicles are no longer removed by default: no front vehicle may stand GRIDLOCK_S at all
+      expect(m.accounting.gridlockEvents, `seed ${seed}`).toBe(0);
+      expect(m.accounting.gridlockedNow, `seed ${seed}`).toBe(0);
       expect(m.gridlockRemovals, `seed ${seed}`).toBe(0);
       expect(maxWait, `seed ${seed}`).toBeLessThan(120);
       // Throughput unchanged within noise: before the fix 699 and 662 trips in 20 minutes

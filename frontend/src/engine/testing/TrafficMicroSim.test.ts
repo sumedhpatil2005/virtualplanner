@@ -142,6 +142,7 @@ describe('TrafficMicroSim', () => {
     }))));
     expect(sim.getMetrics().completedTrips).toBe(6);
     expect(slowestTurning).toBeGreaterThan(1);
+    expect(sim.getMetrics().accounting.gridlockEvents).toBe(0);
     expect(sim.getMetrics().gridlockRemovals).toBe(0);
   });
   it('enters and leaves where roads cross the area edge', () => {

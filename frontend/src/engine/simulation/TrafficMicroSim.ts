@@ -768,7 +768,7 @@ export class TrafficMicroSim {
     this.signalTimingMode = options.signalTiming ?? 'webster';
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
     this.stopLineCounting = options.stopLineCounting ?? true;
-    this.removeStuck = options.removeStuckVehicles ?? true;
+    this.removeStuck = options.removeStuckVehicles ?? false;
     this.focusLoad = Math.max(0, options.focusLoad ?? 0);
     const net = area.network;
     this.areaNodes = net.nodes;
@@ -2705,8 +2705,8 @@ export class TrafficMicroSim {
   }
 
   /** Deadlock detector: events so far, junctions deadlocked now, longest wait inside a junction box (s). */
-  public deadlockReport(): { events: number; current: string[]; maxStuckInBoxS: number; gridlockRemovals: number } {
-    return { events: this.deadlockEvents, current: [...this.deadlocked], maxStuckInBoxS: this.maxStuckInBoxS, gridlockRemovals: this.gridlockRemovals };
+  public deadlockReport(): { events: number; current: string[]; maxStuckInBoxS: number; gridlockRemovals: number; gridlockEvents: number } {
+    return { events: this.deadlockEvents, current: [...this.deadlocked], maxStuckInBoxS: this.maxStuckInBoxS, gridlockRemovals: this.gridlockRemovals, gridlockEvents: this.gridlockEvents };
   }
 
   /** Links with vehicles on them, in link order; links that have emptied are dropped. */

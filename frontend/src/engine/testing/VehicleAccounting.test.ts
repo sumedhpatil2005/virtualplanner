@@ -103,6 +103,8 @@ describe('vehicle accounting', () => {
     ];
     const sim = new TrafficMicroSim(area, map, { demandLevel: OD_REFERENCE_LEVEL, seed: 3, demandTrips: trips });
     const m = runChecked(sim, 900);
+    // Stuck vehicles are not removed unless asked for (removeStuckVehicles defaults to false)
+    expect(m.accounting.stuckRemovalEnabled).toBe(false);
     expect(m.accounting.completedAtDestination).toBeGreaterThan(10);
     expect(m.accounting.exitedAtEdge).toBeGreaterThan(10);
   });

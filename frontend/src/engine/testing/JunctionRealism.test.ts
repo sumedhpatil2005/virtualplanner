@@ -244,7 +244,7 @@ describe('gap acceptance at a priority junction', () => {
 });
 
 describe('no deadlock', () => {
-  it('a 4-way signalised crossroads at high demand keeps moving: no deadlock, nobody removed, nobody stuck in the box', () => {
+  it('a 4-way signalised crossroads at high demand keeps moving: no deadlock, nobody gridlocked, nobody stuck in the box', () => {
     const { area, map, j } = crossroads(1, 90);
     const sim = new TrafficMicroSim(area, map, { demandLevel: 0, seed: 11, junctions: [j] });
     const ends = [nodeAt(area, -400, 0), nodeAt(area, 400, 0), nodeAt(area, 0, -400), nodeAt(area, 0, 400)];
@@ -258,6 +258,8 @@ describe('no deadlock', () => {
     });
     const rep = sim.deadlockReport();
     expect(rep.events).toBe(0);
+    // No front vehicle stood GRIDLOCK_S (stuck vehicles are not removed by default, so this is the check that matters)
+    expect(rep.gridlockEvents).toBe(0);
     expect(rep.gridlockRemovals).toBe(0);
     expect(rep.maxStuckInBoxS).toBeLessThan(30);
     const m = sim.getMetrics();
