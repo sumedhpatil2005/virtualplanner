@@ -2118,8 +2118,8 @@ export class TrafficMicroSim {
 
   /**
    * packedBack for the vehicles that stay in the lane: those at its front that
-   * are leaving it (they leave the area at its end, or are cleared through the
-   * next junction and can no longer stop) are left out, and the rest are packed
+   * are leaving it (`leaving`: they leave the area at its end, or are cleared through the
+   * next junction, can no longer stop and beat the red) are left out, and the rest are packed
    * against the stop line. Infinity when every vehicle in it is leaving.
    * (Counting the whole lane as free once its front vehicle was leaving let the
    * vehicles behind that front, which would still stop at a red, be projected
@@ -2127,7 +2127,7 @@ export class TrafficMicroSim {
    */
   private packedBackStaying(link: Link, lane: Vehicle[]): number {
     let i = 0;
-    while (i < lane.length && (lane[i].routeIdx >= lane[i].route.length - 1 || this.committed(lane[i]))) i++;
+    while (i < lane.length && this.leaving(lane[i])) i++;
     if (i >= lane.length) return Infinity;
     return i === 0 ? this.packedBack(link, lane) : this.packedBack(link, lane.slice(i));
   }
@@ -2155,7 +2155,7 @@ export class TrafficMicroSim {
     const back = Math.min(staying, c2.start - AT_LINE_M) - pend;
     if (back - veh.type.lengthM - (behind ? veh.type.minGapM : 0) >= connector.entry) return true;
     // Through both junctions in one go
-    if (lane.some(v => !(v.routeIdx >= v.route.length - 1 || this.committed(v))) || this.pendingInto(next.index, k, veh) > 0) return false;
+    if (lane.some(v => !this.leaving(v)) || this.pendingInto(next.index, k, veh) > 0) return false;
     const toLine2 = Math.max(0, dist) + connector.length + Math.max(0, c2.start - connector.entry);
     let t2 = timeToCover(toLine2, veh.v, veh.type.maxAccel, connector.turn ? turnSpeed(veh.type) : next.speed * veh.speedFactor);
     // Behind a vehicle still on its way out of `next` it gets to the line no sooner than that one plus a headway
@@ -2170,6 +2170,37 @@ export class TrafficMicroSim {
       if (this.packedBackStaying(next2, next2.lanes[k2]) - this.pendingInto(next2.index, k2, veh) >= this.exitNeed(veh, ck)) return true;
     }
     return false;
+  }
+
+  /**
+   * Whether a vehicle is on its way out of its lane: it leaves the area at the end
+   * of it, or it is cleared through the next junction, can no longer stop, and (at a
+   * signal) reaches its line before the red. A cleared vehicle still before its
+   * line at the red gives its grant back however close it is (the red rule), so one
+   * that would get there only after the amber is not counted as leaving: a 12 m
+   * truck following such a truck onto a 15 m link was left standing across the
+   * junction behind when the one ahead stopped at the red.
+   */
+  private leaving(v: Vehicle): boolean {
+    if (v.routeIdx >= v.route.length - 1) return true;
+    if (!this.committed(v)) return false;
+    const link = this.links[v.link];
+    if (this.controls.get(link.to)?.kind !== 'signal') return true;
+    const toLine = Math.max(0, v.connector!.start - v.pos) / Math.max(v.v, 0.1);
+    return toLine < this.untilRed(link.index);
+  }
+
+  /** Seconds until the approach `linkIndex` turns red (0 at red; Infinity where unsignalised). */
+  private untilRed(linkIndex: number): number {
+    const state = this.signalState(linkIndex);
+    if (state === null) return Infinity;
+    if (state === 'red') return 0;
+    if (state === 'green') return this.greenLeft(linkIndex) + SIGNAL_AMBER_S;
+    const link = this.links[linkIndex];
+    const c = this.controls.get(link.to)!;
+    const { start, green, cycle } = this.phaseWindow(c, c.groups.get(linkIndex) ?? 0);
+    const local = ((this.t + c.offset) % cycle - start + cycle) % cycle;
+    return Math.max(0, green + SIGNAL_AMBER_S - local);
   }
 
   /** Seconds of green left for the approach `linkIndex` at time `at` (now by default; 0 unless green then; Infinity where unsignalised). */
@@ -2411,12 +2442,7 @@ export class TrafficMicroSim {
             const signal = this.signalState(link.index);
             const distance = queuedBehind ? Infinity : veh.connector.start - veh.pos;
             const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
-            // At amber or red a vehicle that can still stop gives its grant back; one past the
-            // point where it can stop goes on (into the all-red), as on amber. Making it stop at
-            // red anyway braked it far harder than it can, at its line: and a follower that had
-            // entered a short link behind it, the lane counted as left by a vehicle that could
-            // no longer stop (packedBackStaying), was left standing across the junction behind
-            if (((signal === 'red' || signal === 'amber') && canStop) ||
+            if (signal === 'red' || (signal === 'amber' && canStop) ||
               (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true)) ||
               (canStop && !veh.pairCross && !queuedBehind && this.lostExitRoom(veh))) this.revokeGrant(veh);
           }

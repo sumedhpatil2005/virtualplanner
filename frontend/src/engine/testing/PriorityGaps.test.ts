@@ -132,8 +132,11 @@ describe('critical gap with impatience', () => {
 describe('priority junction: the side road waits for a gap, the main road keeps its priority', () => {
   it('a side-road driver never enters in front of a main-road vehicle closer than the floor critical gap, nor across one in the junction, however long it waited', () => {
     for (const seed of [42, 7]) {
-      // Dense main road: side-road drivers wait minutes (impatience and turn-taking both in play)
-      const sim = tee(1800, 400, seed);
+      // Dense main road: side-road drivers wait minutes (impatience and turn-taking both in play).
+      // 2,000 veh/h: at 1,800 the longest wait before a grant fell to 59 s and 46 s (seeds 42, 7)
+      // after the long-vehicle changes (12 m buses, heavy vehicles turning at 11 km/h; docs/OVERHAUL.md §20), so the long waits this test
+      // is about no longer happened; the denser main road restores them (71 s and 64 s)
+      const sim = tee(2000, 400, seed);
       const w = watchSideGrants(sim);
       run(sim, 1500);
       expect(w.grants, `seed ${seed}`).toBeGreaterThan(5);
