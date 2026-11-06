@@ -325,10 +325,12 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
               <span className="mt-px inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-semibold text-slate-300">{i + 1}</span>
               <div className="min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-200 leading-tight line-clamp-3" data-testid="bottleneck-label" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.label}</span>
+                  <span className="text-slate-200 leading-tight line-clamp-3" data-testid="bottleneck-label" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.gap ? b.label.replace(/; network gap: [^)]*/, '') : b.label}</span>
                   <span className="tabular-nums shrink-0" style={{ color: vcColour(b.vc) }} title={b.demandOverCapacity ? 'Assigned demand over capacity: more traffic than this stretch can pass in the hour, not a flow that could be counted' : undefined}>{b.demandOverCapacity ? vcText(b.vc).replace('demand ', '') : `${Math.round(b.vc * 100)}%`}</span>
                 </div>
                 <Meter value={b.vc} max={vcMax} marker={1} color={vcColour(b.vc)} title={`${Math.round(b.vc * 100)}% of capacity (the line marks 100%)`} />
+                {/* Its own line: as the label's last note it was cut by the 3-line clamp behind the demand and no-other-route notes */}
+                {b.gap && <p className="text-[11px] leading-tight text-amber-300" data-testid="bottleneck-gap">Network gap: {b.gap.title}, {Math.max(100, Math.round(b.gap.distanceM / 100) * 100)} m away</p>}
               </div>
               <button className="p-1 -m-1 rounded text-slate-400 hover:text-cyan-200 hover:bg-white/5 cursor-pointer" title="Show on map" aria-label={`Show ${b.roadName} on the map`} onClick={() => actions.flyTo(b.coordinates)}><MapPin size={14} /></button>
             </li>

@@ -130,6 +130,17 @@ describe('road analysis panel pieces', () => {
     expect(span).toContain('line-clamp-3');
     expect(span).not.toContain('line-clamp-2');
   });
+  it('a network gap behind a forced stretch has its own line, not the clamped label\'s last note (docs/OVERHAUL.md §19)', () => {
+    const r = result();
+    r.areaBottlenecks = [{ ...r.areaBottlenecks[0], roadName: 'COEP Road', vc: 6.7, demandOverCapacity: true, noAlternativeShare: 1,
+      label: 'COEP Road, south-east of the road, 300 m (demand 6.7× its capacity: more than can pass, not a flow; no other route in the model for 100% of its traffic; network gap: Mokshagundam Vishweshvarayya Flyover ends without a connection 100 m away)',
+      gap: { roadName: 'Mokshagundam Vishweshvarayya Flyover', title: 'Mokshagundam Vishweshvarayya Flyover ends without a connection', coordinates: [73.85, 18.53, 0], distanceM: 14 } }];
+    const d = doc(renderToStaticMarkup(createElement(BottlenecksCard, { r, overlay: 'none', actions: actions() })));
+    expect(d.querySelector('[data-testid="bottleneck-gap"]')?.textContent).toBe('Network gap: Mokshagundam Vishweshvarayya Flyover ends without a connection, 100 m away');
+    const label = d.querySelector('[data-testid="bottleneck-label"]')!;
+    expect(label.textContent).toBe('COEP Road, south-east of the road, 300 m (demand 6.7× its capacity: more than can pass, not a flow; no other route in the model for 100% of its traffic)');
+    expect(label.getAttribute('title')).toContain('network gap: Mokshagundam');
+  });
   it('suggestion card shows the headline figure and the CTAs', () => {
     const html = renderToStaticMarkup(createElement(SuggestionCard, { s: { kind: 'widen', title: 'Add a lane', evidence: 'e', why: 'w', figure: { value: '91%', label: 'of mid-block capacity' }, action: { label: 'Select the road in Build', roadIds: ['a'], at: null } }, onTest: () => {}, actions: actions() }));
     expect(html).toContain('91%');
