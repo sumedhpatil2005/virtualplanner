@@ -391,6 +391,7 @@ export class ObjectManager {
     if (existing) {
       this.objects.delete(id);
       if (existing.scenarioId === BASE_SCENARIO_ID) this.noteOsmDeletions([id], true);
+      if (existing.type === 'road' && existing.osmProvenance) this.liftBridges();
       this.notify(new Set([existing.type]));
       if (!skipSync) {
         this.syncDelete(id).catch((e) => {
@@ -420,6 +421,10 @@ export class ObjectManager {
 
     if (changed) {
       if (recordOsmDeletion) this.noteOsmDeletions(objs.filter(o => o.scenarioId === BASE_SCENARIO_ID).map(o => o.id), true);
+      // Heights round what went are worked out again, as when roads are added: an approach to a deleted deck goes
+      // back down, and the whole way that replaced a clipped piece gets the heights it has without the piece
+      // (worked out with both present, they differed from a direct import's by up to 1 m: docs/OVERHAUL.md §21)
+      if (objs.some(o => o.type === 'road' && o.osmProvenance)) this.liftBridges();
       this.notify(new Set(objs.map(o => o.type)));
       if (!skipSync && idsToSync.length > 0) {
         this.syncDeleteMultiple(idsToSync).catch((e) => {
