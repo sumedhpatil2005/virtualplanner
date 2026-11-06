@@ -115,6 +115,11 @@ const RunBar: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
               className={`rounded-lg px-1 py-1.5 text-xs font-medium transition cursor-pointer ${o.value === period ? 'bg-white text-slate-950 shadow' : 'text-slate-300 hover:text-white'}`}>{o.label}</button>
           ))}
         </div>
+        {sim.timeOfDay.status === 'error' && (
+          <p className="text-[11px] text-amber-300/90" data-testid="time-profile-missing">
+            Hour-of-day profile not loaded: demand is the peak hour's (×1), whatever the hour. <button className="underline cursor-pointer" onClick={() => void mode.ensureTimeProfile()}>Retry</button>
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 flex-wrap" data-testid="live-controls">
         <LiveStatus traffic={t} />

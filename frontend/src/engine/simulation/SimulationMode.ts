@@ -31,7 +31,7 @@ import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
 import { applyUrbanSpeeds, type SpeedReport } from './roadParameters';
 import { compareAnalyses, type ComparisonResult, type RunInputs } from './ScenarioComparison';
-import { vcColour } from './RoadAnalysis';
+import { vcColour, vcText } from './RoadAnalysis';
 import { fetchScreenlines, type ScreenlineFile } from '../calibration/screenlines';
 
 /**
@@ -139,6 +139,13 @@ export interface RoadAnalysisState {
    * result arrives (docs/OVERHAUL.md §14).
    */
   outdated?: boolean;
+  /** Demand multiplier the result was computed with (the clock hour's, from the hour-of-day profile). */
+  hourFactor?: number;
+  /**
+   * Whether the hour-of-day profile was loaded for the result. 'unavailable': it could not be loaded, so the
+   * demand is the peak hour's (factor 1) whatever the clock shows (docs/OVERHAUL.md §19).
+   */
+  timeProfile?: 'loaded' | 'unavailable';
 }
 
 /** Demand options the user can change. */
@@ -530,6 +537,8 @@ export class SimulationMode {
   public enter() {
     if (this.state.active) return;
     this.setState({ active: true });
+    // The clock's demand needs the hour-of-day profile, whichever tab is open (docs/OVERHAUL.md §19)
+    void this.ensureTimeProfile();
     this.visualizer.setFocus(true);
     // Coming back to a saved selection: show it again; its analysis is kept when nothing changed (nothing restarts by itself)
     if (this.state.seedRoadIds.length > 0) this.recompute(false, false);
@@ -1051,7 +1060,9 @@ export class SimulationMode {
   private analysisKey() {
     const plan = this.studyPlan();
     return contentKey({ net: this.currentNetworkKey(), study: this.studyKey(), plan: plan ? contentKey({ n: plan.trips.length, v: Math.round(plan.provenance.vehiclesPerHour), src: plan.provenance.source }) : null,
-      hour: this.state.timeOfDay.hour, day: this.state.timeOfDay.day, f: this.state.timeOfDay.factor, seeds: this.analysisSeeds, settings: this.state.demandSettings });
+      hour: this.state.timeOfDay.hour, day: this.state.timeOfDay.day, f: this.state.timeOfDay.factor, seeds: this.analysisSeeds, settings: this.state.demandSettings,
+      // A result computed without the profile is never taken for one computed with it
+      profile: this.state.timeOfDay.status === 'ready' });
   }
 
   /** Re-runs the road analysis shortly (settings settle first). */
@@ -1081,6 +1092,12 @@ export class SimulationMode {
     this.cancelAnalysis();
     if (!area || !section) return null;
     await this.ensureCountData().catch(() => {});
+    if (this.state.timeOfDay.status !== 'ready') {
+      // The hour's demand factor comes from the profile: load it first (its arrival schedules a re-run; this run is it)
+      await this.ensureTimeProfile();
+      if (this.analysisTimer) { clearTimeout(this.analysisTimer); this.analysisTimer = null; }
+      if (this.state.area !== area || this.state.section !== section) return null;
+    }
     const plan = this.studyPlan(area);
     if (!plan?.trips.length) {
       this.setState({ analysis: { status: 'error', progress: 0, output: null, error: 'No traffic can be estimated for this area: no roads cross its edge and it holds no buildings or zones with activity.', hour: this.state.timeOfDay.hour, demandVph: 0, key: null } });
@@ -1088,6 +1105,7 @@ export class SimulationMode {
       return null;
     }
     const hour = this.state.timeOfDay.hour, demandVph = plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor;
+    const hourFactor = this.state.timeOfDay.factor, timeProfile = this.state.timeOfDay.status === 'ready' ? 'loaded' as const : 'unavailable' as const;
     const key = this.analysisKey();
     this.setState({ analysis: { ...this.state.analysis, status: 'running', progress: 0, error: null, hour, demandVph } });
     const networkKey = this.currentNetworkKey();
@@ -1102,8 +1120,8 @@ export class SimulationMode {
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
       this.analysisNetworkKey = networkKey;
-      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key });
-      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key },
+      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile });
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.clearAnalysisStopNotice();
       this.redrawOverlay();
@@ -1145,7 +1163,7 @@ export class SimulationMode {
     if (kind === 'select-link') { this.visualizer.showOverlay(null); this.visualizer.showSelectLink(out.selectLinkVph); return; }
     if (kind === 'area-vc') {
       this.visualizer.showOverlay(key => { const vc = out.areaVc.get(key); return vc === undefined ? null : { css: vcColour(vc), alpha: vc < 0.3 ? 0.35 : 0.9 }; },
-        out.areaBottlenecks.slice(0, 5).map((b, i) => ({ coordinates: b.coordinates, label: `${i + 1}. ${b.roadName} ${Math.round(b.vc * 100)}%`, css: '#f43f5e' })));
+        out.areaBottlenecks.slice(0, 5).map((b, i) => ({ coordinates: b.coordinates, label: `${i + 1}. ${b.roadName} ${vcText(b.vc)}`, css: '#f43f5e' })));
       return;
     }
     if (kind === 'cause') {
@@ -1298,12 +1316,18 @@ export class SimulationMode {
   /** Loads the hour-of-day profile (once; again after an error). */
   public ensureTimeProfile(): Promise<void> {
     const t = this.state.timeOfDay;
-    if (t.status === 'ready' || t.status === 'loading') return Promise.resolve();
+    if (t.status === 'ready') return Promise.resolve();
+    // A load in flight is shared: callers wait for it rather than run at factor 1 meanwhile
+    if (t.status === 'loading' && this.timeProfileLoad) return this.timeProfileLoad;
     this.setTimeOfDay({ status: 'loading', error: null });
-    return fetchDiurnalProfile()
+    const load = fetchDiurnalProfile()
       .then(profile => this.setTimeOfDay({ status: 'ready', profile }))
-      .catch(err => this.setTimeOfDay({ status: 'error', error: err instanceof Error ? err.message : String(err) }));
+      .catch(err => this.setTimeOfDay({ status: 'error', error: err instanceof Error ? err.message : String(err) }))
+      .finally(() => { if (this.timeProfileLoad === load) this.timeProfileLoad = null; });
+    this.timeProfileLoad = load;
+    return load;
   }
+  private timeProfileLoad: Promise<void> | null = null;
 
   public setHour(hour: number) {
     this.setTimeOfDay({ hour: ((Math.round(hour) % 24) + 24) % 24 });
