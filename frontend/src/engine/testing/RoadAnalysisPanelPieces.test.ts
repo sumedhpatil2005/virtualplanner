@@ -122,6 +122,14 @@ describe('road analysis panel pieces', () => {
     expect(b).toContain('131%');
     expect(b).toContain('Show Airport Road on the map');
   });
+  it('a bottleneck label with the forced-flow note fits: three lines, not cut at two (docs/OVERHAUL.md §16 merged-build check)', () => {
+    const r = result();
+    r.areaBottlenecks = [{ ...r.areaBottlenecks[0], label: 'Old Pune–Mumbai Highway, south-east of the road, 200 m (no other route in the model for 100% of its traffic)' }];
+    const b = renderToStaticMarkup(createElement(BottlenecksCard, { r, overlay: 'none', actions: actions() }));
+    const span = b.match(/<span[^>]*data-testid="bottleneck-label"[^>]*>/)![0];
+    expect(span).toContain('line-clamp-3');
+    expect(span).not.toContain('line-clamp-2');
+  });
   it('suggestion card shows the headline figure and the CTAs', () => {
     const html = renderToStaticMarkup(createElement(SuggestionCard, { s: { kind: 'widen', title: 'Add a lane', evidence: 'e', why: 'w', figure: { value: '91%', label: 'of mid-block capacity' }, action: { label: 'Select the road in Build', roadIds: ['a'], at: null } }, onTest: () => {}, actions: actions() }));
     expect(html).toContain('91%');

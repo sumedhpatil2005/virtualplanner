@@ -325,7 +325,7 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
               <span className="mt-px inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-semibold text-slate-300">{i + 1}</span>
               <div className="min-w-0 space-y-1">
                 <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-200 leading-tight line-clamp-2" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.label}</span>
+                  <span className="text-slate-200 leading-tight line-clamp-3" data-testid="bottleneck-label" title={`${b.label}. ${Math.round(b.delayVehH)} vehicle-hours of extra delay`}>{b.label}</span>
                   <span className="tabular-nums shrink-0" style={{ color: vcColour(b.vc) }}>{Math.round(b.vc * 100)}%</span>
                 </div>
                 <Meter value={b.vc} max={vcMax} marker={1} color={vcColour(b.vc)} title={`${Math.round(b.vc * 100)}% of capacity (the line marks 100%)`} />
