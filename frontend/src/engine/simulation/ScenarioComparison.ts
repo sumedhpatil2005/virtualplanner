@@ -47,6 +47,29 @@ export interface ComparisonResult {
   verdict: { section: Verdict; network: Verdict; area: Verdict; overall: Verdict; summary: string };
   confidence: { level: 'low' | 'medium' | 'high'; text: string };
   caveats: string[];
+  /** The two runs' demand, hour, seeds and duration, and whether they match (absent when the caller passed none). */
+  inputs?: InputCheck;
+}
+
+/** What a run's figures depend on besides the network. A comparison holds these fixed, so a difference is the network's doing. */
+export interface RunInputs {
+  /** Content key of the OD demand plan, its trip count and planned veh/h (before the hour factor). */
+  demandKey: string; trips: number; plannedVph: number;
+  hour: number; hourFactor: number;
+  /** Seeds the analysis actually ran, in order. */
+  seeds: number[];
+  measureS: number;
+}
+export interface InputCheck { before: RunInputs; after: RunInputs; matched: boolean; mismatches: ('demand' | 'hour' | 'seeds' | 'duration')[] }
+
+/** Whether two runs used the same demand, hour, seeds and duration. `newDemand`: a development scenario, where the demand is meant to differ. */
+export function checkRunInputs(before: RunInputs, after: RunInputs, newDemand = false): InputCheck {
+  const mismatches: InputCheck['mismatches'] = [];
+  if (!newDemand && (before.demandKey !== after.demandKey || before.trips !== after.trips || Math.abs(before.plannedVph - after.plannedVph) > 1e-6)) mismatches.push('demand');
+  if (before.hour !== after.hour || Math.abs(before.hourFactor - after.hourFactor) > 1e-9) mismatches.push('hour');
+  if (before.seeds.length !== after.seeds.length || before.seeds.some((x, i) => x !== after.seeds[i])) mismatches.push('seeds');
+  if (before.measureS !== after.measureS) mismatches.push('duration');
+  return { before, after, matched: mismatches.length === 0, mismatches };
 }
 
 /**
@@ -155,8 +178,9 @@ const sectionSpeed = (r: RoadAnalysisResult) => {
 };
 const mean = (xs: (number | null)[]) => { const v = xs.filter((x): x is number => x !== null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 
-export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }): ComparisonResult {
+export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }, inputs?: { before: RunInputs; after: RunInputs; newDemand?: boolean }): ComparisonResult {
   const a = before.result, b = after.result;
+  const inputCheck = inputs ? checkRunInputs(inputs.before, inputs.after, inputs.newDemand) : undefined;
   const kind = Math.abs(demand.before - demand.after) > 0.5 ? 'development' : 'infrastructure';
   const sameSeeds = a.perSeed.length === b.perSeed.length && a.perSeed.every((s, i) => s.seed === b.perSeed[i].seed);
   const seeds = (pick: (s: RoadAnalysisResult['perSeed'][number]) => number | null) => sameSeeds ? { before: a.perSeed.map(pick), after: b.perSeed.map(pick) } : undefined;
@@ -244,10 +268,16 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     : allAgree && nSeeds >= 3 ? { level: 'medium', text: `All ${nSeeds} runs agree on the direction of every change above the noise threshold. Demand is estimated, not counted, so treat the sizes of the changes as indicative; the comparison holds demand fixed, so their direction is more reliable than the absolute figures.` }
     : { level: 'low', text: `The ${nSeeds} runs do not all agree on the direction of the changes; run more seeds or treat the result as no clear change.` };
   const caveats: string[] = [];
+  // Inputs that differ make the figures incomparable: say so first and never claim more than low confidence
+  if (inputCheck && !inputCheck.matched) {
+    confidence.level = 'low';
+    confidence.text = `The two runs did not use the same ${inputCheck.mismatches.join(', ')}, so the differences are not the network's doing alone.`;
+    caveats.push(`Not like with like: the existing city and the proposal differ in ${inputCheck.mismatches.join(', ')}.`);
+  }
   if (kind === 'development') caveats.push(`Land use changed too: demand went from ${Math.round(demand.before).toLocaleString()} to ${Math.round(demand.after).toLocaleString()} veh/h, so differences mix the new demand with any road changes.`);
-  caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
+  if (!inputCheck || inputCheck.matched) caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange,
     laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks),
-    verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats };
+    verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
 }

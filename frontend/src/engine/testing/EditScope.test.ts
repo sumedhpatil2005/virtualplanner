@@ -200,7 +200,14 @@ describe('Simulate after a lane edit of either scope: outdated, re-run, undo res
     expect(e.lanesRange).toEqual([2, 3]);
     expect(e.binding).toMatchObject({ roadId: APPROACH_E, lanes: 2 });
 
+    // The proposal runs on the baseline's demand, hour and seeds, even if the analysis seeds changed since (docs/OVERHAUL.md §16)
+    mode.analysisSeeds = [7];
     await mode.runComparison();
+    mode.analysisSeeds = [42];
+    const cmp = mode.getState().comparison;
+    expect(cmp.current!.inputs).toEqual(cmp.baseline!.inputs);
+    expect(cmp.current!.inputs.seeds).toEqual([42]);
+    expect(cmp.result!.inputs).toMatchObject({ matched: true, mismatches: [] });
     const ins = mode.getState().comparison.result!.laneInsights;
     const ie = ins.find(x => x.direction === 'eastbound')!;
     expect(ie).toMatchObject({ editedRoadIds: [DECK], capacityChanged: false, bindingEdited: false, kind: 'unchanged_elsewhere' });

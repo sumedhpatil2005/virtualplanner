@@ -30,7 +30,7 @@ import { roadSection, type RoadSection } from './roadSection';
 import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
 import { applyUrbanSpeeds, type SpeedReport } from './roadParameters';
-import { compareAnalyses, type ComparisonResult } from './ScenarioComparison';
+import { compareAnalyses, type ComparisonResult, type RunInputs } from './ScenarioComparison';
 import { vcColour } from './RoadAnalysis';
 import { fetchScreenlines, type ScreenlineFile } from '../calibration/screenlines';
 
@@ -102,6 +102,8 @@ export interface TrafficRunSnapshot {
   /** Planned demand (veh/h at the run's hour) and the road analysis of the run. */
   demandVph: number;
   analysis: AnalysisOutput;
+  /** Demand, hour, seeds and duration the run actually used: a comparison checks them equal. */
+  inputs: RunInputs;
 }
 export interface TrafficComparisonState {
   baseline: TrafficRunSnapshot | null;
@@ -1156,7 +1158,9 @@ export class SimulationMode {
     return { scenarioId: context.scenarioId ?? 'current', durationS: measureS, seed: traffic.seed, demandLevel: traffic.demandLevel, focus: traffic.focus,
       hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
       demandKey: contentKey(plan), networkKey: this.currentNetworkKey(),
-      metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output };
+      metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output,
+      inputs: { demandKey: contentKey(plan), trips: plan.trips.length, plannedVph: plan.provenance.vehiclesPerHour, hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
+        seeds: output.result.perSeed.map(s => s.seed), measureS } };
   }
 
   private currentNetworkKey() {
@@ -1168,11 +1172,11 @@ export class SimulationMode {
     return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey;
   }
 
-  private async runJob(plan: DemandPlan, measureS: number, generation: number): Promise<AnalysisOutput> {
+  private async runJob(plan: DemandPlan, measureS: number, generation: number, seeds?: readonly number[]): Promise<AnalysisOutput> {
     const area = this.state.area, section = this.state.section;
     if (!area || !section) throw new Error('Select a study road before running a trial.');
     this.comparisonRun?.cancel();
-    const run = startAnalysisJob(this.analysisJob(plan, area, section, measureS), progress => {
+    const run = startAnalysisJob(this.analysisJob(plan, area, section, measureS, { seeds }), progress => {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, progress } });
     });
     this.comparisonRun = run;
@@ -1242,11 +1246,12 @@ export class SimulationMode {
     try {
       const plan = opts.withNewDemand && demandChanged ? this.studyPlan() : frozen!;
       if (!plan?.trips.length) throw new Error('The proposal has no OD demand to run.');
-      const output = await this.runJob(plan, baseline!.durationS, generation);
+      // The baseline's seeds, not whatever analysisSeeds holds now: same demand, hour and seeds by construction
+      const output = await this.runJob(plan, baseline!.durationS, generation, baseline!.inputs?.seeds);
       if (generation !== this.comparisonGeneration) return null;
       const current = this.snapshotOf(output, plan, baseline!.durationS);
       const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
-        { before: baseline!.demandVph, after: current.demandVph });
+        { before: baseline!.demandVph, after: current.demandVph }, baseline!.inputs ? { before: baseline!.inputs, after: current.inputs, newDemand: !!opts.withNewDemand && demandChanged } : undefined);
       if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
       this.setState({ comparison: { ...this.state.comparison, baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
       return current;
