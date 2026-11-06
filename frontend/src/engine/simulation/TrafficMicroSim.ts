@@ -1579,14 +1579,17 @@ export class TrafficMicroSim {
   /**
    * Signalised junctions joined by a link shorter than COORDINATED_LINK_M run as
    * one coordinated group, as closely spaced signals are in practice (run from
-   * one controller or on a common cycle with set offsets; FHWA Signal Timing
-   * Manual, 2nd ed., 2015, ch. 7 on coordination and closely spaced
-   * intersections): every junction of the group takes the group's longest
+   * one controller or on a common cycle with set offsets, as the Signal Timing
+   * Manual, 2nd ed., NCHRP Report 812, 2015, describes for coordinated and
+   * closely spaced intersections; the threshold and the offset search are this
+   * model's own): every junction of the group takes the group's longest
    * cycle, its greens stretched in proportion, and its offset is chosen so that
-   * the traffic released into each short link meets a green at its far end
-   * (the overlap of upstream greens, weighted by design flow, with the
-   * downstream green a short travel time later, maximised one junction at a
-   * time from the group's first one, which keeps its drawn offset).
+   * the traffic released into each short link meets a green at its far end: first
+   * as many of the approaches feeding a short link as possible get at least 3 s a
+   * cycle released into a green that lasts over the 3-12 s it takes to get there
+   * (so a bus from any of them can drive through both), then the most such
+   * seconds weighted by design flow. Offsets are chosen one junction at a time
+   * from the group's first one (in node id order), which keeps its drawn offset.
    * Independently drawn offsets and cycles on a 9-15 m link let the two greens
    * not overlap for many cycles: a 12 m bus, which cannot wait between the two
    * stop lines without standing across the junction behind it, then waited
