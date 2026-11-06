@@ -997,3 +997,111 @@ a reversed way gives the same pieces and fields as without the layer.
 `EditRecompute` rerun alone when a group hit the 120 s limit). `TimeProfileLoad` "Midday chosen" fails on the
 base in another checkout (fixed on the vp-day branch); it passed in these runs. Browser verification is
 pending the final integration pass (scripts and expected values: `/workspace/work/vp-conn-e2e/README.md`).
+## 23. Junction-level editing
+
+Build showed an imported (OSM) junction as the single piece that was clicked: a 12 m stub of a divided-road square. Junction-level editing groups the nodes and short pieces of one real junction and edits its control, signal plan, priority, banned turns and lane connections as a whole, applied as one Undo step. Road geometry is never changed.
+
+### Grouping rule (`simulation/junctionGroups.ts`)
+Two nodes join when all hold, shortest stretches first:
+1. both are junction nodes: at least three distinct stretches meet, or two and a mapped signal within `SIGNAL_NODE_M` = 12 m;
+2. a stretch of at most `INTERNAL_MAX_M` = 30 m joins them;
+3. the joined group spans at most `MAX_SPAN_M` = 50 m (largest distance between any two members, measured pairwise, not chained).
+
+Then:
+- **Slip lanes:** a `*_link` stretch of at most `SLIP_MAX_M` = 120 m whose two ends lie within `SLIP_RADIUS_M` = 70 m of a group's centre pulls those two end nodes in, each on its own. A side road meeting a slip lane's end stays its own junction.
+- **Enclosed plain nodes (new, 2026-11-07):** a road that leaves a group and comes back into it through plain (two-stretch) nodes only, within `ENCLOSED_CHAIN_M` = 60 m and within 70 m of the centre, is inside the junction.
+
+Two junctions 60 m apart on one road stay apart: the stretch between them is longer than 30 m, and one group could not span them anyway.
+
+**The reported junction** (Babasaheb Ambedkar Marg / Veer Santaji Ghorpade Road, backend database roads, no signals loaded because of Overpass 429). The browser run showed 12 nodes, 16 internal pieces, 3 slip lanes, 5 approaches and 4 exits, labelled "… / Veer Santaji Ghorpade Marg". It was checked for a neighbouring junction merged in. None was:
+- Every member node lies within 52 m of the centre. Each has 3–4 stretches, all belonging to the junction's own roads or slip lanes; no side road meets any of them.
+- The nearest other junctions stay separate. A residential T-junction 8.4 m past the south-west slip-lane end (56 m from the centre) is kept out by the slip rule, which pulls in end nodes alone. Another residential junction 16.4 m past the south-east end (68 m out) is also kept out.
+- "Veer Santaji Ghorpade Marg" is the last 7.9 m of the north-east-bound carriageway (3 lanes) into the square. OSM splits the way where the name changes, at node 73.8633030, 18.5278790. That node is 2 m from the centre and has a signal in OSM. With signals loaded it is a junction node and joined the group. Without signals it has 2 stretches, so it was a plain node left outside, in the middle of the junction.
+- That gap cut one approach in two. The 39.5 m piece from the slip-lane node to the name change showed as an exit "Veer Santaji Ghorpade Road to the north-east", and the 7.9 m Marg piece showed as a second approach "Veer Santaji Ghorpade Marg from the south-west".
+
+The enclosed-plain-node rule fixes this: the chain is 39.5 + 7.9 = 47.4 m, from member to member. After the fix the junction has 13 nodes, 18 internal pieces, 3 slip lanes, 4 approaches (Unnamed road from the north, Babasaheb Ambedkar Marg from the south-east, Veer Santaji Ghorpade Road from the south-west, Arjunrao Pawar Path from the north-west) and 3 exits (Underpass to the north, Babasaheb Ambedkar Marg to the south-east, Veer Santaji Ghorpade Road to the south-west). The id is `jx_961a3746`, the same with or without signals loaded. It was `jx_159364f9` without signals. An edit saved under the old id no longer opens with the junction.
+
+### Ids
+- **Junction:** `jx_<FNV-1a hash>` of its member nodes' OSM positions (7 decimals, sorted). The same junction found from only the roads around it, or from the whole city, has the same id.
+- **Arm:** `in_` / `out_` + hash of the arm's stretch keys. A stretch key is the road id plus the node position it ends at (approach) or starts at (exit). `chainKeys` hold the pieces further out through plain nodes, up to 60 m, so a network that folded the first piece still matches.
+- **Movement:** `approachArmId>exitArmId`.
+
+### Edit storage
+An edit is a `JunctionEditSpec` stored on a scenario junction object (`importedJunction`) with id `<junctionId>__<scenarioId>`. It holds its own copy of the arms, so it compiles against any network built from the same roads (the whole city or a study area). It is saved, keyed into the network content key, undone and redone like any other Build object. Imported-junction objects are not rendered and are not placed junctions (`splitJunctionObjects`).
+
+`asRun: true` marks the editor's starting values. With it, the engine keeps its own control (mapped or estimated signals, Webster timing, priority by road class) and only the bans and lane connections apply. Changing the control, a green, amber or all-red, phase membership or the major approaches clears it. A ban or lane change does not.
+
+### Starting plan (`editing/junctionDraft.ts`: `lastRunControl`, `startingDraft`)
+The simulator covers one logical junction with several of its own junctions: nodes joined at 16 m with a 30 m span, each with its own control. At the reported junction the run had 7 simulated junctions inside it. Two were signalised, with road-class estimated signals:
+- a 5-node one, approach-wise with 4 phases, holding the south-west, north-west and north approaches;
+- a 2-node one, 2 phases, holding the south-east approach.
+
+All four approaches enter at priority nodes (the slip-lane ends), and the signals stand on pieces inside the junction. The old code took greens from each approach's own stretch only. It found none, fell back, and showed 5 × 25 s.
+
+The editor now starts from exactly what the run did:
+- The run result records `signalLinks` (link → simulated junction and phase) and `signalGreens` (greens per signalised junction), next to `signalCycles` (`RoadAnalysis.runSignalStructure`, from the first seed). The phase is read from the simulator's control table by type-checked element access, because `TrafficMicroSim` has no public accessor and the file was not extended.
+- Each approach is followed to the first signal that held it. That is its own stop line; else the piece before it, when the simulator joined the approach's first node into its junction; else the pieces inside it drives on to, breadth first, nearest level.
+- The plan takes all phases of the signal that held the most approaches, with greens and amber/all-red as run. A phase that held only internal pieces is kept with no approach (marked `Phase n*`), so the cycle and every approach's green match the run. Phases of any other signal that held approaches are appended.
+- An approach no signal held is put in every phase and shown as "always green".
+- A run that covered the junction with no signal starts as priority. With no analysis yet, the start is the engine's own default: a mapped signal with one phase per approach at 25/3/2 s, or priority.
+
+The note under Control (`data-testid=junction-start-note`) says which case applies, names how many separate signals the run had and lists the always-green approaches.
+
+Applying the starting values unchanged produces identical results, because of `asRun`.
+
+### Engine wiring (`simulation/junctionControl.ts`)
+`compileJunctionEdits` matches each edit to a network: member nodes by OSM position, approach, exit and chain stretches by key, and internal pieces.
+
+Assignment (`staticAssignment.ts`), unless `asRun`:
+- an approach of an edited signal gets g/C from the plan (green plus amber minus start-up lost time, per serving phase);
+- stop-line capacity = Indo-HCM saturation flow × (entry lanes that feed an exit) × g/C;
+- mapped signals at the junction's nodes are ignored.
+
+Banned turns are searched as (node, entry link) states in both routers (`TurnBans`), whether or not `asRun` is set.
+
+Micro-simulation (the hook in `TrafficMicroSim.applyJunctionEdits`, about 55 lines, unchanged since 3b33d07; mapping in `simJunctionSetups`), unless `asRun`:
+- every simulated junction of the logical junction runs the one fixed plan, not retimed, with one offset per junction id;
+- a link from inside the junction is never stopped (phase −1), and so is an approach in every phase;
+- priority uses the marked major links.
+
+Lane connections (`laneMap`) and banned turns in route choice always apply.
+
+### Recompute and undo
+Apply writes one history step. The network content key changes, so Simulate shows the analysis as outdated and re-runs. Undo restores the identical content, the original key and the kept result object. Redo restores the edited key and its result. Undo and redo are locked while in Simulate (`HistoryManager.setLocked`), so the browser script switches to Build for them. Improve & compare shows before/after delay per approach of each edited junction (`junctionCompare.ts`, `JunctionCompareCard`).
+
+### Camera
+"Open the junction in Build" and opening from a road fly to `junctionFrame` (`editing/junctionEdits.ts`). That is the bounding sphere of everything the preview draws: member nodes, internal pieces, and approach and exit stubs (45 m). The camera sits 2.6 × the radius away, at least 150 m, pitched 60° down. Before, it flew to the centre with a fixed 30 m sphere and 350 m range.
+
+### Tests (`engine/testing/JunctionEditing.test.ts`, 26 tests)
+- **Sangamwadi roads (`fixtures/sangamwadi.json`, mapped signals):** the Ambedkar square, Dagadi square, no node in two junctions, stable id from local roads, the 12 m piece finds the junction and a long bridge finds none.
+- **Backend DB roads (`fixtures/ambedkar_db.json`, the database's roads within 250 m, no signals):** "Veer Santaji Ghorpade Marg" is inside the junction, with 4 approaches and 3 exits as listed above, the same id, nodes and arms as with signals loaded. Neighbours at 56 m and 68 m stay separate; no member meets a side road. This failed on the old rule.
+- **Synthetic layouts:** a divided-road crossing is one junction with 4 approaches and 4 exits. Junctions 60 m apart stay two; 20 m apart they are one. A 2 × 15 m dog-leg through a plain node is absorbed; a 2 × 75 m loop is not.
+- **Camera:** every member and internal piece of the real junction lies inside the frame sphere, and the range is at least 2 × the radius.
+- **Engine honours an edit (crossroads):**
+  - the signal plan runs fixed time in the simulator, and the longer green shortens that approach's delay;
+  - the assignment takes g/C and stop-line capacity from the plan;
+  - a banned turn is avoided by both routers;
+  - priority follows the marked approaches;
+  - lane connections restrict lanes.
+- **Starting plan:**
+  - synthetic run data: phases, greens and cycle as run, an internal-only phase kept, always-green approaches, priority when no signal ran;
+  - real simulation on the Sangamwadi roads with Webster-timed estimated signals: the plan's first phases equal the signal's Webster greens, every approach is in its signal's phase or always green;
+  - **no-op Apply gives a simulation identical to the last vehicle (link counts, metrics, signal plans) and identical assignment link volumes;**
+  - one changed green gives one fixed cycle over every simulated junction of it, and different results;
+  - an approach in every phase and internal pieces are never stopped.
+- **Draft:** control, green, amber, phase or major-approach changes clear `asRun`; a ban or lane change keeps it. Draft changes, validation and the comparison card are also covered.
+- **Whole analysis (`SimulationMode`):**
+  - a no-op Apply gives a new network key, a re-run and an identical result object (JSON, timings excluded);
+  - a changed green gives a different result;
+  - edit → key change → re-run → per-approach comparison → undo restores the identical network and kept result → redo.
+
+### Browser status
+- **Partial, before these fixes (2026-11-06, old grouping):** "Open the junction in Build" selected the whole junction: 12 nodes, 16 pieces, 3 slips, 5 approaches, 4 exits, with the preview drawn. The editor showed 5 × 25 s, which is the bug fixed above. Apply, re-run, compare and the offer on the 12 m piece worked. The undo step in that script ran in Simulate, where undo is locked, so it proved nothing; the script is fixed.
+- **Pending:** the final integration pass with the corrected scripts in `/workspace/work/vp-wt-junc-e2e/` (`steps_main.json`, `steps_noop.json`, `steps_reload.json`; see its README). Expected: 13 nodes, 18 pieces, 3 slips, 4 approaches, 3 exits, id `jx_961a3746`, and a start note naming the run's signals. A no-op Apply should give an identical result.
+
+### Limitations
+- **One link, one phase.** The simulator gives each link one phase. An approach in some but not all phases of an edited plan stops outside its first phase. Only "every phase" (always green) is honoured as such. The assignment does count every serving phase.
+- **Several signals become one plan.** When the run had several separate signals inside one junction, the starting plan joins them, base signal first. Once the plan is changed, it runs as one coordinated cycle at every simulated junction of the logical one. Internal pieces then never stop, and the stop lines move to where the approaches enter (the slip-lane ends at the reported junction). This is the intended model of a junction controller, but it is not the run's uncoordinated signals.
+- **Starting values come from the first seed only.** Webster greens are rounded to whole seconds in the editor. Neither matters for a no-op Apply, which keeps the engine's own control.
+- **Edits under the old id are orphaned.** An edit saved before the grouping fix, under `jx_159364f9`, is still compiled by its node keys, but the editor opens the junction under `jx_961a3746` without it.
+- **Proximity rules are heuristics.** The 60 m enclosed-chain and 70 m slip radii are judged on Pune layouts. A real side loop shorter than 60 m whose middle node has only 2 stretches would be taken into the junction.
