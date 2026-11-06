@@ -92,6 +92,7 @@ function setup() {
   const fetch = vi.spyOn(editing as any, 'fetchAreaElements');
   vi.spyOn(om, 'addMultipleAndSave').mockImplementation(async objects => { om.addMultiple(objects, true); });
   vi.spyOn(om, 'syncPost').mockResolvedValue();
+  vi.spyOn(om, 'syncDeleteMultiple').mockResolvedValue();
   vi.spyOn(om, 'deletedOsmIds').mockResolvedValue(new Set());
   return { om, editing, fetch };
 }
@@ -131,14 +132,15 @@ describe('Map Selected Area import', () => {
     expect(ids).toEqual(['osm_b_way_10', 'osm_m_node_20']);
   });
 
-  it('does not add a way twice: whole, or as pieces from another area', async () => {
+  it('does not add a way twice: a clipped import over pieces already held adds nothing', async () => {
     const { om, editing, fetch } = setup();
     fetch.mockResolvedValue([way(1, [[-100, 300], [500, 300]])]);
     await editing.importStudyArea(area, 'base', ['roads'], { clipToBoundary: true });
     const before = om.getAll().length;
-    const report = await editing.importStudyArea(area, 'base', ['roads']); // whole-feature import of the same way
+    const report = await editing.importStudyArea(area, 'base', ['roads'], { clipToBoundary: true });
     expect(report.categories[0].added).toBe(0);
     expect(om.getAll().length).toBe(before);
+    // (An import of the whole way completes it instead: see "Completing roads cut at an earlier boundary")
   });
 
   it('never joins cut ends of different roads, and offers them as area edges (no traffic invented)', async () => {
@@ -162,5 +164,99 @@ describe('Map Selected Area import', () => {
     const piece = roads.find(r => r.osmProvenance?.osmId === 1)!;
     expect(isAreaCutEnd(piece, piece.coordinates.at(-1)!)).toBe(true);
     expect(isAreaCutEnd(piece, piece.coordinates[0])).toBe(false);
+  });
+});
+
+/**
+ * A way first imported as pieces ("Map Selected Area") and later needed whole
+ * (a study area reaching past the boundary): before, every later load skipped
+ * the way because pieces of it were present, so the road stayed cut at the old
+ * boundary for good and traffic that needed it was forced elsewhere
+ * (docs/OVERHAUL.md §19).
+ */
+describe('Completing roads cut at an earlier boundary', () => {
+  const bigBox = { minLng: at(-600, -600).lon, minLat: at(-600, -600).lat, maxLng: at(900, 900).lon, maxLat: at(900, 900).lat };
+  // Way 1 crosses the U's west arm at y = 50 and goes on to x = 700, where way 9 (outside the area) meets it at a shared node
+  const elements = () => [way(1, [[-100, 50], [100, 50], [700, 50]]), way(9, [[700, 50], [700, 600]])];
+  async function clippedThenLoaded(prepare?: (om: ObjectManager, editing: EditingEngine) => void | Promise<void>) {
+    const { om, editing, fetch } = setup();
+    fetch.mockResolvedValue(elements());
+    await editing.importStudyArea(area, 'base', ['roads'], { clipToBoundary: true });
+    expect(om.getById('osm_1')).toBeUndefined();
+    expect(om.getAll().filter(o => (o as RoadObject).osmProvenance?.osmId === 1).length).toBeGreaterThan(0);
+    await prepare?.(om, editing);
+    const local = (editing as any).localOsm as LocalOsmIndex;
+    vi.spyOn(local, 'covers').mockResolvedValue(true);
+    vi.spyOn(local, 'ways').mockResolvedValue(elements());
+    const added = await editing.loadOsmRoadsForStudyArea([bigBox]);
+    const roads = om.getAll().filter((o): o is RoadObject => o.type === 'road');
+    return { om, editing, roads, added };
+  }
+
+  it('a later study-area load replaces unedited pieces with the whole way, joined to the road beyond the old boundary', async () => {
+    const { roads } = await clippedThenLoaded();
+    const ofWay1 = roads.filter(r => r.osmProvenance?.osmId === 1);
+    expect(ofWay1.map(r => r.id)).toEqual(['osm_1']);
+    expect(ofWay1[0].osmProvenance?.clip).toBeUndefined();
+    // Way 1 and way 9 meet at their shared node: one connected network
+    const { network } = new TrafficNetworkBuilder().build(roads);
+    const nodesOf = (id: string) => new Set([...network.edges.values()].filter(e => e.roadId === id).flatMap(e => [e.fromNodeId, e.toNodeId]));
+    expect([...nodesOf('osm_1')].some(n => nodesOf('osm_9').has(n))).toBe(true);
+  });
+
+  it('keeps pieces the user edited (and does not add the way a second time)', async () => {
+    const { roads } = await clippedThenLoaded(om => {
+      const piece = om.getAll().find(o => (o as RoadObject).osmProvenance?.osmId === 1) as RoadObject;
+      om.update(piece.id, { ...piece, speedLimit: piece.speedLimit + 10 }, true);
+    });
+    const ofWay1 = roads.filter(r => r.osmProvenance?.osmId === 1);
+    expect(ofWay1.every(r => r.id !== 'osm_1')).toBe(true);
+    expect(ofWay1.length).toBeGreaterThan(0);
+  });
+
+  it('does not bring back a way whose piece the user deleted', async () => {
+    const { roads } = await clippedThenLoaded(om => {
+      const piece = om.getAll().find(o => (o as RoadObject).osmProvenance?.osmId === 1)!;
+      vi.mocked(om.deletedOsmIds).mockResolvedValue(new Set([piece.id]));
+      om.delete(piece.id, true);
+    });
+    expect(roads.some(r => r.id === 'osm_1')).toBe(false);
+  });
+
+  it('where there is no local extract, the way is fetched from Overpass and completed the same way', async () => {
+    const { om, editing, fetch } = setup();
+    fetch.mockResolvedValue(elements());
+    await editing.importStudyArea(area, 'base', ['roads'], { clipToBoundary: true });
+    vi.spyOn((editing as any).localOsm as LocalOsmIndex, 'covers').mockResolvedValue(false);
+    const query = vi.fn()
+      .mockResolvedValueOnce({ elements: [{ type: 'way', id: 1 }, { type: 'way', id: 9 }] })
+      .mockResolvedValueOnce({ elements: elements() });
+    (editing as any).overpass.query = query;
+    await editing.loadOsmRoadsForStudyArea([bigBox]);
+    expect(query.mock.calls[1][0]).toContain('way(id:1,9)');
+    expect(om.getAll().filter(o => (o as RoadObject).osmProvenance?.osmId === 1).map(o => o.id)).toEqual(['osm_1']);
+  });
+
+  it('an import of whole roads over a clipped one completes it as well', async () => {
+    const { om, editing, fetch } = setup();
+    fetch.mockResolvedValue([way(1, [[-100, 300], [500, 300]])]);
+    await editing.importStudyArea(area, 'base', ['roads'], { clipToBoundary: true });
+    const report = await editing.importStudyArea(area, 'base', ['roads']);
+    expect(report.categories[0].added).toBe(1);
+    expect(om.getAll().filter(o => (o as RoadObject).osmProvenance?.osmId === 1).map(o => o.id)).toEqual(['osm_1']);
+  });
+});
+
+describe('Undoing an import', () => {
+  it('does not record the imported OSM roads as deleted by the user, so a later load can bring them back', async () => {
+    const { om, editing, fetch } = setup();
+    vi.mocked(om.deletedOsmIds).mockRestore();
+    fetch.mockResolvedValue([way(2, [[50, 50], [350, 50]])]);
+    await editing.importStudyArea(area, 'base', ['roads']);
+    expect(om.getById('osm_2')).toBeDefined();
+    const history = (editing as any).historyManager as HistoryManager;
+    history.undo();
+    expect(om.getById('osm_2')).toBeUndefined();
+    expect((await om.deletedOsmIds()).has('osm_2')).toBe(false);
   });
 });

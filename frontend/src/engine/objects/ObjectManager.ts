@@ -401,7 +401,12 @@ export class ObjectManager {
     }
   }
 
-  public deleteMultiple(objs: CityObject[], skipSync = false) {
+  /**
+   * Removes objects. `recordOsmDeletion` (default) remembers removed OSM roads as deleted by the user, so later
+   * loads do not bring them back; undoing an import, or replacing pieces of a way with the whole way, is not a
+   * deletion by the user and passes false (docs/OVERHAUL.md §19).
+   */
+  public deleteMultiple(objs: CityObject[], skipSync = false, recordOsmDeletion = true) {
     let changed = false;
     const idsToSync: string[] = [];
 
@@ -414,7 +419,7 @@ export class ObjectManager {
     });
 
     if (changed) {
-      this.noteOsmDeletions(objs.filter(o => o.scenarioId === BASE_SCENARIO_ID).map(o => o.id), true);
+      if (recordOsmDeletion) this.noteOsmDeletions(objs.filter(o => o.scenarioId === BASE_SCENARIO_ID).map(o => o.id), true);
       this.notify(new Set(objs.map(o => o.type)));
       if (!skipSync && idsToSync.length > 0) {
         this.syncDeleteMultiple(idsToSync).catch((e) => {

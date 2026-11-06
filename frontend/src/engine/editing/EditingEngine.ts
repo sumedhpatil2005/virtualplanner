@@ -1063,13 +1063,71 @@ export class EditingEngine {
     return added;
   }
 
+  /**
+   * OSM ways held only as pieces cut at an earlier "Map Selected Area"
+   * boundary (by way id), and ways with a piece the user deleted. A load that
+   * brings the whole way may replace the pieces (completeClippedWays);
+   * otherwise the road stayed cut at the old boundary for good, and traffic
+   * that needs the rest of it was forced elsewhere (docs/OVERHAUL.md §19).
+   */
+  private clippedWays(deleted: ReadonlySet<string>): { pieces: Map<number, RoadObject[]>; pieceDeleted: Set<number> } {
+    const pieces = new Map<number, RoadObject[]>();
+    for (const o of this.objectManager.getAll()) {
+      if (o.type !== 'road' || !o.osmProvenance?.clip) continue;
+      const way = Number(o.osmProvenance.osmId);
+      if (o.id === `osm_${way}`) continue;
+      (pieces.get(way) ?? pieces.set(way, []).get(way)!).push(o);
+    }
+    for (const way of [...pieces.keys()]) if (this.objectManager.getById(`osm_${way}`)) pieces.delete(way);
+    const pieceDeleted = new Set<number>();
+    for (const id of deleted) {
+      const m = /^osm_(\d+)_in_/.exec(id);
+      if (m) pieceDeleted.add(Number(m[1]));
+    }
+    return { pieces, pieceDeleted };
+  }
+
+  /** Whether every piece is as imported: no lane, direction, shape, speed, name or class edit. */
+  private static piecesUnedited(pieces: readonly RoadObject[], whole: RoadObject): boolean {
+    return pieces.every(p =>
+      !(p.sections ?? []).some(sec => sec.provenance && (sec.provenance.lastModifiedBy === 'manual' || sec.provenance.geometryModified || sec.provenance.profileModified)) &&
+      p.speedLimit === whole.speedLimit && p.laneCount === whole.laneCount && p.isOneWay === whole.isOneWay &&
+      p.name === whole.name && p.roadClass === whole.roadClass);
+  }
+
+  /**
+   * Of whole OSM roads about to be added for a way that is present only as
+   * pieces: those that can replace their pieces (all unedited, none deleted),
+   * with the pieces to remove once the whole way is saved.
+   */
+  private completions(roads: readonly RoadObject[], clipped: ReturnType<EditingEngine['clippedWays']>): { roads: RoadObject[]; replaced: RoadObject[] } {
+    const out: RoadObject[] = [], replaced: RoadObject[] = [];
+    for (const r of roads) {
+      const way = r.osmProvenance?.osmId;
+      const pieces = way === undefined || r.id !== `osm_${way}` ? undefined : clipped.pieces.get(way);
+      if (!pieces || clipped.pieceDeleted.has(way!) || !EditingEngine.piecesUnedited(pieces, r)) continue;
+      out.push(r);
+      replaced.push(...pieces);
+    }
+    return { roads: out, replaced };
+  }
+
+  /** Removes pieces a whole way has replaced (not a deletion by the user, and not an undo step). */
+  private removeReplacedPieces(pieces: readonly RoadObject[]) {
+    if (pieces.length) this.objectManager.deleteMultiple([...pieces], false, false);
+  }
+
   /** Adds the local extract's roads in `boxes` that the project is missing; resolves once saved. */
   private async fillFromLocalOsm(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[]): Promise<number> {
     const elements = await this.localOsm.ways(boxes);
     const deleted = await this.objectManager.deletedOsmIds();
     const present = this.objectManager.osmWayIdsPresent();
-    const roads = this.osmWaysToRoads(elements, BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id) && !deleted.has(r.id) && !present.has(r.osmProvenance!.osmId));
+    const clipped = this.clippedWays(deleted);
+    const candidates = this.osmWaysToRoads(elements, BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id) && !deleted.has(r.id) && !clipped.pieceDeleted.has(r.osmProvenance!.osmId));
+    const completed = this.completions(candidates.filter(r => present.has(r.osmProvenance!.osmId)), clipped);
+    const roads = [...candidates.filter(r => !present.has(r.osmProvenance!.osmId)), ...completed.roads];
     await this.objectManager.addMultipleAndSave(roads);
+    this.removeReplacedPieces(completed.replaced);
     return roads.length;
   }
 
@@ -1086,7 +1144,9 @@ export class EditingEngine {
 
     const deleted = await this.objectManager.deletedOsmIds();
     const present = this.objectManager.osmWayIdsPresent();
-    const missing = ids.filter(id => !this.objectManager.getById(`osm_${id}`) && !deleted.has(`osm_${id}`) && !present.has(id));
+    const clipped = this.clippedWays(deleted);
+    // Ways held only as pieces cut at an earlier boundary are fetched too, to complete them
+    const missing = ids.filter(id => !this.objectManager.getById(`osm_${id}`) && !deleted.has(`osm_${id}`) && !clipped.pieceDeleted.has(id) && (!present.has(id) || clipped.pieces.has(id)));
     // Fetched in batches, then added together: one update for the map and the network
     const roads: RoadObject[] = [];
     for (let i = 0; i < missing.length; i += OSM_FETCH_BATCH) {
@@ -1095,8 +1155,11 @@ export class EditingEngine {
       if (typeof data?.remark === 'string') throw new Error(`OpenStreetMap did not finish the query: ${data.remark}`);
       roads.push(...this.osmWaysToRoads(data?.elements ?? [], BASE_SCENARIO_ID).filter(r => !this.objectManager.getById(r.id)));
     }
-    await this.objectManager.addMultipleAndSave(roads);
-    return roads.length;
+    const completed = this.completions(roads.filter(r => present.has(r.osmProvenance!.osmId)), clipped);
+    const adding = [...roads.filter(r => !present.has(r.osmProvenance!.osmId)), ...completed.roads];
+    await this.objectManager.addMultipleAndSave(adding);
+    this.removeReplacedPieces(completed.replaced);
+    return adding.length;
   }
 
   /** Saves the boxes as Areas, recording that the project holds their roads. */
@@ -1174,6 +1237,10 @@ export class EditingEngine {
             ? this.clipToArea(category, touching, area, scenarioId, report)
             : category === 'roads' ? this.osmWaysToRoads(touching, scenarioId) : category === 'buildings' ? this.osmElementsToBuildings(touching, scenarioId) : this.osmElementsToMetro(touching, scenarioId);
           const presentWays = category === 'roads' ? this.objectManager.osmWayIdsPresent() : null;
+          // An import of whole roads completes a way held only as pieces cut at an earlier boundary
+          const clipped = category === 'roads' && !clip ? this.clippedWays(deleted) : null;
+          const completed = clipped ? this.completions(converted.filter((o): o is RoadObject => o.type === 'road' && !!presentWays?.has(o.osmProvenance?.osmId ?? -1)), clipped) : { roads: [], replaced: [] };
+          const completing = new Set(completed.roads.map(r => r.id));
           result.skipped = touching.length - converted.length;
           const seen = new Set<string>();
           const additions: CityObject[] = [], pending: CityObject[] = [];
@@ -1188,7 +1255,8 @@ export class EditingEngine {
             const existing = this.objectManager.getById(obj.id) ?? (compatibleLegacy ? legacyObject : undefined);
             // A way already in the project, whole or as pieces cut at another boundary, is not added twice
             const osmWay = obj.type === 'road' ? obj.osmProvenance?.osmId : undefined;
-            if (!existing && osmWay !== undefined && presentWays?.has(osmWay)) { result.preserved++; continue; }
+            if (!existing && osmWay !== undefined && presentWays?.has(osmWay) && !completing.has(obj.id)) { result.preserved++; continue; }
+            if (!existing && osmWay !== undefined && !clip && clipped?.pieceDeleted.has(osmWay)) { result.preserved++; continue; }
             if (osmWay !== undefined && deleted.has(`osm_${osmWay}`) && obj.id !== `osm_${osmWay}`) { result.preserved++; continue; }
             if (existing) {
               result.preserved++;
@@ -1205,6 +1273,7 @@ export class EditingEngine {
           for (const obj of additions) this.pendingImportSaves.set(obj.id, obj);
           if (additions.length) this.historyManager?.recordAdd?.(additions, `Import ${category} into ${area.name}`);
           await this.objectManager.addMultipleAndSave([...pending, ...additions]);
+          this.removeReplacedPieces(completed.replaced.filter(p => additions.some(a => a.id === `osm_${p.osmProvenance?.osmId}`)));
           for (const obj of [...pending, ...additions]) this.pendingImportSaves.delete(obj.id);
           result.added = additions.length;
         } catch (err) {

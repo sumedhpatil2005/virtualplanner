@@ -182,7 +182,8 @@ export class HistoryManager {
     const undo = direction === 'undo';
     switch (diff.type) {
       case 'add':
-        if (undo) om.deleteMultiple(diff.objects);
+        // Undoing an add (an import, a new road) puts things back as they were: not a deletion to remember
+        if (undo) om.deleteMultiple(diff.objects, false, false);
         else om.addMultiple(diff.objects);
         break;
       case 'update':
