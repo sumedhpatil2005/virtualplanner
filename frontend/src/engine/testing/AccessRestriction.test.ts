@@ -135,7 +135,7 @@ describe('Forced flows in the bottleneck ranking', () => {
 describe('Access-restricted roads in the live micro-simulation', () => {
   // The micro-simulation routes its own vehicles (Start, and trips without assigned paths): the same rule applies there
   const micro = (withPublicRoute: boolean, trips: { from: [number, number]; to: [number, number]; vph: number }[]) => {
-    const { map, area, roads } = network(withPublicRoute);
+    const { area, roads } = network(withPublicRoute);
     const snapped = snapDemandPlan(plan(trips), area.network, 60, new Set(area.segments.map(s => s.key)));
     const sim = new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), { demandLevel: 1, seed: 7, demandTrips: snapped.map(t => ({ fromNodeId: t.fromNodeId, toNodeId: t.toNodeId, vehiclesPerHour: t.vehiclesPerHour, kind: 'car' as const })) });
     const roadsOf = (route: number[]) => new Set(route.map(i => sim.linkEnds()[i]?.roadId));
