@@ -72,7 +72,7 @@ function App() {
     : null;
 
   return (
-    <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''}`}>
+    <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''} ${mode === 'simulate' || (mode === 'build' && selectedId?.startsWith('ljunction:')) ? 'panel-wide-open' : ''}`}>
       {/* 3D map */}
       <div className="absolute inset-0 w-full h-full z-0 select-none">
         <Viewport3D />

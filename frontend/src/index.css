@@ -101,6 +101,15 @@ html, body, #root {
   right: 24.25rem !important;
 }
 
+/* The wide (27rem) panels: Simulate and the junction editor */
+.panel-wide-open .cesium-viewer-toolbar {
+  right: 29rem !important;
+}
+
+.panel-wide-open .cesium-viewer-fullscreenContainer {
+  right: 29.25rem !important;
+}
+
 .cesium-viewer-bottom {
   display: none !important; /* Hide Cesium logos and credit bar for cleaner UI */
 }
@@ -121,6 +130,17 @@ html, body, #root {
 @media (max-width: 1200px) {
   .build-toolbar { left: 1rem; transform: none; }
   .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
+}
+/* With a side panel open, the centred toolbar (about 57rem wide) runs under the panel below these widths
+   (22rem panel: 1,680 px; the junction editor's 27rem panel: 1,810 px): it takes the compact layout under the
+   scenario box instead */
+@media (max-width: 1700px) {
+  .panel-open .build-toolbar { top: 13rem; left: 1rem; transform: none; }
+  .panel-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
+}
+@media (max-width: 1830px) {
+  .panel-wide-open .build-toolbar { top: 13rem; left: 1rem; transform: none; }
+  .panel-wide-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
 }
 .simulation-hud { max-width: calc(100vw - 25rem); }
 @media (max-width: 1050px) {
