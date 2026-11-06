@@ -278,7 +278,10 @@ describe('the engine honours a junction edit', () => {
     const giveWay = (major: string[]) => {
       const sim = simOf(area, roads, demand, [{ ...editOf(j), control: 'priority', majorArms: major.map(l => arm(j, l).id) }]);
       const c = runFor(sim, 200, 600);
-      return c.links.find(l => l.id === linkInto(area, 's'))!.hold.giveWay;
+      // Waiting for crossing traffic: a gap refused (giveWay) or a major-road vehicle still on its way through the
+      // meeting point (conflict; since the conflict-point timing of the priority rules most of a minor road's wait is this)
+      const hold = c.links.find(l => l.id === linkInto(area, 's'))!.hold;
+      return hold.giveWay + hold.conflict;
     };
     const ewMajor = giveWay(['West Road from the west', 'East Road from the east']);
     const nsMajor = giveWay(['North Road from the north', 'South Road from the south']);
