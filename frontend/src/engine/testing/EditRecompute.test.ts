@@ -268,6 +268,25 @@ describe('Simulate after a Build edit (SimulationMode: road cache, compiled grap
     await new Promise(r => setTimeout(r, 400));
     expect(mode.getState().analysis.key).toBe(key0);
     expect(mode.getState().analysis.outdated).toBe(false);
+
+    // Leave Simulate while that re-run is computing, undo in Build, come back: the result on show is current,
+    // so "Stopped the road analysis when you left Simulate" no longer applies (merged-build browser check, 2026-11-06)
+    buildLaneEdit(DECK, 'lanesForward', 4);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    const pending = mode.runAnalysis();
+    for (let i = 0; i < 200 && mode.getState().analysis.status !== 'running'; i++) await new Promise(r => setTimeout(r, 10));
+    expect(mode.getState().analysis.status).toBe('running');
+    mode.exit();
+    await pending;
+    expect(mode.getState().notice).toMatch(/Stopped the road analysis when you left Simulate/);
+    history.undo();
+    mode.networkChanged();
+    mode.enter();
+    expect(mode.getState().analysis.key).toBe(key0);
+    expect(mode.getState().analysis.status).toBe('ready');
+    expect(mode.getState().analysis.outdated).toBe(false);
+    expect(mode.getState().notice).toBeNull();
     mode.dispose();
   }, 120000);
 });

@@ -512,7 +512,19 @@ export class SimulationMode {
     if (this.state.calibration.status === 'measuring' || this.state.calibration.status === 'fitting') this.setCalibration({ status: 'idle', progress: 0 });
     this.cancelPendingRecompute();
     this.stopTraffic();
-    if (why && interrupted.length) this.setState({ notice: `Stopped ${interrupted.join(' and ')} when you ${why}.` });
+    if (why && interrupted.length) {
+      const notice = `Stopped ${interrupted.join(' and ')} when you ${why}.`;
+      // Only the road analysis was stopped: the notice is moot once a current result is on show again (clearAnalysisStopNotice)
+      this.analysisStopNotice = interrupted.length === 1 && interrupted[0] === 'the road analysis' ? notice : null;
+      this.setState({ notice });
+    }
+  }
+  /** The notice set when leaving Simulate stopped the road analysis alone (null otherwise). */
+  private analysisStopNotice: string | null = null;
+  /** A result for the current network, demand and hour is on show (kept, restored by Undo/Redo, or just landed): "stopped the road analysis" no longer applies. */
+  private clearAnalysisStopNotice() {
+    if (this.analysisStopNotice && this.state.notice === this.analysisStopNotice) this.setState({ notice: null });
+    this.analysisStopNotice = null;
   }
 
   public enter() {
@@ -691,9 +703,11 @@ export class SimulationMode {
         this.analysisNetworkKey = kept.networkKey;
         this.analysisStale = false;
         this.setState({ analysis: kept.analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
+        this.clearAnalysisStopNotice();
       } else {
         const outdated = !!shown.output && shown.key !== key;
         if (shown.output && !!shown.outdated !== outdated) this.setState({ analysis: { ...shown, outdated } });
+        if (shown.output && !outdated && shown.status === 'ready') this.clearAnalysisStopNotice();
       }
       this.refreshCountedJunctions();
       this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
@@ -1091,6 +1105,7 @@ export class SimulationMode {
       this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key });
       this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
+      this.clearAnalysisStopNotice();
       this.redrawOverlay();
       // Start was pressed while this was running: the live view can start now
       if (this.pendingStart && this.state.traffic.status === 'preparing') { this.setTraffic({ status: 'idle' }); this.startTraffic(); }
