@@ -5,7 +5,7 @@ import { surfaceLiftM } from '../objects/roadSurface';
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { RouteTrees } from './routeTrees';
 import { isAccessRestricted, RESTRICTED_ENTRY_S } from './accessRestriction';
-import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector } from './LaneConnector';
+import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector, type LanePose } from './LaneConnector';
 import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
 import type { Cardinal } from '../calibration/observedCounts';
 
@@ -77,6 +77,28 @@ export const VEHICLE_TYPES: readonly VehicleTypeParams[] = [
  */
 export const CRITICAL_GAP_MAJOR_RIGHT_S = 2.7;
 export const CRITICAL_GAP_MINOR_S = 3.8;
+/**
+ * Impatience: drivers who have waited at the front of their queue accept
+ * shorter gaps (Mahmassani & Sheffi 1981; Kittelson & Vandehey 1991, TRR 1320:
+ * critical gap falling from about 6 s to 3-4 s over 0-40 s of front-of-queue
+ * delay). Here the critical gap falls linearly over IMPATIENCE_RAMP_S of
+ * standing at the line to a floor: 3.0 s from a minor road (Indian minor-road
+ * right turns: 2.8-3.7 s, Kanagaraj-type limited-priority studies, e.g. IATSS
+ * Research 2016, doi:10.1016/j.iatssr.2015.12.002) and 2.4 s for a right turn
+ * across oncoming traffic (same study: 2.4-3.1 s). The ramp length and the
+ * linear shape are estimates. A gap is still required: nobody enters in front
+ * of a vehicle closer than the floor, and nobody enters while a conflicting
+ * vehicle is in the junction.
+ */
+export const CRITICAL_GAP_MINOR_FLOOR_S = 3.0;
+export const CRITICAL_GAP_MAJOR_RIGHT_FLOOR_S = 2.4;
+export const IMPATIENCE_RAMP_S = 40;
+/** Critical gap (s) for a driver who has stood `waitS` at the line. */
+export function criticalGap(minor: boolean, waitS: number): number {
+  const base = minor ? CRITICAL_GAP_MINOR_S : CRITICAL_GAP_MAJOR_RIGHT_S;
+  const floor = minor ? CRITICAL_GAP_MINOR_FLOOR_S : CRITICAL_GAP_MAJOR_RIGHT_FLOOR_S;
+  return base - (base - floor) * Math.min(1, Math.max(0, waitS) / IMPATIENCE_RAMP_S);
+}
 /** Vehicles stuck this long at a junction with nothing crossing it count as a deadlock. */
 export const DEADLOCK_S = 60;
 
@@ -127,6 +149,11 @@ export const GRIDLOCK_S = 180;
  * GRIDLOCK_S, so a vehicle that only had to wait its turn is never removed.
  */
 const MERGE_TURN_S = 60;
+/** A vehicle held at a line stops this close to it (see lineGap); within this it is at the line. */
+const AT_LINE_M = 0.5;
+/** Turn-taking: a vehicle held for room in a lane is owed that lane; one held by crossing traffic is owed the junction. */
+const ROOM_HOLDS = ['room', 'room-wait'] as const;
+const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
 /**
@@ -146,6 +173,15 @@ export function timeToCover(dist: number, v: number, a: number, vMax: number): n
   const dAcc = (top * top - v * v) / (2 * a);
   if (dist <= dAcc) return (-v + Math.sqrt(v * v + 2 * a * dist)) / a;
   return (top - v) / a + (dist - dAcc) / top;
+}
+/** Distance (m) covered in `t` seconds from speed `v`, accelerating at `a` up to `vMax` (inverse of timeToCover). */
+export function distanceIn(t: number, v: number, a: number, vMax: number): number {
+  if (t <= 0) return 0;
+  const top = Math.max(vMax, v);
+  if (a <= 0 || v >= top) return v * t;
+  const tAcc = (top - v) / a;
+  if (t <= tAcc) return v * t + 0.5 * a * t * t;
+  return (top * top - v * v) / (2 * a) + top * (t - tAcc);
 }
 /** Beyond this many vehicles, new arrivals wait at the area edge. */
 /** Vehicles on the network at once; beyond it arrivals wait at their entry (reported by road analysis as a capacity limit). */
@@ -1739,6 +1775,21 @@ export class TrafficMicroSim {
   }
 
   /**
+   * Whether the movement from `link` into `next` gives way to traffic from
+   * `other` going into `otherNext` (the priority rules of mustGiveWay): at a
+   * signal, a right turn to oncoming traffic that is not itself turning right;
+   * at a priority junction, a lower-class road (or roundabout entry) to the
+   * higher, and among equals a right turn to oncoming traffic.
+   */
+  private givesWayTo(link: Link, next: Link, other: Link, otherNext: Link, c: Control): boolean {
+    const right = this.isRightTurn(link, next);
+    const oncoming = angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
+    if (c.kind === 'signal') return right && oncoming && !this.isRightTurn(other, otherNext);
+    if (this.hasPriorityOver(other, link, c)) return true;
+    return right && oncoming && !this.hasPriorityOver(link, other, c) && !this.isRightTurn(other, otherNext);
+  }
+
+  /**
    * Gap acceptance: true when a vehicle with priority over this movement will
    * reach a conflicting path sooner than the critical gap (Indo-HCM: 2.7 s for a
    * right turn from the main road or on green, 3.8 s from a minor road or
@@ -1749,7 +1800,11 @@ export class TrafficMicroSim {
    */
   private mustGiveWay(veh: Vehicle, link: Link, next: Link, connector: LaneConnector, c: Control, dist: number): boolean {
     const myRight = this.isRightTurn(link, next);
-    const timeToLine = Math.max(0, dist) / Math.max(veh.v, 1);
+    // Time to reach the line from where it is now, accelerating from its speed
+    // (dist / max(v, 1 m/s) took a vehicle rolling up at walking pace 6 s for 6 m).
+    // A driver waiting at the line (it stops 0.3 m short) is at it: the critical gap
+    // is the gap such a driver accepts, its own start included.
+    const timeToLine = timeToCover(Math.max(0, dist - AT_LINE_M), veh.v, veh.type.maxAccel, TURN_SPEED_MPS);
     for (const [otherIdx, other] of this.incomingOf(link.to)) {
       if (otherIdx === link.index) continue;
       let priority: boolean;
@@ -1764,7 +1819,7 @@ export class TrafficMicroSim {
         priority = myRight && !this.hasPriorityOver(link, other, c) && angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
       }
       if (!priority) continue;
-      const tc = (minor ? CRITICAL_GAP_MINOR_S : CRITICAL_GAP_MAJOR_RIGHT_S) + timeToLine;
+      const tc = criticalGap(minor, veh.waitS) + timeToLine;
       for (let li = 0; li < other.lanes.length; li++) {
         for (const w of other.lanes[li]) {
           if (w.routeIdx >= w.route.length - 1) break; // leaves the area on this link
@@ -1782,6 +1837,14 @@ export class TrafficMicroSim {
           if (connectorsConflict(connector, wConn)) return true;
           break;
         }
+      }
+      // Vehicles from that approach already on their movement through the junction but
+      // not yet at the crossing: the gap is measured to when they get there
+      for (const r of this.reservations) {
+        if (r.from !== otherIdx || r.node !== link.to || r.veh.reservation === r || r.veh.arriving?.connector !== r.connector) continue;
+        if (!minor && this.isRightTurn(other, this.links[r.toLink])) continue;
+        if (!connectorsConflict(connector, r.connector) || this.pastConflict(r.veh, r.connector, connector)) continue;
+        if (this.timeToConflict(r.veh, r.connector, connector, 0.1) < tc) return true;
       }
     }
     return false;
@@ -1817,11 +1880,31 @@ export class TrafficMicroSim {
     if (tail && rearMoving(target)) {
       const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? TURN_SPEED_MPS : next.speed * veh.speedFactor);
       const front = target[0];
-      const leaving = front.routeIdx >= front.route.length - 1 || front.grantLane !== null;
-      ahead = leaving ? tail.v * tArrive : Math.min(tail.v * tArrive, Math.max(0, this.packedBack(next, target) - free));
+      // Leaving: it leaves the area at the end of this lane, or it is cleared through the
+      // next junction and can no longer stop before its line. A cleared front that can
+      // still stop may yet give its grant back (red, a crossing claim, its own exit
+      // filling), and then everyone who entered on the room it was to leave stood in
+      // the junction box behind it: on a 10 m link that blocked the box for good, the
+      // crossing approaches waited on the claim and the two junctions locked each
+      // other (docs/OVERHAUL.md §20)
+      const leaving = front.routeIdx >= front.route.length - 1 || (front.grantLane !== null && this.committed(front));
+      // Follow-up at an unsignalised junction: a tail still driving its own movement out
+      // of this junction (the vehicle that went just before) pulls away, accelerating, not
+      // at the crawl it has at this instant. Projecting it at its current speed held
+      // each following side-road driver until the one ahead had all but finished its
+      // turn: one vehicle per 5 s in a gap instead of a follow-up of about 3 s.
+      const pulling = !!tail.arriving && this.controls.get(next.from)?.kind !== 'signal';
+      const roll = pulling ? distanceIn(tArrive, tail.v, tail.type.maxAccel, (tail.arriving!.connector.turn ? TURN_SPEED_MPS : next.speed * tail.speedFactor)) : tail.v * tArrive;
+      ahead = leaving ? roll : Math.min(roll, Math.max(0, this.packedBack(next, target) - free));
     }
     if (this.heldFor(next, k, veh)) return -Infinity;
     return free + ahead - this.pendingInto(next.index, k, veh);
+  }
+
+  /** A cleared vehicle that can no longer stop before its line (comfortable braking): it will cross. */
+  private committed(veh: Vehicle): boolean {
+    if (veh.grantLane === null || !veh.connector) return false;
+    return veh.connector.start - veh.pos <= (veh.v * veh.v) / (2 * veh.type.comfortDecel);
   }
 
   /**
@@ -1833,9 +1916,10 @@ export class TrafficMicroSim {
    * and at a priority junction it does not give way to `veh`'s road. Waits are
    * strictly ordered, so two approaches can never each wait for the other.
    */
-  private longerWaiting(node: string, mine: Link, veh: Vehicle, each: (f: Vehicle, other: Link, lane: number) => boolean): boolean {
+  private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean): boolean {
     const c = this.controls.get(node);
     if (!c) return false;
+    const myNext = mine.to === node && veh.routeIdx < veh.route.length - 1 ? this.links[veh.route[veh.routeIdx + 1]] : null;
     for (const [idx, other] of this.incomingOf(node)) {
       if (idx === mine.index) continue;
       if (c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
@@ -1843,7 +1927,11 @@ export class TrafficMicroSim {
       for (let li = 0; li < other.lanes.length; li++) {
         const f = other.lanes[li][0];
         if (!f || f.grantLane !== null || f.holdNext === undefined || f.waitS < MERGE_TURN_S || f.waitS <= veh.waitS) continue;
-        if (f.hold !== 'room' && f.hold !== 'room-wait' && f.hold !== 'conflict') continue;
+        if (!f.hold || !holds.includes(f.hold)) continue;
+        // Never a turn against priority: a vehicle whose movement gives way to `veh`'s
+        // (a right turn across oncoming traffic, at a signal or a priority junction) waits
+        // for a gap however long it has waited
+        if (myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
         if (each(f, other, li)) return true;
       }
     }
@@ -1859,7 +1947,7 @@ export class TrafficMicroSim {
    * as gridlock (docs/OVERHAUL.md §18).
    */
   private heldFor(next: Link, k: number, veh: Vehicle): boolean {
-    return this.longerWaiting(next.from, this.links[veh.link], veh, (f, other, li) => {
+    return this.longerWaiting(next.from, this.links[veh.link], veh, ROOM_HOLDS, (f, other, li) => {
       if (f.holdNext !== next.index) return false;
       const [lo, hi] = this.mappedLanes(other, li, next);
       return k >= lo && k <= hi;
@@ -1874,7 +1962,10 @@ export class TrafficMicroSim {
    * as gridlock.
    */
   private owesTurn(veh: Vehicle, link: Link, connector: LaneConnector): boolean {
-    return this.longerWaiting(link.to, link, veh, (f, other, li) => {
+    // Only for a vehicle held by crossing traffic: one held because its own exit is full
+    // gains nothing from the junction being left to it, and holding the crossing
+    // movements for it spread its queue's standstill to every approach (§20)
+    return this.longerWaiting(link.to, link, veh, CONFLICT_HOLDS, (f, other, li) => {
       const fNext = this.links[f.holdNext!];
       if (!fNext || f.route[f.routeIdx + 1] !== fNext.index) return false;
       return connectorsConflict(connector, this.connectorFor(other, li, fNext, this.mappedLanes(other, li, fNext)[0]));
@@ -1931,11 +2022,66 @@ export class TrafficMicroSim {
       const approaching = r.veh.reservation === r;
       if (approaching && (drivingOnly || (r.connector.start - r.veh.pos) / Math.max(r.veh.v, 1) > CLAIM_AHEAD_S)) continue;
       if (connectorsConflict(connector, r.connector)) {
+        // A vehicle on its movement whose rear is past the stretch where the two paths
+        // meet no longer conflicts: the claim was on its whole path, so on a 50 m turn
+        // through a large junction a stream of 2,000 veh/h kept a crossing side road out
+        // for good although each vehicle was over the crossing point in about a second
+        if (!approaching && this.pastConflict(r.veh, r.connector, connector)) continue;
+        // ... nor, as on the approach, one more than CLAIM_AHEAD_S from that stretch
+        if (!approaching && r.veh.arriving?.connector === r.connector && this.timeToConflict(r.veh, r.connector, connector) > CLAIM_AHEAD_S) continue;
         if (this.grantLog && !drivingOnly) this.refuse(link, `by ${this.links[r.from].id} ${approaching ? 'approaching' : 'in-box'} ${r.veh.v < 0.3 ? 'standing' : 'moving'} ${this.signalState(r.from) ?? 'nosig'}`);
         return true;
       }
     }
     return false;
+  }
+
+  private readonly spans = new WeakMap<LaneConnector, Map<LaneConnector, [number, number]>>();
+  /**
+   * How far along `c` (m) a vehicle driving it must get, rear first, to be clear
+   * of `other`'s path (within the conflict distance connectorsConflict uses):
+   * where the paths last meet when they cross; where they first meet when they
+   * merge (both end in the same place: from there the one behind follows the one
+   * ahead in its lane, and room in that lane is the room check's business).
+   * -Infinity when they never meet. Also where they first meet (`conflictSpan`).
+   */
+  private conflictEnd(c: LaneConnector, other: LaneConnector): number {
+    return this.conflictSpan(c, other)[1];
+  }
+
+  private conflictSpan(c: LaneConnector, other: LaneConnector): [number, number] {
+    let m = this.spans.get(c);
+    if (!m) { m = new Map(); this.spans.set(c, m); }
+    let span = m.get(other);
+    if (span === undefined) {
+      let first = -Infinity, last = -Infinity;
+      const kx = 111320 * Math.cos(c.points[0].lat * Math.PI / 180);
+      const near = (p: LanePose, q: LanePose) => Math.abs(p.z - q.z) <= 3 && Math.hypot((p.lng - q.lng) * kx, (p.lat - q.lat) * 111320) < 2.3;
+      for (let i = 0; i < c.points.length; i++) {
+        if (other.points.some(q => near(c.points[i], q))) { if (first === -Infinity) first = c.distances[i]; last = c.distances[i]; }
+      }
+      const merging = near(c.points[c.points.length - 1], other.points[other.points.length - 1]);
+      span = [first, merging ? first : last];
+      m.set(other, span);
+    }
+    return span;
+  }
+
+  /**
+   * Seconds until a vehicle driving movement `c` reaches, front first, where `c`
+   * meets `other` (0 once there; at least 1 m/s assumed, as for claims on approach).
+   */
+  private timeToConflict(veh: Vehicle, c: LaneConnector, other: LaneConnector, minV = 1): number {
+    const frontAlong = veh.pos - (c.entry - c.length);
+    return Math.max(0, this.conflictSpan(c, other)[0] - frontAlong) / Math.max(veh.v, minV);
+  }
+
+  /** Whether a vehicle driving movement `c` has its rear past where `c` meets `other` (with a 1 m margin). */
+  private pastConflict(veh: Vehicle, c: LaneConnector, other: LaneConnector): boolean {
+    if (veh.arriving?.connector !== c) return false;
+    // On the next link the movement starts at entry - length (see crossJunction)
+    const rearAlong = veh.pos - (c.entry - c.length) - veh.type.lengthM;
+    return rearAlong > this.conflictEnd(c, other) + 1;
   }
 
   /**
@@ -2111,12 +2257,17 @@ export class TrafficMicroSim {
           const abreast = !!veh.abreast;
           const li = abreast ? i - 2 : i - 1;
           const dist = this.stopLine(veh, link) - veh.pos;
+          // A stop line is not a vehicle: the standstill gap s0 is kept to the vehicle
+          // ahead, not to a painted line, so a vehicle held at a line stops at it (0.3 m
+          // short) rather than s0 back (2 m for a car, which cost a driver waiting for a
+          // gap two seconds to reach the line once it accepted one)
+          const lineGap = dist - 0.3 + veh.type.minGapM;
           let gap: number;
           let vLead: number;
           if (i > 0 && li < 0) {
             // Alongside the front vehicle: it stops at the line until cleared itself
             const exiting = veh.routeIdx >= veh.route.length - 1;
-            gap = exiting || veh.grantLane !== null ? 1e6 : dist - 0.3;
+            gap = exiting || veh.grantLane !== null ? 1e6 : lineGap;
             vLead = exiting || veh.grantLane !== null ? veh.v : 0;
           } else if (i > 0) {
             const lead = lane[li];
@@ -2125,15 +2276,15 @@ export class TrafficMicroSim {
             // The leader stays on this link until it finishes its turn, so it can be
             // past the stop line. Its clearance is its own: a follower not yet cleared
             // stops at the line.
-            if (veh.routeIdx < veh.route.length - 1 && veh.grantLane === null && dist - 0.3 < gap) {
-              gap = dist - 0.3;
+            if (veh.routeIdx < veh.route.length - 1 && veh.grantLane === null && lineGap < gap) {
+              gap = lineGap;
               vLead = 0;
             }
           } else if (veh.routeIdx >= veh.route.length - 1) {
             gap = 1e6; // leaves the area at the end of this link
             vLead = veh.v;
           } else if (veh.grantLane === null) {
-            gap = dist - 0.3; // stop line
+            gap = lineGap; // stop line
             vLead = 0;
           } else {
             const next = this.links[veh.route[veh.routeIdx + 1]];

@@ -254,10 +254,11 @@ describe('TrafficMicroSim', () => {
     };
     const narrow = measure(2); // one lane each way
     const wide = measure(4); // two lanes each way
-    // Delay index falls by a fifth and more (0.84 since vehicles merging into the one-lane
-    // stretch anticipate the gap opening ahead, which helps the narrow case most), and the
-    // widened corridor carries far more traffic
-    expect(wide.delayIndex!).toBeLessThan(narrow.delayIndex! * 0.9);
+    // Delay index falls (0.84, then 0.91 since a merging follower counts on the vehicle
+    // ahead of it accelerating away from the merge, docs/OVERHAUL.md §20: the one-lane
+    // stretch now discharges about 1,700 PCU/h per lane, from about 1,430, which helps
+    // the narrow case most), and the widened corridor carries far more traffic
+    expect(wide.delayIndex!).toBeLessThan(narrow.delayIndex! * 0.95);
     expect(wide.completedTrips).toBeGreaterThan(narrow.completedTrips * 1.5);
     expect(wide.completedTrips).toBeGreaterThan(narrow.completedTrips);
   });
