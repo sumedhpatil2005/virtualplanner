@@ -260,14 +260,14 @@ const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
         {tl.rows.some(r => r.result) && (
           <Disclosure title="Per direction and per run" tone="subtle" testId="timeline-detail">
             <table className="w-full text-[10px] tabular-nums" data-testid="timeline-table">
-              <thead className="text-slate-500"><tr><th className="text-left font-normal pr-1">Hour</th><th className="text-left font-normal">Direction</th><th className="text-right font-normal">Demand</th><th className="text-right font-normal">Got through</th><th className="text-right font-normal">km/h</th><th className="text-right font-normal">LOS</th></tr></thead>
+              <thead className="text-slate-500"><tr><th className="text-left font-normal pr-2">Hour</th><th className="text-left font-normal">Direction</th><th className="text-right font-normal pl-2">Demand</th><th className="text-right font-normal pl-2">Got through</th><th className="text-right font-normal pl-2">km/h</th><th className="text-right font-normal pl-2">LOS</th></tr></thead>
               <tbody className="text-slate-300">
                 {tl.rows.flatMap(row => { const v = dayRowView(row); return v ? v.directions.map((d, i) => (
                   <tr key={`${row.period}-${d.label}`} className="align-top">
-                    <td>{i === 0 ? `${v.hourText}` : ''}</td><td>{d.label}</td><td className="text-right">{fmt(d.demandVph)}</td>
-                    <td className="text-right">{fmt(d.throughputVph)}{d.vphBySeed.length > 1 && <span className="block text-slate-500">{d.vphBySeed.map(fmt).join(' / ')}</span>}</td>
-                    <td className="text-right">{d.speedKmh === null ? '—' : Math.round(d.speedKmh)}{d.speedBySeed.length > 1 && <span className="block text-slate-500">{d.speedBySeed.map(x => x === null ? '—' : Math.round(x)).join(' / ')}</span>}</td>
-                    <td className="text-right">{d.los ?? '—'}{d.losBySeed.length > 1 && <span className="block text-slate-500">{d.losBySeed.map(x => x ?? '—').join(' ')}</span>}</td>
+                    <td className="pr-2">{i === 0 ? `${v.hourText}` : ''}</td><td>{d.label}</td><td className="text-right pl-2">{fmt(d.demandVph)}</td>
+                    <td className="text-right pl-2">{fmt(d.throughputVph)}{d.vphBySeed.length > 1 && <span className="block whitespace-nowrap text-slate-500">{d.vphBySeed.map(fmt).join('/')}</span>}</td>
+                    <td className="text-right pl-2">{d.speedKmh === null ? '—' : Math.round(d.speedKmh)}{d.speedBySeed.length > 1 && <span className="block whitespace-nowrap text-slate-500">{d.speedBySeed.map(x => x === null ? '—' : Math.round(x)).join('/')}</span>}</td>
+                    <td className="text-right pl-2">{d.los ?? '—'}{d.losBySeed.length > 1 && <span className="block text-slate-500">{d.losBySeed.map(x => x ?? '—').join('')}</span>}</td>
                   </tr>)) : []; })}
               </tbody>
             </table>

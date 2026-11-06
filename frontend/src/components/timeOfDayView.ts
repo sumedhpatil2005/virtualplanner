@@ -146,7 +146,8 @@ export function daySummary(rows: TimelineRow[]): string[] {
   const busiest = [...capped].sort((a, b) => b.demandVph - a.demandVph)[0];
   const moreThrough = busiest ? capped.filter(v => v.demandVph < busiest.demandVph && v.throughputVph > 1.05 * busiest.throughputVph).sort((a, b) => b.throughputVph - a.throughputVph)[0] : undefined;
   if (busiest && moreThrough) {
-    out.push(`Less got through at ${busiest.label.toLowerCase()} (${fmt(busiest.throughputVph)} of ${fmt(busiest.demandVph)} veh/h) than at ${moreThrough.label.toLowerCase()} (${fmt(moreThrough.throughputVph)} of ${fmt(moreThrough.demandVph)}): past capacity, queues back through junctions and block them, so more demand moves fewer vehicles. Compare demand, not got through, between periods.`);
+    const the = (v: DayRowView) => /peak/i.test(v.label) ? `the ${v.label.toLowerCase()}` : v.label.toLowerCase();
+    out.push(`Less got through at ${the(busiest)} (${fmt(busiest.throughputVph)} of ${fmt(busiest.demandVph)} veh/h) than at ${the(moreThrough)} (${fmt(moreThrough.throughputVph)} of ${fmt(moreThrough.demandVph)}): past capacity, queues back through junctions and block them, so more demand moves fewer vehicles. Compare demand, not got through, between periods.`);
   }
   return out;
 }
