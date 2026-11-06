@@ -145,8 +145,12 @@ export const NO_ALTERNATIVE_LABEL_SHARE = 0.5;
  * fourth power); what the static assignment loads beyond that is demand the road could not serve.
  */
 export const FORCED_VC = 1.5;
-/** A network gap this close to a forced stretch is named with it (m). */
-export const GAP_NEAR_M = 1200;
+/**
+ * A network gap this close to a forced stretch (measured to the stretch's own line) is named with it (m). At 1,200 m a
+ * missing flyover piece was attached to stretches 700-1,200 m away that were already forced with the network intact
+ * (docs/OVERHAUL.md §19); 500 m keeps it to stretches beside the gap.
+ */
+export const GAP_NEAR_M = 500;
 
 /** v/c as read in the panel: a percentage while it could be a flow, demand over capacity beyond FORCED_VC. */
 export function vcText(vc: number): string {
@@ -661,7 +665,9 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     const forced = noAlt >= NO_ALTERNATIVE_LABEL_SHARE;
     const overDemand = x.vc > FORCED_VC;
     // The nearest main road that ends unconnected, for traffic that has nowhere else to go
-    const nearestGap = forced ? gaps.filter(g => g.roadId !== x.l.roadId).map(g => ({ g, d: distM(g.coordinates, c) })).filter(e => e.d <= GAP_NEAR_M).sort((a, b) => a.d - b.d)[0] : undefined;
+    const line = segCoords.get(x.l.segmentKey);
+    const gapDist = (p: readonly number[]) => line?.length ? Math.min(distM(p, c), pointToLineM(p, line)) : distM(p, c);
+    const nearestGap = forced ? gaps.filter(g => g.roadId !== x.l.roadId).map(g => ({ g, d: gapDist(g.coordinates) })).filter(e => e.d <= GAP_NEAR_M).sort((a, b) => a.d - b.d)[0] : undefined;
     const notes = [
       overDemand ? `demand ${(Math.round(x.vc * 10) / 10).toFixed(1)}× its capacity: more than can pass, not a flow` : '',
       forced ? `no other route in the model for ${Math.round(100 * noAlt)}% of its traffic` : '',

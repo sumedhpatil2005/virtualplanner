@@ -19,7 +19,7 @@ import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
 import { assignTraffic } from '../simulation/staticAssignment';
 import { roadSection } from '../simulation/roadSection';
-import { sectionDirections, areaContext, networkGaps, vcText, FORCED_VC } from '../simulation/RoadAnalysis';
+import { sectionDirections, areaContext, networkGaps, vcText, FORCED_VC, GAP_NEAR_M } from '../simulation/RoadAnalysis';
 
 const LAT0 = 18.53;
 const M_LAT = 1 / 111320;
@@ -108,18 +108,18 @@ const named = (id: string, pts: [number, number][], name: string, cls: RoadObjec
 
 /**
  * West Road -> East Road, 3,000 veh/h. Between them a one-lane campus road (the short way) and a public ring road
- * round by y = 600, whose middle piece is missing when `gap` (as when a flyover piece is missing): the ring road's
- * two arms then end without connection 200 m apart, and all the traffic is forced over the campus road.
+ * round by y = ringY (400 m), whose middle piece is missing when `gap` (as when a flyover piece is missing): the ring
+ * road's two arms then end without connection 200 m apart, and all the traffic is forced over the campus road.
  */
-function forcedScene(gap: boolean) {
+function forcedScene(gap: boolean, ringY = 400) {
   const roads = [
     named('w1', [[-1500, 0], [-300, 0]], 'West Road', 'arterial', { highway: 'secondary' }),
     named('e1', [[300, 0], [1500, 0]], 'East Road', 'arterial', { highway: 'secondary' }),
     named('c1', [[-300, 0], [0, 0]], 'Campus Road', 'local', { highway: 'service', access: 'private', lanes: '1' }),
     named('c2', [[0, 0], [300, 0]], 'Campus Road', 'local', { highway: 'service', access: 'private', lanes: '1' }),
-    named('r1', [[-300, 0], [-300, 600], [-100, 600]], 'Ring Road', 'arterial', { highway: 'primary' }),
-    ...(gap ? [] : [named('r2', [[-100, 600], [100, 600]], 'Ring Road', 'arterial', { highway: 'primary' })]),
-    named('r3', [[100, 600], [300, 600], [300, 0]], 'Ring Road', 'arterial', { highway: 'primary' }),
+    named('r1', [[-300, 0], [-300, ringY], [-100, ringY]], 'Ring Road', 'arterial', { highway: 'primary' }),
+    ...(gap ? [] : [named('r2', [[-100, ringY], [100, ringY]], 'Ring Road', 'arterial', { highway: 'primary' })]),
+    named('r3', [[100, ringY], [300, ringY], [300, 0]], 'Ring Road', 'arterial', { highway: 'primary' }),
   ];
   const map = new Map(roads.map(r => [r.id, r]));
   // The feeders' far ends lie beyond the range: traffic enters and leaves there (cordon points), as in a real area
@@ -149,6 +149,17 @@ describe('Network gaps and forced overloads in the ranking', () => {
     expect(campus.gap?.roadName).toBe('Ring Road');
     expect(campus.label).toMatch(/network gap: Ring Road ends without a connection/);
     expect(ctx.networkGaps.length).toBeGreaterThan(0);
+  });
+
+  it('a gap further than GAP_NEAR_M from the forced stretch is not named with it', () => {
+    expect(GAP_NEAR_M).toBe(500);
+    // Ring road round by y = 700: its broken ends are 700 m from the campus road, still forcing all the traffic over it
+    const { ctx } = forcedScene(true, 700);
+    const campus = ctx.bottlenecks.find(b => b.roadName === 'Campus Road')!;
+    expect(campus.label).toMatch(/no other route in the model for 100% of its traffic/);
+    expect(campus.gap).toBeUndefined();
+    expect(campus.label).not.toMatch(/network gap/);
+    expect(ctx.networkGaps.some(g => g.roadName === 'Ring Road')).toBe(true);
   });
 
   it('with the ring road whole, nothing is forced onto the campus road and no gap is reported', () => {
