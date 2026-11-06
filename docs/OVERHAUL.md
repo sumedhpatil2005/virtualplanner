@@ -574,3 +574,80 @@ The panel captures were taken with the render loop stopped and the canvas hidden
 - The map screenshot of the binding (amber) highlight was not taken. Its ids were verified from page state only. The carriageway-scope preview highlight was likewise verified by ids, not by screenshot.
 - Hover-driven preview (mouse over the lane controls) is implemented but was not exercised with a real pointer in the browser. The browser check used scope clicks, which pin the preview.
 - Kept results are in memory only (last 6 keys) and are lost on reload. A result is reused only when the network, demand, study, hour and seeds hash to the same key.
+
+## 17. COEP Road over-capacity investigation
+
+**Observed.** In the user's browser, the Sangamwadi Bridge analysis (2 km area, clock at 14:00, weekday) listed under *Worst places in the wider area*: "347 stretches over capacity — 1. COEP Road, south-east of the road, 500 m: 959%; 2. Kushabhau Jejurikar Road 788%; 3. COEP Road, 200 m: 959%; Unnamed road 1200 m 595%". A later agent run (project-database roads, Overpass unreachable) found COEP Road at about 207%, and a browser run at 09:00 listed Kushabhau Jejurikar 728%, unnamed 590%, 492%, 492%, 352 over capacity, with no COEP Road in the top four (§14).
+
+COEP Road is OSM way 715551386 (+ 1181761149): `highway=service`, `access=private`, `lanes=1`, `oneway=no`. One lane each way, 643 PCU/h per direction (IRC:106 via `midblockCapacityPcu`), 20 km/h. Its tags were checked against the live OSM API on 2026-11-06 (way version 6, 2025-06-16): unchanged.
+
+### Method
+
+Node/vitest probes (outside the repo, `vp-overhaul/scratch-tests/`) that rebuild exactly what the browser analyses: the project roads (a copy of the project database, 18,273 roads; or the 2026-11-03 dump), the shipped correction layer, `applyUrbanSpeeds`, `StudyAreaExplorer` (Sangamwadi deck `osm_208004768`, 2,000 m, both directions), `compileAreaDemand`, `assignTraffic`, `areaContext`. OSM signal positions: the 85 from the 2026-11-03 dump (the sandbox cannot reach Overpass, so fresh ones could not be loaded). Per run: every COEP link's volume, capacity, v/c, free and loaded time; select-link on the most loaded COEP link (the OD pairs and their paths); shortest times with and without COEP; the bottleneck list as the panel builds it. **Check that the probe is the browser:** at 09:00 with signals it gives 352 over capacity and Kushabhau Jejurikar 728%, unnamed 590%, 492%, 492%: the browser run's figures exactly.
+
+Hour factors: the area estimate is scaled to the peak of the clock's half of the day (`setTimeOfDay`), so 09:00 → 1.0 (AM peak), 14:00 → share(14)/share(19) = 0.05429/0.07805 = **0.696**, with the land-use period PM_Peak. Midday demand is 30% below the morning's. The area holds 2 project buildings, so the demand is 28,600 veh/h of edge-to-edge through traffic at 09:00 (108 cordon points).
+
+### Hypotheses and evidence (all model output; figures measured in the probe)
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| Different hour | 09:00 vs 14:00, same network | COEP 199% → 107–126%; Kushabhau 728% → 506–528%; over capacity 352 → 216–240. **Midday is lower everywhere.** The user's 14:00 figures (788%, 595%, 347) are at morning level, not midday level. |
+| Different network source | Project DB vs the 2026-11-03 dump vs live OSM | DB and dump give the same area (1,415 segments, 108 cordon points) and the same loads. All 67 vehicle ways in a 650 × 280 m box round COEP Road match live OSM tags (API, 2026-11-06). Not the cause, as far as the sandbox's data goes. |
+| Buildings / centroid connectors | DB roads + the dump's 12,602 OSM buildings converted as the importer does | COEP 207% at 09:00 (the earlier agent's figure), 126% at 14:00. The 66 buildings on the campus generate almost no trips. Not the cause. |
+| Frank–Wolfe not converged | 60 vs 300 iterations, 09:00 | Gap 0.029 → 0.0037; COEP 199% → 198%, Kushabhau 728% → 722%. The 60-iteration cap leaves the gap above its 0.001 target, but the ranking does not move. Not the cause. |
+| Units, capacity per direction, one-way handling | Link table | 643 PCU/h per direction for a two-way 1-lane service road; volumes in PCU against PCU capacity. No unit error. |
+| Ranking duplicates | Link volumes | The two COEP rows are two links of one chain carrying the same flow (identical v/c), more than 250 m apart, so the 250 m rule kept both. A presentation duplicate, fixed below. |
+| Build edit on the bridge | Deck `osm_208004768` eastbound 2 → 3 lanes (the pre-fix edit) | COEP and the top list unchanged to the digit. Not the cause (as §14 found). |
+| **A piece of the Mokshagundam Vishweshvarayya Flyover chain missing or disconnected** | Remove each of 31 trunk/primary ways within ~300 m of COEP Road, one at a time, 09:00 | Removing any one of **five** ways gives the user's signature: COEP Road first *and* second at **887–970%**, Kushabhau 686–752%, unnamed 590%, 365–393 over capacity. The five: flyover 327073027 (970%), 661187172 (937%), 317550167 (916%), ground-level trunk 815335438 (914%), trunk_link 208099367 (887%). Every other removal leaves COEP at 0–262%. |
+
+**How COEP Road is used, network intact (09:00).** Westbound, 1,221 veh/h (1,281 PCU, 199%); all of it through traffic from the south-east edge (Veer Santaji Ghorpade Marg, Babasaheb Ambedkar Marg, Sassoon Marg) to Sangamwadi Road and the Old Pune–Mumbai Highway. Path: New Sangam Bridge → trunk (`osm_22841398`) → **COEP Road** → trunk `815335438` → trunk_link `208099367` → Sangamwadi Bridge. The campus road is a 106 s shortcut at free flow (362 s vs 468 s for the largest OD), so user equilibrium loads it until its BPR time matches the public route's.
+
+**With the flyover chain broken (one of the five removed, 09:00).** COEP carries 5,943 veh/h (6,235 PCU, 970%), and **100% of that flow has no other route at all** in the network (reachability with the link removed). Its BPR time is then about 1,270 × free flow, which user equilibrium accepts only because there is no alternative. At the real 14:00 factor the same break gives 617–675%, not 959%.
+
+### Root cause
+
+1. **959% vs 207% are two different networks, not two hours.** 207% (199% without buildings) is the intact network at 09:00. 959% is reproduced only when a piece of the flyover chain beside the campus is missing or not joined: then COEP Road becomes the *only* connection for that traffic, the flow on it is forced, and its v/c is demand divided by one lane's capacity. Together with the morning-level figures elsewhere, the user's list matches *morning demand on a network with that break* (probe: 347–393 over capacity, COEP 914–970% ×2, Kushabhau 686–768%, unnamed 590%).
+2. **Why a campus service road carries through traffic at all: a model bug.** The importer keeps `access=private` roads (it drops only `access=no`), and the assignment routed over them like public roads. Routing engines do not: OSRM's car profile lists private/destination/delivery/customers/permit/residents as restricted and charges `max_turn_weight` for a turn from an unrestricted onto a restricted way, so they are used only at the start or end of a trip (https://github.com/Project-OSRM/osrm-backend/blob/master/profiles/car.lua). Planning networks leave private campus roads out of through routing.
+3. **Are 500–959% plausible UE outputs?** Only for forced flow. A v/c of 5–10 under BPR (β = 4) means a link time 100–1,500 × free flow, which an equilibrium accepts only if the trips have no other route, or every route across a cut is equally overloaded. In this area both occur: COEP with the break, the living street `osm_1117977442` (590%) and Ganeshkhind Road `osm_838145991` (486%) are 94–100% forced. Kushabhau Jejurikar (728%) has alternatives, but all routes across that part of the area are overloaded. The common driver is the edge demand: 500 veh/h per lane at every arterial cordon lane, Furness-balanced, not limited by what the roads inside can carry (§5, §13.1). Such figures are demand over capacity, not flows that could happen.
+
+### What was not established
+
+- **Why the flyover chain was broken in the user's session.** The sandbox has a copy of the project database, not the user's own, and the user's study-area roads came from Overpass, which the sandbox cannot reach. Code paths that could leave a piece missing or unjoined, none confirmed: (a) a way first imported by a clipped *Map Selected Area* is never completed later, because `fillFromOverpass`/`fillFromLocalOsm` skip any way already present as a piece (`osmWayIdsPresent`); (b) a deleted road stays deleted (`deletedOsmIds`); (c) two ways sharing an OSM node join only if their lifted heights differ by ≤ 3 m (`GRADE_SEPARATION_M`). The flyover pieces are lifted to 4.2–6.5 m at their joins.
+- **Why the user's 14:00 figures are at morning level.** With the break, the 14:00 factor gives 617–675%; 959% needs a factor near 1. One code path does this: `setTimeOfDay` uses factor 1 while the hour-of-day profile is not loaded (`next.profile ? … : 1`), but the clock still shows the chosen hour. It is not known whether that happened.
+- To check in the user's browser console on the network they analysed:
+  `const m = window.engineInstance.simMode; ['osm_22841398','osm_661187172','osm_317550167','osm_327073027','osm_815335438','osm_208099367'].map(id => { const r = m.getRoads().find(x => x.id === id || x.id.startsWith(id + '_')); return [id, r?.id ?? 'MISSING', r && r.coordinates[0][2], r && r.coordinates.at(-1)[2]]; })` and `m.getState().timeOfDay` (status, factor).
+
+### Fix (commit `657130b`)
+
+- `staticAssignment.ts`: `isAccessRestricted(road)` reads the OSM access hierarchy (motor_vehicle, then vehicle, then access, as the importer does). Restricted values: `RESTRICTED_ACCESS` = private, destination, delivery, customers, permit, residents. Every link gets `restricted`. All-or-nothing search runs on (node, on-a-restricted-run) states. Entering a restricted run from a public road costs `RESTRICTED_ENTRY_S` = 10⁷ s, prohibitive but finite: through routes avoid restricted roads whenever a public route exists, and trips starting, ending or forced through them are still routed (no new unrouted demand). A trip starts on a restricted run only where every road out of its origin is restricted. The entry cost is a fixed count per OD set by the layout, so it is left out of reported link times, the relative gap and the line search. With no restricted link in an area, the search is the old one. Assignment time on the 2 km area: 389–403 ms → 421–440 ms (node).
+- `RoadAnalysis.ts`: `noAlternativeShare(res, link)` is the share of a stretch's assigned vehicles whose OD has no route without it that the assignment would accept: none at all, or only through more restricted entries. It uses select-link plus a 0-1 search per origin. Each bottleneck carries it (`Bottleneck.noAlternativeShare`, optional). From 50% up, the label adds "(no other route in the model for N% of its traffic)", so the panel shows it without a component change. A second link of the same named road with the same volume (±0.5%) is the same chain and is listed once.
+- Tests: `engine/testing/AccessRestriction.test.ts` (6). Synthetic network with a private campus shortcut 1.2 km shorter than a public ring road: through traffic takes the ring road; a trip to a car park on the campus road drives in on it; with no public route, through traffic is still routed over it; the access hierarchy (a more specific `motor_vehicle=yes` opens a private road); a forced stretch is labelled and its chain listed once; a stretch with an acceptable alternative is not forced. 5 of 6 fail on `f607375`.
+
+**Effect on the Sangamwadi area** (DB roads, signals, probe; model output):
+
+| | COEP Road | Over capacity | Top of the list |
+|---|---|---|---|
+| 09:00, before | 199% | 352 | Kushabhau 728%, unnamed 590%, 492%, 492% |
+| 09:00, after | **0%** | 317 | Kushabhau 729%, unnamed 590% *(no other route, 100%)*, 495%, Ganeshkhind Road 511% *(no other route, 100%)* |
+| 14:00, before | 107% | 231 | Kushabhau 506%, unnamed 410%, 338% |
+| 14:00, after | **0%** | 216 | Kushabhau 506%, unnamed 410% *(100%)*, 338%, Ganeshkhind 355% *(100%)* |
+| 09:00, flyover piece 327073027 missing, before | 970% (rows 1 and 2) | 374 | COEP 970%, COEP 970%, Kushabhau 752% |
+| same, after | 970% (one row, *no other route, 100%*) | 347 | COEP 970% *(100%)*, Kushabhau 768%, unnamed 590% *(100%)* |
+
+With the network intact, the campus road now carries no through traffic. The 5–10% that used it moves to the trunk roads, so Ganeshkhind Road rises from 486% to 511%. Where the flyover chain is broken, COEP Road keeps its forced flow: the fix cannot invent a missing road. The ranking now says the flow has nowhere else to go, which points at the network rather than the road.
+
+**Suites:** `npx tsc -b` clean; `npx vitest run` 411 passed, 3 skipped (baseline 405 + 3; +6 new); `npx oxlint` 0 errors, 5 warnings (pre-existing).
+
+### Recommendations (not implemented)
+
+1. **Repair or flag broken links before analysing.** Report ways in the study area whose OSM neighbours are missing (a clipped piece whose remainder never loaded) or that share an OSM node with a neighbour without joining (height difference > 3 m). Load the rest of a clipped way when a later study area needs it. A stretch with `noAlternativeShare` ≈ 1 and v/c > 3 is the symptom to look for. Check the living street `osm_1117977442` (73.8623–73.8638 E, 18.5270 N) and Ganeshkhind Road `osm_838145991`, both 100% forced on the intact network.
+2. **Constrain edge demand by what the area can carry.** Through demand is set per cordon lane and is not limited by internal cuts (river bridges, rail, flyovers), so the assignment reports v/c of 4–7 on the roads across them. Options: cap each cordon point's flow at its approach capacity, balance demand to screenline capacity, or use counts (§13.1).
+3. **Show the time-profile state.** When the profile has not loaded, the analysis runs at factor 1 under whatever hour the clock shows. The panel could say so, or the analysis could wait for the profile.
+4. Frank–Wolfe stops at 60 iterations with gap about 0.03 against a 0.001 target. The ranking did not change at 300 iterations (gap 0.004), but the reported gap is above target. Conjugate FW or more iterations would close it for about 0.2 s.
+5. The live micro-simulation's own routing (`Pathfinder`, used when you press Start, not for the analysis corridor, which follows the assignment's paths) does not apply the access rule. Not changed here.
+
+### Uncertainty
+
+- The 959% is reproduced by construction (a piece removed). That the user's network had such a break is inferred from a figure-for-figure match: rows 1 and 2 at the same v/c, 887–970%, morning-level loads elsewhere. It is not observed. The user's project database and session were not available.
+- Signal positions are the 2026-11-03 OSM extract (85 points), not freshly loaded.
+- All volumes are model output on estimated edge demand (§5). They are not counts.
