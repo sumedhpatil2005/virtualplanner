@@ -19,6 +19,7 @@ import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
 import { assignTraffic, isAccessRestricted, RESTRICTED_ENTRY_S } from '../simulation/staticAssignment';
 import { roadSection } from '../simulation/roadSection';
 import { sectionDirections, areaContext, noAlternativeShare } from '../simulation/RoadAnalysis';
+import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
 
 const LAT0 = 18.53;
 const M_LAT = 1 / 111320;
@@ -128,5 +129,30 @@ describe('Forced flows in the bottleneck ranking', () => {
     // The feeder is the only way in from the west
     const feeder = res.links.find(l => l.roadId === 'w1' && res.volVeh[l.index] > 1)!;
     expect(noAlternativeShare(res, feeder.index)).toBe(1);
+  });
+});
+
+describe('Access-restricted roads in the live micro-simulation', () => {
+  // The micro-simulation routes its own vehicles (Start, and trips without assigned paths): the same rule applies there
+  const micro = (withPublicRoute: boolean, trips: { from: [number, number]; to: [number, number]; vph: number }[]) => {
+    const { map, area, roads } = network(withPublicRoute);
+    const snapped = snapDemandPlan(plan(trips), area.network, 60, new Set(area.segments.map(s => s.key)));
+    const sim = new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), { demandLevel: 1, seed: 7, demandTrips: snapped.map(t => ({ fromNodeId: t.fromNodeId, toNodeId: t.toNodeId, vehiclesPerHour: t.vehiclesPerHour, kind: 'car' as const })) });
+    const roadsOf = (route: number[]) => new Set(route.map(i => sim.linkEnds()[i]?.roadId));
+    return { sim, routes: sim.demandRouteFlows().map(f => roadsOf(f.route)) };
+  };
+
+  it('through traffic is routed round the public road, not through the campus', () => {
+    const { routes } = micro(true, [{ from: [-800, 0], to: [800, 0], vph: 400 }]);
+    expect(routes).toHaveLength(1);
+    expect(routes[0].has('campus1') || routes[0].has('campus2')).toBe(false);
+    expect(routes[0].has('p2')).toBe(true);
+  });
+
+  it('a trip to the car park still drives in on the private road, and a forced through trip still uses it', () => {
+    const inbound = micro(true, [{ from: [-800, 0], to: [0, -200], vph: 100 }]);
+    expect(inbound.routes[0].has('park3')).toBe(true);
+    const forced = micro(false, [{ from: [-800, 0], to: [800, 0], vph: 400 }]);
+    expect(forced.routes[0].has('campus2')).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import { websterTiming, indoHcmSaturationFlow, type WebsterResult } from './sign
 import { surfaceLiftM } from '../objects/roadSurface';
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { RouteTrees } from './routeTrees';
+import { isAccessRestricted, RESTRICTED_ENTRY_S } from './accessRestriction';
 import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector } from './LaneConnector';
 import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
 import type { Cardinal } from '../calibration/observedCounts';
@@ -656,6 +657,10 @@ export class TrafficMicroSim {
       const e = edges.get(l.id)!;
       const f = options.linkCostFactors?.get(l.id);
       cost[i] = (e.length / ((e.speedLimit || 50) / 3.6)) * (f !== undefined && Number.isFinite(f) && f > 0 ? f : 1);
+      // A private / destination-only road (campus, gated lane) is not a through route here either, as in the
+      // area assignment (docs/OVERHAUL.md §19): prohibitive per stretch but finite, so trips that start or end
+      // on one, or have no other way, are still routed. Route times are taken from the links, not from this cost.
+      if (isAccessRestricted(roads.get(e.roadId))) cost[i] += RESTRICTED_ENTRY_S;
     });
     this.trees = new RouteTrees(
       this.nodeIndex.size,
