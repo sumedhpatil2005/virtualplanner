@@ -505,3 +505,72 @@ Reading: widening the bridge's eastbound carriageway lowers its v/c from 0.63 to
   - All disclosures closed by default on all three tabs (read from the DOM). No element extends past the 432 px panel; after fixes no direction title, KPI or origin label is truncated (the measured check lists `text-overflow`/line-clamp elements that overflow).
   - Direction hover with the real mouse: hovering the east card set `directionFocus.hover = 1`, its map arrows went to width 34 / alpha 1 and the other direction's to 14 / 0.28, and the card showed active; moving away restored 24 / 0.95. Clicking the west card pinned it (34 / 1 against 14 / 0.28).
 - **Not verified.** The last two wording changes on the Improve tab ("runs agree on n/m changes" chip; "Test it" shown only for buildable suggestions, "Other times of day" for the no-problem card) were seen in the browser on What's wrong only (`panel-sangamwadi-final-whats-wrong.png`); the final Improve-tab capture was lost when the sandbox restarted, so `panel-sangamwadi-improve-compare.png` shows the earlier chip wording ("0/1 changes in all runs"). A screenshot of the hover state with the map visible (the capture timed out with the canvas rendering, as before); a comparison with a clear better/worse verdict in the browser (both browser comparisons came out "no clear change"; coloured pills are covered by unit tests); narrow-window behaviour other than the fixed 27 rem panel; usability with planners.
+
+## 16. Lane edit scope
+
+**What.** In Build, a lane change now has a scope, set with a two-option control under the Lanes selects ("Apply lane changes to"):
+
+- **Entire carriageway** (the default): the connected pieces of the same carriageway, exactly as in §14 (`carriagewayPieces`, unchanged).
+- **This segment only**: only the selected OpenStreetMap way.
+
+The scope resets to the default when another road is selected. Before anything is applied, the panel shows what the change will cover ("Will change 3 pieces · 564 m"), and the same ways are highlighted on the map in fuchsia. The highlight shows while the lane controls are hovered or focused, or once a scope is clicked (the backward-lanes select previews its own direction). It clears when the edit is applied, on deselect and on a mode switch.
+
+**Why.** §14 made a lane edit cover the whole carriageway, because widening only the clicked way left the bridge's capacity where it was. That left no way to model a deliberate partial widening (for example only a bridge deck), and no way to see beforehand which ways would change. A partial widening is legitimate, but the analysis must then say that the unwidened stretch still sets the capacity. Otherwise the result reads as "the extra lane did nothing".
+
+### Fix
+
+- `engine/editing/roadEdits.ts`: `LaneEditScope` (`'carriageway' | 'segment'`, default `'carriageway'`), `laneEditPieces` and `laneEditPreview` (road ids, count, total length, label). `laneEditPlan` takes the scope as an optional last argument. The preview and the edit use the same function, so the highlighted set is always the applied set.
+- UI: `components/LaneScopeControl.tsx` (segmented control, preview line, hover/focus tracking) and `components/laneScopeStore.ts` (the chosen scope). `PropertiesPanel.tsx` wraps the lane selects in it and passes `getLaneEditScope()` to `laneEditPlan`. A multi-piece edit is still one batch undo step. A single-way edit uses the usual coalesced `recordUpdate` and shows the toast "Lanes changed on the selected segment only".
+- Map: `engine/rendering/renderers/RoadHighlight.ts` draws one non-pickable polyline primitive over whole ways, lifted 2.5 m, without a depth test. Kinds are `lane-scope` (#e879f9) and `binding` (#fbbf24). It is reached through `engineInstance.highlightRoads(ids, kind)` and `getRoadHighlight()` (ids for tests and the browser check). Clicks still reach the road underneath.
+- Analysis (`RoadAnalysis.ts`, additive): each direction now carries `binding` (the OSM way that sets its mid-block capacity: `roadId, name, lanes, lengthM, capacityPcu`, the longest of the narrowest ways) and `bindingSegments` (every way at that capacity). It also carries `roadIds` and `segments` (every way in the direction, with its lanes and length).
+- Comparison (`ScenarioComparison.ts`, additive): `laneInsights`, one entry per direction of the selected road containing a way whose lanes differ between baseline and proposal. Each entry has the capacity before and after, `capacityChanged`, `binding`, `bindingEdited`, `bindingMoved`, `signalLimited`, `newBottlenecksNearby` (new over-capacity places within 800 m of an edited way), `kind` (`unchanged_elsewhere | unchanged | raised | lowered`) and a sentence. Edited ways are found by diffing lane fields between the two road maps, so the signature of `compareAnalyses` is unchanged.
+- Panel: `components/LaneBottleneckCard.tsx`. `CapacityStretchCard` shows on *What's wrong* when a direction's lanes vary along it. `LaneInsightCard` shows on *Improve & compare* after a comparison. Each has a "Show on map" toggle that highlights the binding ways and a "model output" label. `RoadAnalysisPanel.tsx` changed by only the two insertion lines and one import.
+- Undo/redo (`SimulationMode.ts`): finished results are kept by analysis key (last 6). When the network returns to a key already computed (Undo, or Redo), the kept result comes back at once, `outdated` cleared, with no re-run. Before, Undo marked the shown result outdated and re-ran the whole analysis (19 s in the §14 browser run).
+
+### Verification
+
+**Unit tests** (`engine/testing/EditScope.test.ts`, 10 tests, real OSM fixture `testing/fixtures/sangamwadi.json`; `engine/testing/LaneBottleneckCard.test.ts`, 4 render tests). All of the behaviour tests were written first, and every one except the default-scope test failed before the implementation:
+
+| Test | Result |
+|---|---|
+| Segment scope changes exactly `osm_208004768`; the approaches stay 2 lanes | pass |
+| Carriageway scope (and the default) changes the three eastbound ways | pass |
+| Preview ids equal applied ids for both scopes; "1 piece · ~368 m", "3 pieces · ~564 m" | pass |
+| Both scopes change the network key (three distinct keys); undo restores the original key | pass |
+| Segment-only deck edit: eastbound 2,571 PCU/h, lanes range 2–3, binding `osm_1151682763` (2 lanes, ~136 m), binding set = the two approaches | pass |
+| Carriageway edit: eastbound 3,857 PCU/h, binding set = all three ways | pass |
+| `laneInsights` flags "capacity unchanged, set elsewhere" with the 2-lane way, id and length; reports `raised` without a warning when the edited way binds; nothing for unedited directions | pass |
+| SimulationMode, segment: outdated → re-run (new key, 2,571, binding approach) → comparison insight `unchanged_elsewhere` → undo restores the first key **and the same result object** without a re-run → redo restores the edited key and result | pass |
+| SimulationMode, carriageway: outdated → re-run 3 lanes / 3,857 → undo restores the first key and result object | pass |
+
+Suites: `npx vitest run` 419 passed, 3 skipped (baseline 405 + 3; +14 new). `npx tsc -b` clean. `npx oxlint` 5 warnings, all pre-existing. `npx vite build` succeeds.
+
+**Browser, measured on the page** (headless Chromium/SwiftShader, 2 CPUs, production build of this tree, backend on a copy of the project database on port 8021, static on 4181/4182, 2026-11-06). Sangamwadi Bridge `osm_208004768`, 1,000 m range, default hour, 3 seeds. Edits were made through Build's own Lanes select and scope buttons, and values were read from page state. Overpass was unreachable (connection failures), so roads came from the database. Figures are model output from estimated demand.
+
+| Step | Key | Eastbound mid-block / lanes (range) | Binding way | Westbound | Time to result |
+|---|---|---|---|---|---|
+| Baseline | `9e71829c` | 2,571 / 2 (2–2), v/c 0.631, 1,132 veh/h | `osm_208004768` (longest of 3 equal) | 2,571 / 2 | 45 s (+45 s baseline capture) |
+| +1 lane, segment only (deck) | `de98be73` | **2,571** / 2 (2–3), v/c 0.631, 1,125 veh/h | **`osm_1151682763`, 2 lanes, 136 m** (+ `osm_661187162`, 60 m) | 2,571 / 2 | 34 s (outdated shown first) |
+| Compare (segment) | — | insight `unchanged_elsewhere`, 2,571 → 2,571; verdict "no clear change" | `osm_1151682763` | no insight | 21 s |
+| Undo | `9e71829c` | 2,571 / 2 (2–2), identical | — | identical | **2 s, same result object, not outdated** |
+| +1 lane, carriageway | `52ab2b45` | **3,857** / 3 (3–3), v/c 0.42, 1,110 veh/h | — | 2,571 / 2 | 16 s |
+| Undo | `9e71829c` | 2,571 / 2, identical | — | identical | **2 s, same result object** |
+
+Preview, read from the page: the default scope showed "Will change 3 pieces · 564 m" (ids deck + both approaches). Clicking "This segment only" showed "1 piece · 367 m" with highlight `{kind: lane-scope, roadIds: [osm_208004768]}`, and clicking back showed all three. In both edits the preview ids equalled the changed ways, and the highlight was null after apply. The *What's wrong* card's "Show on map" set the highlight to `{kind: binding, roadIds: [osm_1151682763, osm_661187162]}` and turned it off again. The keys `9e71829c` and `52ab2b45` match the §14 browser run.
+
+Screenshots (all viewed):
+
+- `vp-overhaul-shots/scope-map-preview-segment.png`: the map at resolutionScale 0.5, msaa 1, with the deck highlighted in fuchsia and the properties panel showing the scope control.
+- `scope-control-segment.png`: the control with "Will change 1 piece · 367 m · shown on map".
+- `scope-bottleneck-whats-wrong.png`: the capacity-stretch card.
+- `scope-bottleneck-compare.png`: the lane insight card.
+
+The panel captures were taken with the render loop stopped and the canvas hidden.
+
+### Uncertainty and not verified
+
+- The binding way is the **longest** way at the minimum capacity. With all ways equal (the baseline), that is simply the deck. The cards only appear when lanes actually vary along the direction, or in a comparison where a way's lanes changed.
+- `newBottlenecksNearby` (a new over-capacity place within 800 m of an edited way) is covered by the code path and by the existing `newBottlenecks` logic. No browser or fixture case produced one, so its wording was not seen on the page.
+- The map screenshot of the binding (amber) highlight was not taken. Its ids were verified from page state only. The carriageway-scope preview highlight was likewise verified by ids, not by screenshot.
+- Hover-driven preview (mouse over the lane controls) is implemented but was not exercised with a real pointer in the browser. The browser check used scope clicks, which pin the preview.
+- Kept results are in memory only (last 6 keys) and are lost on reload. A result is reused only when the network, demand, study, hour and seeds hash to the same key.

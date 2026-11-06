@@ -45,7 +45,7 @@ export const CapacityStretchCard: React.FC<{ r: RoadAnalysisResult; onShow: (ids
             <p className="flex items-start gap-2 text-xs text-amber-100 leading-snug">
               <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-300" />
               <span>
-                <b>{cap(d.label)}</b>: capacity {fmt(d.midblockPcu)} PCU/h is set by its {d.binding.lanes}-lane stretch, {d.binding.name} ({wayList(d.bindingSegments ?? [d.binding])}).
+                <b>{cap(d.label)}</b>: capacity {fmt(d.midblockPcu)} PCU/h is set by its {d.binding.lanes}-lane stretch of {d.binding.name}: {wayList(d.bindingSegments ?? [d.binding])}.
                 {wider.length > 0 && <> The {d.lanesRange[1]}-lane {wayList(wider)} {wider.length === 1 ? "isn't" : "aren't"} the constraint: widen the narrower stretch too to raise it.</>}
               </span>
             </p>
