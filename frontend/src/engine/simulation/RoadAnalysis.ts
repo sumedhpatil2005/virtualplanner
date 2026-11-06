@@ -1,5 +1,5 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
-import { MAX_VEHICLES, STEP_S, type TrafficMicroSim, type MicroSimMetrics, type AnalysisLinkCounts, type HoldCause } from './TrafficMicroSim';
+import { MAX_VEHICLES, STEP_S, GRIDLOCK_S, type TrafficMicroSim, type MicroSimMetrics, type AnalysisLinkCounts, type HoldCause, type VehicleAccounting, type GridlockSite } from './TrafficMicroSim';
 import { isGenericRoadName, type RoadSection } from './roadSection';
 import { angleDiff, boundLabel, compassWord, displacementM, downstreamLandmark, labelBearings, nameKeys, type Landmark } from './directions';
 import type { DemandProvenance } from './StudyDemand';
@@ -234,7 +234,11 @@ export interface RoadAnalysisResult {
   assignment: { iterations: number; relativeGap: number; demandVph: number; unroutedVph: number; overCapacityLinks: number; totalVehHours: number; elapsedMs: number };
   corridor: { roads: number; demandVph: number; rangeM: number };
   /** Per seed: what a comparison checks for consistency. */
-  perSeed: { seed: number; sectionVph: number; sectionTimeS: number | null; completedTrips: number; meanTravelTimeS: number | null; meanDelayS: number | null; servedShare: number; gridlockRemovals: number; endDelayS: number | null }[];
+  perSeed: { seed: number; sectionVph: number; sectionTimeS: number | null; completedTrips: number; meanTravelTimeS: number | null; meanDelayS: number | null; servedShare: number; gridlockRemovals: number; endDelayS: number | null;
+    /** What became of every vehicle in the run, warm-up included (absent on older results). */
+    accounting?: VehicleAccounting;
+    /** Junctions with vehicles standing gridlocked at the end of the run, worst first (at most 3). */
+    gridlockSites?: GridlockSite[] }[];
   evidence: { demand: DemandProvenance | null; notes: string[] };
 }
 
@@ -256,7 +260,7 @@ export interface LoadCheck {
 /** Below this share of the demand getting onto the network, the run is reported as capacity-limited. */
 export const SERVED_SHARE_OK = 0.85;
 
-export function loadCheck(demandVph: number, load: { releasedVehicles: number; capShare: number; gridlockRemovals: number }, windowS: number, waitingToEnter: number): LoadCheck {
+export function loadCheck(demandVph: number, load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; gridlockedNow?: number }, windowS: number, waitingToEnter: number): LoadCheck {
   const perH = 3600 / Math.max(STEP_S, windowS);
   const enteredVph = load.releasedVehicles * perH, gridlockRemovalsVph = load.gridlockRemovals * perH;
   const servedShare = demandVph > 0 ? Math.min(1, enteredVph / demandVph) : 1;
@@ -267,6 +271,7 @@ export function loadCheck(demandVph: number, load: { releasedVehicles: number; c
     if (waitingToEnter > 0) parts.push(`${waitingToEnter.toLocaleString()} vehicles were still queued at its edge at the end`);
     if (load.capShare > 0.05) parts.push(`the run spent ${Math.round(100 * load.capShare)}% of the time at the simulator's ${MAX_VEHICLES.toLocaleString()}-vehicle limit`);
     if (gridlockRemovalsVph > 0.05 * demandVph) parts.push(`${Math.round(gridlockRemovalsVph).toLocaleString()} veh/h were removed after gridlock`);
+    if (load.gridlockedNow) parts.push(`${load.gridlockedNow.toLocaleString()} vehicles stood gridlocked (over ${GRIDLOCK_S / 60} minutes at the front of a queue) at the end`);
     message = `More traffic is routed here than the simulated junctions can pass: ${parts.join('; ')}. Volumes shown are what got through. Simulated junctions pass fewer vehicles than the counted Pune junctions (docs/CALIBRATION.md), so part of this is a model limit.`;
   }
   return { demandVph, enteredVph, servedShare, waitingToEnter, atVehicleLimit: load.capShare, gridlockRemovalsVph, overloaded, message };
@@ -380,6 +385,7 @@ export interface CorridorRun {
   linkVph: Map<string, number>;
   network: MicroSimMetrics;
   load: LoadCheck;
+  gridlockSites?: GridlockSite[];
 }
 
 /** Reads one corridor run (counters since sim.startAnalysis()). */
@@ -441,8 +447,8 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
   const linkVph = new Map<string, number>();
   for (const l of counts.links) linkVph.set(l.id, l.entries * perH);
   const network = sim.getMetrics();
-  const load = loadCheck(Math.max(0, demandVph - counts.load.unroutable * perH), counts.load, counts.windowS, network.waitingToEnter);
-  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, network, load };
+  const load = loadCheck(Math.max(0, demandVph - counts.load.unroutable * perH), { ...counts.load, gridlockedNow: network.accounting.gridlockedNow }, counts.windowS, network.waitingToEnter);
+  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, network, load, gridlockSites: sim.gridlockSites().slice(0, 3) };
 }
 
 /**
@@ -817,7 +823,8 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
       const tt = r.directions.map(d => d.travelTimeS).filter((x): x is number => x !== null);
       const ends = r.junctions.filter(j => j.atSection);
       return { seed: r.seed, sectionVph: Math.round(r.directions.reduce((a, d) => a + d.vph, 0)), sectionTimeS: tt.length ? mean(tt) : null, completedTrips: r.network.completedTrips,
-        meanTravelTimeS: r.network.meanTravelTimeS, meanDelayS: r.network.meanDelayS, servedShare: r.load.servedShare, gridlockRemovals: r.network.gridlockRemovals, endDelayS: ends.length ? Math.max(...ends.map(j => j.delayS)) : null };
+        meanTravelTimeS: r.network.meanTravelTimeS, meanDelayS: r.network.meanDelayS, servedShare: r.load.servedShare, gridlockRemovals: r.network.gridlockRemovals, endDelayS: ends.length ? Math.max(...ends.map(j => j.delayS)) : null,
+        accounting: r.network.accounting, gridlockSites: r.gridlockSites };
     }),
     evidence: { demand, notes },
   };

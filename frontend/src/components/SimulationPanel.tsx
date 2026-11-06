@@ -271,6 +271,8 @@ const LiveFigures: React.FC<{ traffic: TrafficRunState; seedRoadIds: string[] }>
         <span className="text-slate-500">Road colour:</span>
         <Dot color={SPEED_COLORS.free} label="Moving freely" /><Dot color={SPEED_COLORS.slow} label="Slow" /><Dot color={SPEED_COLORS.stopped} label="Stopped" />
       </div>
+      {m.accounting && <p className="text-[11px] text-slate-500 tabular-nums" data-testid="live-accounting">Since the warm-up began: {m.accounting.spawned.toLocaleString()} entered = {(m.accounting.exitedAtEdge + m.accounting.completedAtDestination).toLocaleString()} finished + {m.accounting.stuckRemovals.toLocaleString()} removed + {m.accounting.inNetwork.toLocaleString()} on the roads.</p>}
+      {(m.accounting?.gridlockedNow ?? 0) > 0 && <Notice tone="warn" icon={AlertTriangle}>{m.accounting.gridlockedNow} vehicle{m.accounting.gridlockedNow > 1 ? 's are' : ' is'} gridlocked: stuck over {GRIDLOCK_S / 60} minutes at the front of a queue{m.accounting.stuckRemovalEnabled ? '' : ' (left on the roads, not removed)'}.</Notice>}
       {m.gridlockRemovals > 0 && <Notice tone="warn" icon={AlertTriangle}>{m.gridlockRemovals} vehicle{m.gridlockRemovals > 1 ? 's were' : ' was'} removed after being stuck for {GRIDLOCK_S / 60} minutes.</Notice>}
     </>
   );

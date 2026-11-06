@@ -20,7 +20,7 @@ import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
 import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
 import {
-  StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
+  StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, AccountingCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
 } from './RoadAnalysisPieces';
 
 /**
@@ -101,6 +101,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
       <CapacityStretchCard r={r} onShow={ids => engineInstance.highlightRoads(ids, 'binding')} />
       <WhyCard r={r} overlay={sim.overlay} actions={actions} />
       <LoadCard r={r} />
+      <AccountingCard r={r} />
       <Measured sim={sim} r={r} />
       <SourcesCard r={r} overlay={sim.overlay} actions={actions} />
       <BottlenecksCard r={r} overlay={sim.overlay} actions={actions} />

@@ -220,6 +220,49 @@ export const WhyCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay; act
   );
 };
 
+// ── Vehicle accounting ────────────────────────────────────────────────────
+
+/**
+ * What became of every vehicle in each run (docs/OVERHAUL.md §20): entered,
+ * finished (left at the area's edge or reached a destination inside it), still
+ * on the roads, still waiting at the edge, gridlocked, removed. The counts add
+ * up: entered = finished + removed + on the roads.
+ */
+export const AccountingCard: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
+  const rows = r.perSeed.filter(p => p.accounting);
+  if (!rows.length) return null;
+  const ok = rows.every(p => { const a = p.accounting!; return a.spawned === a.completedAtDestination + a.exitedAtEdge + a.timeouts + a.stuckRemovals + a.inNetwork && a.generated === a.spawned + a.waitingAtEdge; });
+  const gridlocked = Math.max(...rows.map(p => p.accounting!.gridlockedNow));
+  const removed = Math.max(...rows.map(p => p.accounting!.stuckRemovals));
+  const site = rows.map(p => p.gridlockSites?.[0]).find(Boolean);
+  return (
+    <Disclosure title="Vehicle accounting" icon={ListOrdered} testId="vehicle-accounting" defaultOpen={gridlocked > 0 || removed > 0}
+      aside={`${ok ? 'all accounted for' : 'counts do not add up'} · ${gridlocked > 0 ? `${fmt(gridlocked)} gridlocked` : 'no gridlock'}${removed > 0 ? ` · ${fmt(removed)} removed` : ''}`}>
+      <table className="w-full text-[11px] tabular-nums" data-testid="vehicle-accounting-table">
+        <thead className="text-slate-500">
+          <tr><th className="text-left font-normal">Seed</th><th className="text-right font-normal" title="Got onto the roads">Entered</th><th className="text-right font-normal" title="Left the area at its edge / reached a destination inside it">Finished</th><th className="text-right font-normal" title="Still on the roads at the end">On roads</th><th className="text-right font-normal" title="Never got on: still waiting at the area's edge at the end">At edge</th><th className="text-right font-normal" title={`Stood over ${GRIDLOCK_MIN} minutes at the front of a queue: during the run / at the end`}>Gridlocked</th><th className="text-right font-normal" title="Removed from the roads (only with stuck-vehicle removal switched on)">Removed</th></tr>
+        </thead>
+        <tbody className="text-slate-300">
+          {rows.map(p => { const a = p.accounting!; return (
+            <tr key={p.seed} data-seed={p.seed}>
+              <td className="text-slate-500">{p.seed}</td>
+              <td className="text-right">{fmt(a.spawned)}</td>
+              <td className="text-right">{fmt(a.exitedAtEdge + a.completedAtDestination)}{a.completedAtDestination > 0 && <span className="text-slate-500"> ({fmt(a.completedAtDestination)} in area)</span>}</td>
+              <td className="text-right">{fmt(a.inNetwork)}</td>
+              <td className="text-right">{fmt(a.waitingAtEdge)}</td>
+              <td className="text-right">{fmt(a.gridlockEvents)} / {fmt(a.gridlockedNow)}</td>
+              <td className="text-right">{a.stuckRemovalEnabled ? fmt(a.stuckRemovals) : 'off'}</td>
+            </tr>); })}
+        </tbody>
+      </table>
+      <p>{ok ? 'Every vehicle is accounted for: entered = finished + removed + still on the roads.' : 'The counts do not add up: please report this run.'} Counts cover the whole run, warm-up included.{rows.every(p => !p.accounting!.stuckRemovalEnabled) ? ' No vehicle is removed: gridlock stays on the roads and is reported here.' : ''}</p>
+      {site && <p data-testid="gridlock-site">Worst gridlock at the end: {fmt(site.vehicles)} front vehicle{site.vehicles > 1 ? 's' : ''} standing up to {Math.round(site.longestS / 60)} min at the junction at {site.lat.toFixed(5)}, {site.lng.toFixed(5)} ({Object.entries(site.causes).map(([k, n]) => `${n} ${CAUSE_WORD[k] ?? k}`).join(', ')}).</p>}
+    </Disclosure>
+  );
+};
+const GRIDLOCK_MIN = 3;
+const CAUSE_WORD: Record<string, string> = { priorityGap: 'waiting for a gap', crossingTraffic: 'held by crossing traffic', redSignal: 'at a red signal', blockedExit: 'with no room ahead', laneChange: 'changing lane', noConnection: 'with no connection', other: 'other' };
+
 // ── Demand against throughput ─────────────────────────────────────────────
 
 /** One card, shown once, when more traffic is routed into the neighbourhood than its simulated junctions pass. */
