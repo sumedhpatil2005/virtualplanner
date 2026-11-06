@@ -50,8 +50,14 @@ export interface VehicleTypeParams {
  * comfortable deceleration b) for motorcycle, car, auto-rickshaw and bus are
  * the calibrated values for Chennai mixed traffic in Kanagaraj & Treiber (2018),
  * "Self-driven particle model for mixed traffic and other disordered flows",
- * Physica A 509:1-11, Table 1 (doi:10.1016/j.physa.2018.05.086). Trucks are not
- * in that table: they use the bus values with an 8 m length (assumption).
+ * Physica A 509:1-11, Table 1 (doi:10.1016/j.physa.2018.05.086), except the bus
+ * length: 12 m, a standard city bus (assumption: Pune's PMPML fleet is mostly
+ * 12 m buses besides 9 m midi buses), instead of the 10.3 m Chennai average
+ * (docs/OVERHAUL.md §20). Trucks are not in that table: they use the bus values
+ * with an 8 m length (a light/medium goods vehicle, assumption). Cars 4.2 m,
+ * two-wheelers 1.8 m and autos 2.6 m are kept as calibrated (within 0.4 m of
+ * typical Indian vehicles); there is no articulated class (the Pune counts
+ * used have none).
  *
  * Shares (for capacity-based synthetic traffic) are the Gunjan Chowk, Pune
  * classified counts, 08-20 h both directions (Thakur et al. 2017, IJETT 47(2)):
@@ -62,7 +68,7 @@ export const VEHICLE_TYPES: readonly VehicleTypeParams[] = [
   { kind: 'two_wheeler', share: 0.520, lengthM: 1.8, maxAccel: 2.0, comfortDecel: 2.0, headwayS: 0.3, minGapM: 0.5, speedFactor: 1.05, clearS: 1.5, pcu: 0.75 },
   { kind: 'car', share: 0.312, lengthM: 4.2, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 0.8, minGapM: 2.0, speedFactor: 1.0, clearS: 2.2, pcu: 1.0 },
   { kind: 'auto', share: 0.112, lengthM: 2.6, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.8, clearS: 2.0, pcu: 2.0 },
-  { kind: 'bus', share: 0.035, lengthM: 10.3, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.85, clearS: 3.5, pcu: 2.2 },
+  { kind: 'bus', share: 0.035, lengthM: 12.0, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.85, clearS: 3.5, pcu: 2.2 },
   { kind: 'truck', share: 0.021, lengthM: 8.0, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.8, clearS: 3.5, pcu: 2.2 },
   { kind: 'bus_auto', share: 0, lengthM: 7.0, maxAccel: 1.0, comfortDecel: 1.0, headwayS: 1.0, minGapM: 2.0, speedFactor: 0.85, clearS: 3.0, pcu: 2.0 },
 ];
@@ -132,6 +138,17 @@ export const EDGE_FADE_M = 60;
 /** Turns sharper than this slow vehicles to TURN_SPEED_MPS at the junction. */
 const TURN_ANGLE_DEG = 35;
 const TURN_SPEED_MPS = 4.5;
+/**
+ * Buses and goods vehicles (7 m and longer) turn slower: about 11 km/h against
+ * 16 km/h (estimate; heavy vehicles take low-speed turns at roughly 10-15 km/h,
+ * the speed turning templates such as IRC:SP:41 and AASHTO's design vehicles
+ * assume for minimum-radius turns).
+ */
+const HEAVY_TURN_SPEED_MPS = 3.0;
+/** A long vehicle that cannot wait between two junctions drives on through both only if it reaches the second line with this much green left (s; estimate). */
+const THROUGH_GREEN_MARGIN_S = 2;
+const HEAVY_LENGTH_M = 7;
+const turnSpeed = (t: VehicleTypeParams) => t.lengthM >= HEAVY_LENGTH_M ? HEAVY_TURN_SPEED_MPS : TURN_SPEED_MPS;
 /** Distance over which vehicles slow down for a turn. */
 const TURN_SLOWDOWN_M = 40;
 /**
@@ -204,6 +221,14 @@ export const SIGNAL_GREEN_S = 25;
 export const SIGNAL_AMBER_S = 3;
 export const SIGNAL_ALL_RED_S = 2;
 const SIGNAL_CYCLE_S = 2 * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
+/**
+ * Signalised junctions joined by a link shorter than this (m) are coordinated:
+ * common cycle, offsets so a short link's inflow meets a green at its far end
+ * (coordinateCloseSignals). Assumption: about the room for a 12 m bus and two
+ * cars, or eight cars, between the stop lines; well inside the spacing at which
+ * signals are normally coordinated.
+ */
+export const COORDINATED_LINK_M = 60;
 /** Shortest cycle a placed junction may run (matches the junction editor), leaving each group 5 s of green. */
 export const MIN_SIGNAL_CYCLE_S = 20;
 /**
@@ -1511,8 +1536,13 @@ export class TrafficMicroSim {
    * flow known, or signalTiming 'equal', phases keep equal greens.
    */
   private retimeSignals() {
-    if (this.signalTimingMode !== 'webster' || !this.controls) return;
+    if (!this.controls) return;
     const assigned = this.assignedLinkPcu();
+    if (this.signalTimingMode === 'webster') this.websterRetime(assigned);
+    this.coordinateCloseSignals(assigned);
+  }
+
+  private websterRetime(assigned: Float64Array) {
     this.controls.forEach(c => {
       if (c.kind !== 'signal' || c.fixed) return;
       const phases = c.phases ?? 2;
@@ -1544,6 +1574,107 @@ export class TrafficMicroSim {
       c.design = design;
       if (c.offset >= c.cycleS) c.offset %= c.cycleS;
     });
+  }
+
+  /**
+   * Signalised junctions joined by a link shorter than COORDINATED_LINK_M run as
+   * one coordinated group, as closely spaced signals are in practice (run from
+   * one controller or on a common cycle with set offsets; FHWA Signal Timing
+   * Manual, 2nd ed., 2015, ch. 7 on coordination and closely spaced
+   * intersections): every junction of the group takes the group's longest
+   * cycle, its greens stretched in proportion, and its offset is chosen so that
+   * the traffic released into each short link meets a green at its far end
+   * (the overlap of upstream greens, weighted by design flow, with the
+   * downstream green a short travel time later, maximised one junction at a
+   * time from the group's first one, which keeps its drawn offset).
+   * Independently drawn offsets and cycles on a 9-15 m link let the two greens
+   * not overlap for many cycles: a 12 m bus, which cannot wait between the two
+   * stop lines without standing across the junction behind it, then waited
+   * for minutes at a green (docs/OVERHAUL.md §20). Junctions with the
+   * project's own timing (fixed) are left as they are.
+   */
+  private coordinateCloseSignals(assigned: Float64Array) {
+    const free = (n: string) => { const c = this.controls.get(n); return c?.kind === 'signal' && !c.fixed ? c : null; };
+    const shortLinks = this.links.filter(l => l.length < COORDINATED_LINK_M && l.from !== l.to && free(l.from) && free(l.to));
+    if (!shortLinks.length) return;
+    const nbrs = new Map<string, Set<string>>();
+    for (const l of shortLinks) {
+      (nbrs.get(l.from) ?? nbrs.set(l.from, new Set()).get(l.from)!).add(l.to);
+      (nbrs.get(l.to) ?? nbrs.set(l.to, new Set()).get(l.to)!).add(l.from);
+    }
+    const lost = (c: Control) => (c.phases ?? 2) * (SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
+    const done = new Set<string>();
+    // Groups in node id order, so the result does not depend on map order
+    for (const root of [...nbrs.keys()].sort()) {
+      if (done.has(root)) continue;
+      const group: string[] = [root];
+      done.add(root);
+      for (let i = 0; i < group.length; i++) for (const m of [...nbrs.get(group[i])!].sort()) if (!done.has(m)) { done.add(m); group.push(m); }
+      const cycle = Math.round(Math.max(...group.map(n => this.controls.get(n)!.cycleS ?? SIGNAL_CYCLE_S)));
+      for (const n of group) {
+        const c = this.controls.get(n)!;
+        const phases = c.phases ?? 2;
+        const own = c.cycleS ?? SIGNAL_CYCLE_S;
+        const greens = c.greens && c.greens.length === phases ? c.greens : new Array(phases).fill(own / phases - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S);
+        const sum = greens.reduce((a, g) => a + g, 0);
+        c.greens = greens.map(g => sum > 0 ? g * (cycle - lost(c)) / sum : (cycle - lost(c)) / phases);
+        c.cycleS = cycle;
+        c.offset = Math.round(((c.offset % cycle) + cycle) % cycle) % cycle; // whole seconds: the overlap below is counted per second
+      }
+      // Green of each phase of each junction over one cycle, in local (offset) time, 1 s steps
+      const greenOf = new Map<string, boolean[][]>();
+      for (const n of group) {
+        const c = this.controls.get(n)!;
+        greenOf.set(n, Array.from({ length: c.phases ?? 2 }, (_, g) => { const w = this.phaseWindow(c, g); return Array.from({ length: cycle }, (_, t) => ((t - w.start + cycle) % cycle) < w.green); }));
+      }
+      // Released at t, a vehicle reaches the far line between 3 s (a car rolling) and 12 s (a bus from a stop, turning) later: it
+      // gets through on a green there throughout that span
+      const SPAN = [3, 12] as const;
+      const throughOf = new Map<string, boolean[][]>();
+      for (const n of group) throughOf.set(n, greenOf.get(n)!.map(g => Array.from({ length: cycle }, (_, t) => { for (let d = SPAN[0]; d <= SPAN[1]; d++) if (!g[(t + d) % cycle]) return false; return true; })));
+      const placed = new Set<string>([root]);
+      for (const n of group.slice(1)) {
+        const c = this.controls.get(n)!;
+        // First: as many approaches feeding the short links (with traffic) as possible get at least 3 s a cycle released into a
+        // green at the far end, so a long vehicle from any of them can drive through both lines; then: the most traffic through
+        let best = c.offset, bestScore = -1;
+        for (let off = 0; off < cycle; off++) {
+          let served = 0, through = 0;
+          for (const l of shortLinks) {
+            const up = l.from, down = l.to;
+            if (!((up === n && placed.has(down)) || (down === n && placed.has(up)))) continue;
+            const cu = this.controls.get(up)!, cd = this.controls.get(down)!;
+            const offU = up === n ? off : cu.offset, offD = down === n ? off : cd.offset;
+            const gd = throughOf.get(down)![cd.groups.get(l.index) ?? 0];
+            for (const [i] of this.incomingOf(up)) {
+              if (this.links[i].from === down) continue; // a U-turn back onto the short link's far end
+              const q = this.designFlows.get(i) ?? assigned[i];
+              const gu = greenOf.get(up)![cu.groups.get(i) ?? 0];
+              let k = 0;
+              for (let t = 0; t < cycle; t++) if (gu[(t + offU) % cycle] && gd[(t + offD) % cycle]) k++;
+              through += (1 + q) * k;
+              if (q > 0 && k >= 3) served++;
+            }
+          }
+          const score = served * 1e12 + through;
+          if (score > bestScore) { bestScore = score; best = off; }
+        }
+        c.offset = best;
+        placed.add(n);
+      }
+    }
+  }
+
+  /** Start and length of a phase's green within its junction's cycle (local time: t + offset). */
+  private phaseWindow(c: Control, group: number): { start: number; green: number; cycle: number } {
+    const cycle = c.cycleS ?? SIGNAL_CYCLE_S;
+    if (c.greens && c.greens.length === (c.phases ?? 2)) {
+      let start = 0;
+      for (let g = 0; g < group; g++) start += c.greens[g] + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S;
+      return { start, green: c.greens[group], cycle };
+    }
+    const slot = cycle / (c.phases ?? 2);
+    return { start: group * slot, green: slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S, cycle };
   }
 
   /**
@@ -1636,18 +1767,7 @@ export class TrafficMicroSim {
     const link = this.links[linkIndex];
     const c = this.controls.get(link.to);
     if (!c || c.kind !== 'signal') return null;
-    const group = c.groups.get(linkIndex) ?? 0;
-    const cycle = c.cycleS ?? SIGNAL_CYCLE_S;
-    let start: number, green: number;
-    if (c.greens && c.greens.length === (c.phases ?? 2)) {
-      start = 0;
-      for (let g = 0; g < group; g++) start += c.greens[g] + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S;
-      green = c.greens[group];
-    } else {
-      const slot = cycle / (c.phases ?? 2);
-      start = group * slot;
-      green = slot - SIGNAL_AMBER_S - SIGNAL_ALL_RED_S;
-    }
+    const { start, green, cycle } = this.phaseWindow(c, c.groups.get(linkIndex) ?? 0);
     const tc = (this.t + c.offset) % cycle;
     const local = (tc - start + cycle) % cycle;
     if (local < green) return 'green';
@@ -1720,6 +1840,13 @@ export class TrafficMicroSim {
       connector = this.connectorFor(link, veh.lane, next, lane);
       dist = connector.start - veh.pos;
     }
+
+    // Long enough a gap behind the next stop line to wait clear of this junction, or through both
+    // Held as 'keep-clear', not as waiting for room: the lane is not full, so the turn-taking
+    // of §18 (a lane left to the vehicle that has waited longest for room in it) does not apply.
+    // Leaving the lane to a bus that waits for a gap at the next junction held every other
+    // approach behind it, even vehicles that would have crossed the short link in seconds
+    if (!withPartner && !this.clearOfBox(veh, next, lane, connector, dist)) return this.refuse(link, 'keep-clear', veh, next.index);
 
     const c = this.controls.get(link.to);
     if (c?.kind === 'signal') {
@@ -1804,7 +1931,7 @@ export class TrafficMicroSim {
     // (dist / max(v, 1 m/s) took a vehicle rolling up at walking pace 6 s for 6 m).
     // A driver waiting at the line (it stops 0.3 m short) is at it: the critical gap
     // is the gap such a driver accepts, its own start included.
-    const timeToLine = timeToCover(Math.max(0, dist - AT_LINE_M), veh.v, veh.type.maxAccel, TURN_SPEED_MPS);
+    const timeToLine = timeToCover(Math.max(0, dist - AT_LINE_M), veh.v, veh.type.maxAccel, turnSpeed(veh.type));
     for (const [otherIdx, other] of this.incomingOf(link.to)) {
       if (otherIdx === link.index) continue;
       let priority: boolean;
@@ -1878,24 +2005,22 @@ export class TrafficMicroSim {
     const free = this.backSpace(target);
     let ahead = 0;
     if (tail && rearMoving(target)) {
-      const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? TURN_SPEED_MPS : next.speed * veh.speedFactor);
-      const front = target[0];
-      // Leaving: it leaves the area at the end of this lane, or it is cleared through the
-      // next junction and can no longer stop before its line. A cleared front that can
-      // still stop may yet give its grant back (red, a crossing claim, its own exit
-      // filling), and then everyone who entered on the room it was to leave stood in
-      // the junction box behind it: on a 10 m link that blocked the box for good, the
-      // crossing approaches waited on the claim and the two junctions locked each
-      // other (docs/OVERHAUL.md §20)
-      const leaving = front.routeIdx >= front.route.length - 1 || (front.grantLane !== null && this.committed(front));
+      const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? turnSpeed(veh.type) : next.speed * veh.speedFactor);
       // Follow-up at an unsignalised junction: a tail still driving its own movement out
       // of this junction (the vehicle that went just before) pulls away, accelerating, not
       // at the crawl it has at this instant. Projecting it at its current speed held
       // each following side-road driver until the one ahead had all but finished its
       // turn: one vehicle per 5 s in a gap instead of a follow-up of about 3 s.
       const pulling = !!tail.arriving && this.controls.get(next.from)?.kind !== 'signal';
-      const roll = pulling ? distanceIn(tArrive, tail.v, tail.type.maxAccel, (tail.arriving!.connector.turn ? TURN_SPEED_MPS : next.speed * tail.speedFactor)) : tail.v * tArrive;
-      ahead = leaving ? roll : Math.min(roll, Math.max(0, this.packedBack(next, target) - free));
+      const roll = pulling ? distanceIn(tArrive, tail.v, tail.type.maxAccel, (tail.arriving!.connector.turn ? turnSpeed(tail.type) : next.speed * tail.speedFactor)) : tail.v * tArrive;
+      // The tail rolls on only as far as the lane can close up, its vehicles packed nose
+      // to tail against the stop line, leaving out those at its front that are leaving it
+      // (packedBackStaying). Counting the whole lane as free once a cleared front could
+      // still stop, or once the front alone was leaving, let followers enter and stand in
+      // the junction box when it stopped after all: on a 10 m link that blocked the box for
+      // good, the crossing approaches waited on the claim and two junctions locked each
+      // other (docs/OVERHAUL.md §20)
+      ahead = Math.min(roll, Math.max(0, this.packedBackStaying(next, target) - free));
     }
     if (this.heldFor(next, k, veh)) return -Infinity;
     return free + ahead - this.pendingInto(next.index, k, veh);
@@ -1989,6 +2114,72 @@ export class TrafficMicroSim {
       back -= v.type.minGapM + v.type.lengthM;
     }
     return Math.max(back, this.backSpace(lane));
+  }
+
+  /**
+   * packedBack for the vehicles that stay in the lane: those at its front that
+   * are leaving it (they leave the area at its end, or are cleared through the
+   * next junction and can no longer stop) are left out, and the rest are packed
+   * against the stop line. Infinity when every vehicle in it is leaving.
+   * (Counting the whole lane as free once its front vehicle was leaving let the
+   * vehicles behind that front, which would still stop at a red, be projected
+   * on: a follower entered a 12 m link and stood with its rear in the box.)
+   */
+  private packedBackStaying(link: Link, lane: Vehicle[]): number {
+    let i = 0;
+    while (i < lane.length && (lane[i].routeIdx >= lane[i].route.length - 1 || this.committed(lane[i]))) i++;
+    if (i >= lane.length) return Infinity;
+    return i === 0 ? this.packedBack(link, lane) : this.packedBack(link, lane.slice(i));
+  }
+
+  /**
+   * Whether `veh` can wait on lane `k` of `next` (at the stop line of its next
+   * movement, or behind the vehicles that will stay there with its standstill gap)
+   * with its whole length clear of this junction's box, the end of `connector`. Where it
+   * cannot (a bus on a 9-15 m link between two junctions), it commits only if it
+   * can drive on through the next junction as well: that lane empty, the next
+   * signal green for long enough to get there, no gap to wait for there, and room
+   * beyond it for its length and standstill gap. Otherwise it would stand with its
+   * rear across the junction behind it.
+   */
+  private clearOfBox(veh: Vehicle, next: Link, k: number, connector: LaneConnector, dist: number): boolean {
+    if (veh.routeIdx + 1 >= veh.route.length - 1) return true; // leaves the area at the end of `next`
+    const next2 = this.links[veh.route[veh.routeIdx + 2]];
+    const [lo, hi] = this.mappedLanes(next, k, next2);
+    const c2 = this.connectorFor(next, k, next2, lo);
+    const lane = next.lanes[k];
+    const staying = this.packedBackStaying(next, lane);
+    // Behind a vehicle that stays it keeps its standstill gap; first in the lane it stops at the line
+    const pend = this.pendingInto(next.index, k, veh);
+    const behind = staying < c2.start - AT_LINE_M || pend > 0;
+    const back = Math.min(staying, c2.start - AT_LINE_M) - pend;
+    if (back - veh.type.lengthM - (behind ? veh.type.minGapM : 0) >= connector.entry) return true;
+    // Through both junctions in one go
+    if (lane.some(v => !(v.routeIdx >= v.route.length - 1 || this.committed(v))) || this.pendingInto(next.index, k, veh) > 0) return false;
+    const toLine2 = Math.max(0, dist) + connector.length + Math.max(0, c2.start - connector.entry);
+    let t2 = timeToCover(toLine2, veh.v, veh.type.maxAccel, connector.turn ? turnSpeed(veh.type) : next.speed * veh.speedFactor);
+    // Behind a vehicle still on its way out of `next` it gets to the line no sooner than that one plus a headway
+    const tail = lane[lane.length - 1];
+    if (tail) t2 = Math.max(t2, timeToCover(Math.max(0, c2.start - tail.pos), tail.v, tail.type.maxAccel, next.speed * tail.speedFactor) + veh.type.headwayS + 1);
+    const c = this.controls.get(next.to);
+    // It must reach the next line on green, with a margin for the estimate (a red there now that turns green before it arrives will do)
+    if (c?.kind === 'signal' && this.greenLeft(next.index, this.t + t2) < THROUGH_GREEN_MARGIN_S) return false;
+    if (c?.kind === 'priority' && this.yieldsAt(next, next2, c) && this.mustGiveWay(veh, next, next2, c2, c, toLine2)) return false;
+    for (let k2 = lo; k2 <= hi; k2++) {
+      const ck = this.connectorFor(next, k, next2, k2);
+      if (this.packedBackStaying(next2, next2.lanes[k2]) - this.pendingInto(next2.index, k2, veh) >= this.exitNeed(veh, ck)) return true;
+    }
+    return false;
+  }
+
+  /** Seconds of green left for the approach `linkIndex` at time `at` (now by default; 0 unless green then; Infinity where unsignalised). */
+  public greenLeft(linkIndex: number, at = this.t): number {
+    const link = this.links[linkIndex];
+    const c = this.controls.get(link.to);
+    if (!c || c.kind !== 'signal') return Infinity;
+    const { start, green, cycle } = this.phaseWindow(c, c.groups.get(linkIndex) ?? 0);
+    const local = ((at + c.offset) % cycle - start + cycle) % cycle;
+    return local < green ? green - local : 0;
   }
 
   /** Room in a lane already promised to vehicles cleared into it that have not reached it yet. */
@@ -2176,14 +2367,15 @@ export class TrafficMicroSim {
 
   private desiredSpeed(veh: Vehicle, link: Link, dist: number): number {
     const v0 = link.speed * veh.speedFactor;
-    if (veh.arriving?.connector.turn && veh.pos < veh.arriving.connector.entry) return Math.min(v0, TURN_SPEED_MPS);
+    const vTurn = turnSpeed(veh.type);
+    if (veh.arriving?.connector.turn && veh.pos < veh.arriving.connector.entry) return Math.min(v0, vTurn);
     if (veh.routeIdx >= veh.route.length - 1 || dist > TURN_SLOWDOWN_M) return v0;
     const next = this.links[veh.route[veh.routeIdx + 1]];
     if (angleBetweenDeg(link.headingEnd, next.headingStart) < TURN_ANGLE_DEG) return v0;
     // Past the stop line (on the turn itself) `dist` is negative: hold turning
     // speed. Extrapolating the ramp would ask for a speed below zero and stall
     // the vehicle inside the junction, holding its reservation.
-    return Math.min(v0, TURN_SPEED_MPS + (Math.max(0, dist) / TURN_SLOWDOWN_M) * (v0 - TURN_SPEED_MPS));
+    return Math.min(v0, vTurn + (Math.max(0, dist) / TURN_SLOWDOWN_M) * (v0 - vTurn));
   }
 
   /** Advances the simulation by one step. */
@@ -2219,7 +2411,12 @@ export class TrafficMicroSim {
             const signal = this.signalState(link.index);
             const distance = queuedBehind ? Infinity : veh.connector.start - veh.pos;
             const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
-            if (signal === 'red' || (signal === 'amber' && canStop) ||
+            // At amber or red a vehicle that can still stop gives its grant back; one past the
+            // point where it can stop goes on (into the all-red), as on amber. Making it stop at
+            // red anyway braked it far harder than it can, at its line: and a follower that had
+            // entered a short link behind it, the lane counted as left by a vehicle that could
+            // no longer stop (packedBackStaying), was left standing across the junction behind
+            if (((signal === 'red' || signal === 'amber') && canStop) ||
               (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true)) ||
               (canStop && !veh.pairCross && !queuedBehind && this.lostExitRoom(veh))) this.revokeGrant(veh);
           }
@@ -2396,7 +2593,7 @@ export class TrafficMicroSim {
         if (!front || front.v >= 0.5 || front.grantLane !== null || front.routeIdx >= front.route.length - 1 || !front.hold) continue;
         let n = 0;
         for (const v of lane) { if (v.v >= 1) break; n++; }
-        const cause: HoldCause = front.hold === 'signal' ? 'signal' : front.hold === 'room' || front.hold === 'room-wait' ? 'blocked' : front.hold === 'give-way' ? 'giveWay' : 'conflict';
+        const cause: HoldCause = front.hold === 'signal' ? 'signal' : front.hold === 'room' || front.hold === 'room-wait' || front.hold === 'keep-clear' ? 'blocked' : front.hold === 'give-way' ? 'giveWay' : 'conflict';
         a.hold[cause][link.index] += n * dt;
         if (cause === 'blocked' && front.holdNext !== undefined) {
           const m = a.blockedBy.get(link.index) ?? a.blockedBy.set(link.index, new Map()).get(link.index)!;
@@ -2689,7 +2886,7 @@ export class TrafficMicroSim {
       case 'signal': cause = 'redSignal'; break;
       case 'give-way': cause = 'priorityGap'; break;
       case 'conflict': cause = 'crossingTraffic'; break;
-      case 'room': case 'room-wait': cause = 'blockedExit'; break;
+      case 'room': case 'room-wait': case 'keep-clear': cause = 'blockedExit'; break;
       default: cause = 'other';
     }
     return { place, cause };
