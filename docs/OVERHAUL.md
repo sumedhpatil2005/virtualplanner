@@ -830,7 +830,7 @@ User report (screenshot not received): Sangamwadi Bridge, *Through the day*: mor
 - **What the figures are:** demand = the assignment's veh/h on the road's links (both directions summed in the row); got through = vehicles entering the road's links during the counted window, length-weighted (includes vehicles still on it at the end); speed = road length over the mean link traversal time of vehicles that completed each link.
 - **Level of service** is Indo-HCM urban-street LOS on travel speed / free-flow speed for each direction, F also when the assigned demand exceeds capacity and under 90% of it got through; the road's status is the worse direction. It is measured speed, not demand v/c, except in that forced case.
 
-### Root causes and fixes (`9f35cca`, `<docs commit>`)
+### Root causes and fixes (`9f35cca`, `c0ffafc`)
 
 1. **The row showed throughput as if it were the road's traffic, with no demand beside it** (`RoadAnalysisPanel.tsx`, new `timeOfDayView.ts`). Each row now shows: hour and factor ("×0.70 of the 19:00 peak"), *Demand* (assigned veh/h) and *Got through* (simulated veh/h) as two bars on one scale, the speed of the direction the status comes from with its free-flow speed, the level of service and what set it ("LOS F: speed 18% of free-flow" or "LOS F: demand 1.22× capacity, 62% of it got through"), the unserved veh/h and why (share that got into the neighbourhood, vehicles still waiting at its edge, gridlock removals), and "Held by a queue traced to <junction> (n/n runs)" when the runs agree on a traced queue. Under the rows, from the rows only: "Congested in all n periods…" with the traced junction and the night demand as a share of capacity, "the simulated traffic is about the same … while the demand ranges …" when throughput is capped, and "Less got through at the peak than at midday …" when it falls with more demand. "Per direction and per run" lists every period × direction with each seed's figures.
 2. **One seed per period** (seed 42) while the panel above uses three: a period could disagree with the analysis at the same hour, and run-to-run spread was invisible. The rows now use the analysis seeds (42, 7, 11); the 09:00 row equals the analysis at 09:00 (test).
@@ -841,9 +841,11 @@ User report (screenshot not received): Sangamwadi Bridge, *Through the day*: mor
 
 Tests: `TimeOfDay.test.ts` (4; the two engine tests fail on the old `SimulationMode`), opt-in harness `DayInvestigation.test.ts` (`DAY_INV=1`, options `DAY_SCALE`, `DAY_DROP`, `DAY_LANES`, `DAY_SEEDS`, `DAY_ONLY`).
 
+Checks: `npx tsc -b` clean; `npx vitest run` 460 passed, 4 skipped (was 456 / 3; +4 in `TimeOfDay.test.ts`, +1 skipped opt-in harness); `TimeProfileLoad.test.ts` now passes repeatedly (it failed 2 of 3 runs on the base commit); `npx oxlint` 0 errors, 5 old warnings; `npx vite build` succeeds.
+
 ### Measured in the browser (2026-11-06)
 
-Production build of the worktree, headless Chromium (SwiftShader) on 2 shared CPUs, backend on a database copy, Cesium render loop stopped and canvas hidden. Sangamwadi Bridge, area 1 km, neighbourhood 700 m, seeds 42 / 7 / 11, weekday, Details tab never opened. Values read from `simMode.getState().timeline` and the DOM; scripts and JSON in `vp-wt-day-e2e/`, screenshots `vp-overhaul-shots/day-final-*.png` (working files, not in the repository).
+Production build of the worktree, headless Chromium (SwiftShader) on 2 shared CPUs, backend on a database copy, Cesium render loop stopped and canvas hidden. Sangamwadi Bridge, area 1 km, neighbourhood 700 m, seeds 42 / 7 / 11, weekday, Details tab never opened. Values read from `simMode.getState().timeline` and the DOM; scripts and JSON in `vp-wt-day-e2e/`, screenshots `vp-overhaul-shots/day-final-*.png`, all viewed (`day-final-sangamwadi-1km-demand-x3.png` is from the build before the last table-layout change, so its per-run figures wrap; figures identical) (working files, not in the repository).
 
 **Existing demand (estimate, 10,800 veh/h at the peak):** 87–145 s for the four periods (load from other sessions varied).
 
