@@ -35,6 +35,9 @@ export const STUDY_ROLE_COLORS: Record<SegmentRole, string> = {
   upstream: '#fbbf24',
 };
 
+/** Width of the selected road's glow (a road highlight drawn over it must be wider to show). */
+export const SEED_GLOW_WIDTH_PX = 16;
+
 export const STUDY_BOUNDARY_COLORS: Record<BoundaryKind, string> = {
   entry: '#fbbf24',
   exit: '#34d399',
@@ -300,7 +303,7 @@ export class StudyAreaVisualizer {
       this.seedEntities.set(s.key, ds.entities.add({
         polyline: {
           positions: s.coordinates.map(c => scenePoint(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
-          width: 16,
+          width: SEED_GLOW_WIDTH_PX,
           material: this.pulsingGlow(seedColor),
         },
       }));

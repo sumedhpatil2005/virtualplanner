@@ -4,6 +4,8 @@ import {
   GeometryInstance,
   PolylineGeometry,
   PolylineColorAppearance,
+  PolylineMaterialAppearance,
+  Material,
   ColorGeometryInstanceAttribute,
   Color,
 } from 'cesium';
@@ -21,10 +23,17 @@ import { scenePoint } from '../../terrain/groundHeight';
  */
 export type RoadHighlightKind = 'lane-scope' | 'binding';
 
-const STYLE: Record<RoadHighlightKind, { css: string; width: number }> = {
+/**
+ * `binding` sits on the selected road in Simulate, under its 16 px seed glow, among
+ * study-area lines whose upstream colour is the same amber (StudyAreaVisualizer):
+ * drawn 9 px wide and plain, it was hidden (merged-build browser check, 2026-11-06).
+ * It is now wider than the glow, with a dark outline that sets it apart.
+ */
+export const ROAD_HIGHLIGHT_STYLE: Record<RoadHighlightKind, { css: string; width: number; outline?: { css: string; widthPx: number } }> = {
   'lane-scope': { css: '#e879f9', width: 9 },
-  binding: { css: '#fbbf24', width: 9 },
+  binding: { css: '#fbbf24', width: 22, outline: { css: '#0f172a', widthPx: 5 } },
 };
+const STYLE = ROAD_HIGHLIGHT_STYLE;
 const LIFT_M = 2.5;
 
 export class RoadHighlight {
@@ -52,14 +61,21 @@ export class RoadHighlight {
     if (!viewer || viewer.isDestroyed()) return;
     const style = STYLE[kind];
     const color = ColorGeometryInstanceAttribute.fromColor(Color.fromCssColorString(style.css).withAlpha(0.95));
+    const renderState = { depthTest: { enabled: false }, depthMask: false };
+    const outline = style.outline;
+    const vertexFormat = outline ? PolylineMaterialAppearance.VERTEX_FORMAT : PolylineColorAppearance.VERTEX_FORMAT;
     const instances = lines.map(r => new GeometryInstance({
       id: `road-highlight:${kind}:${r.id}`,
-      geometry: new PolylineGeometry({ positions: r.coordinates.map(p => scenePoint(p[0], p[1], (p[2] || 0) + LIFT_M)), width: style.width, vertexFormat: PolylineColorAppearance.VERTEX_FORMAT }),
-      attributes: { color },
+      geometry: new PolylineGeometry({ positions: r.coordinates.map(p => scenePoint(p[0], p[1], (p[2] || 0) + LIFT_M)), width: style.width, vertexFormat }),
+      ...(outline ? {} : { attributes: { color } }),
     }));
+    const appearance = outline
+      ? new PolylineMaterialAppearance({ translucent: true, renderState,
+        material: Material.fromType('PolylineOutline', { color: Color.fromCssColorString(style.css), outlineColor: Color.fromCssColorString(outline.css), outlineWidth: outline.widthPx }) })
+      : new PolylineColorAppearance({ translucent: true, renderState });
     this.primitive = viewer.scene.primitives.add(new Primitive({
       geometryInstances: instances,
-      appearance: new PolylineColorAppearance({ translucent: true, renderState: { depthTest: { enabled: false }, depthMask: false } }),
+      appearance,
       asynchronous: false,
       allowPicking: false,
     }));
