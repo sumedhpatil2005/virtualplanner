@@ -87,12 +87,14 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const period = DAY_PERIODS.find(p => p.id === periodOfHour(hour))?.label ?? hourLabel(hour);
   const suggestions = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
   return (
-    <div className={`space-y-5 ${stale ? 'opacity-60' : ''}`} data-testid="understand-view">
+    <div className="space-y-5">
+      {/* Outside the dimmed result, so the notice itself keeps full contrast */}
       {sim.analysis.outdated && (
         <p role="status" data-testid="analysis-outdated" className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           The network changed since this result. It is being re-run on the edited roads.
         </p>
       )}
+    <div className={`space-y-5 ${stale ? 'opacity-60' : ''}`} data-testid="understand-view">
       <StatusHeader r={r} when={`${period} · ${hourLabel(hour)} ${sim.timeOfDay.day}`} badges={<DataBadges r={r} proposal={sim.comparison.showingProposal} />} />
       <WorstKpis r={r} />
       <DirectionsGrid r={r} heading={heading} focus={sim.directionFocus} actions={actions} />
@@ -118,6 +120,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
         <MethodNote onDetails={goDetails} />
       </div>
       <Button variant="primary" className="w-full" onClick={goImprove}>Next: improve &amp; compare →</Button>
+    </div>
     </div>
   );
 };

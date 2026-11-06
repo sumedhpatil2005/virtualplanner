@@ -246,6 +246,17 @@ describe('Simulate after a Build edit (SimulationMode: road cache, compiled grap
     await mode.runAnalysis();
     expect(mode.getState().analysis.key).toBe(key0);
     expect(read()).toEqual(first);
+
+    // Edit, then undo before the re-run lands: the shown result is current again, so it is not marked outdated
+    buildLaneEdit(DECK, 'lanesForward', 3);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    expect(mode.getState().analysis.outdated).toBe(true);
+    history.undo();
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    expect(mode.getState().analysis.key).toBe(key0);
+    expect(mode.getState().analysis.outdated).toBe(false);
     mode.dispose();
   }, 120000);
 });

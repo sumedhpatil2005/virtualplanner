@@ -680,7 +680,8 @@ export class SimulationMode {
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       this.setState({ area, corridor, error: null, seedRoadIds: area.seedRoadIds, section, speeds: this.speedReport });
-      // A kept result for another network or demand stays on show until its re-run lands: say so
+      // A kept result for another network or demand stays on show until its re-run lands: say so.
+      // An undo back to the shown result's network (before its re-run landed) makes it current again: clear the flag.
       const shown = this.state.analysis, key = this.analysisKey();
       // A result already computed for this exact network, demand and hour (e.g. after Undo or Redo of a Build edit) comes back at once (docs/OVERHAUL.md §16)
       const kept = shown.key !== key ? this.keptResults.get(key) : undefined;
@@ -688,7 +689,10 @@ export class SimulationMode {
         this.analysisNetworkKey = kept.networkKey;
         this.analysisStale = false;
         this.setState({ analysis: kept.analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
-      } else if (shown.output && !shown.outdated && shown.key !== key) this.setState({ analysis: { ...shown, outdated: true } });
+      } else {
+        const outdated = !!shown.output && shown.key !== key;
+        if (shown.output && !!shown.outdated !== outdated) this.setState({ analysis: { ...shown, outdated } });
+      }
       this.refreshCountedJunctions();
       this.visualizer.render(area, reveal, new Set(section?.segmentKeys ?? []));
       // The selected road is the subject: the camera goes to it, not the whole area
