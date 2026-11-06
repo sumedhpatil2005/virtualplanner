@@ -3,6 +3,7 @@ import type { MicroDemandTrip, VehicleKind } from './TrafficMicroSim';
 import { VEHICLE_TYPES } from './TrafficMicroSim';
 import { midblockCapacityPcu } from './roadParameters';
 import { indoHcmSaturationFlow } from './signalTiming';
+import { motorVehicleAccess } from '../editing/osmDrivability';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -33,6 +34,16 @@ import { indoHcmSaturationFlow } from './signalTiming';
  * Not modelled here: queues and spill-back (a link over capacity just costs
  * more), turn bans, signal coordination. Those are what the corridor
  * micro-simulation is for.
+ *
+ * Access restrictions (docs/OVERHAUL.md §17): a road OpenStreetMap tags as
+ * not open to the public (access, vehicle or motor_vehicle = private,
+ * destination, delivery, customers, permit, residents; a campus or gated
+ * service road) is used only at the start or the end of a trip, never as a
+ * through route. This is the OSRM car profile's routability rule (a turn from
+ * an unrestricted onto a restricted way costs max_turn_weight): entering a
+ * restricted run from a public road costs RESTRICTED_ENTRY_S, a prohibitive
+ * but finite cost, so a trip that can only reach its destination through one
+ * still gets a route.
  */
 
 export const BPR_ALPHA = 0.15;
@@ -40,6 +51,24 @@ export const BPR_BETA = 4;
 /** Assumed cycle and lost time per phase for signalised approaches in the assignment (s). The corridor simulation times signals by Webster. */
 export const ASSIGN_CYCLE_S = 120;
 export const ASSIGN_LOST_PER_PHASE_S = 4;
+/** OSM access values under which a road is for local access only (OSRM car profile, restricted_access_tag_list). */
+export const RESTRICTED_ACCESS = new Set(['private', 'destination', 'delivery', 'customers', 'permit', 'residents']);
+/**
+ * Generalised cost (s) of entering a restricted road from a public one. Prohibitive, so through routes avoid
+ * restricted roads whenever any public route exists; finite, so trips that start or end on one are still routed.
+ * The number of entries a trip makes is then fixed by the network's layout, not by the link costs, so it is left
+ * out of the reported times, the relative gap and the line search.
+ */
+export const RESTRICTED_ENTRY_S = 1e7;
+
+/** True for an OSM road that motor traffic may use only to reach places along it (private, destination, ...). */
+export function isAccessRestricted(road: DrivableObject | undefined): boolean {
+  if (road?.type !== 'road') return false;
+  const tags = road.osmProvenance?.originalTags;
+  if (!tags) return false;
+  const access = motorVehicleAccess(tags);
+  return !!access && RESTRICTED_ACCESS.has(access);
+}
 /** A signal belongs to a node within this distance (m), as in the micro-simulator. */
 const SIGNAL_MATCH_M = 35;
 const LANE_WIDTH_M = 3.5;
@@ -63,6 +92,8 @@ export interface AssignLink {
   stopLinePcu: number | null;
   gC: number | null;
   capacityPcu: number;
+  /** On a road open only for local access (isAccessRestricted): usable at the start or end of a trip, not through. */
+  restricted: boolean;
 }
 
 export interface AssignOd { from: number; to: number; veh: number; pcu: number; kinds: Map<VehicleKind, number> }
@@ -145,7 +176,7 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     }
     const t0 = e.length / (speed / 3.6) + sigDelay;
     return { index, id: e.id, segmentKey: segKey(e.id), roadId: e.roadId, from: idx(e.fromNodeId), to: idx(e.toNodeId), lengthM: e.length, lanes,
-      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity) };
+      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity), restricted: isAccessRestricted(road) };
   });
   // Outgoing links per node (CSR)
   const outStart = new Int32Array(nodes.length + 1);
@@ -203,7 +234,10 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
   const origins = [...byOrigin.keys()];
 
   const x = new Float64Array(L), xv = new Float64Array(L), y = new Float64Array(L), yv = new Float64Array(L), cost = new Float64Array(L);
-  const dist = new Float64Array(N), pred = new Int32Array(N);
+  // Search states per node: 0 = on public roads, 1 = on a restricted run entered at the trip's start or paid for
+  const S = links.some(l => l.restricted) ? 2 : 1;
+  const restricted = Uint8Array.from(links, l => (l.restricted ? 1 : 0));
+  const dist = new Float64Array(N * S), pred = new Int32Array(N * S), predState = new Int32Array(N * S);
   const cap = links.map(l => l.capacityPcu), base = links.map(l => l.t0);
   const pathKey = new Map<string, number>();
   const paths: Int32Array[] = [];
@@ -218,21 +252,33 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     const chosen = new Int32Array(ods.length).fill(-1);
     for (const orig of origins) {
       dist.fill(Infinity); pred.fill(-1);
-      dist[orig] = 0; heap.size = 0; heap.push(0, orig);
+      // A trip starts on a restricted run only where every road out of its origin is restricted (it starts inside)
+      let startState = 0;
+      if (S === 2 && outStart[orig + 1] > outStart[orig]) {
+        startState = 1;
+        for (let k = outStart[orig]; k < outStart[orig + 1]; k++) if (!restricted[outLinks[k]]) { startState = 0; break; }
+      }
+      const start = orig * S + startState;
+      dist[start] = 0; heap.size = 0; heap.push(0, start);
       while (heap.size) {
-        const dk = heap.topKey(), u = heap.pop();
-        if (dk > dist[u]) continue;
+        const dk = heap.topKey(), us = heap.pop();
+        if (dk > dist[us]) continue;
+        const u = S === 2 ? us >> 1 : us, inRestricted = S === 2 && (us & 1) === 1;
         for (let k = outStart[u]; k < outStart[u + 1]; k++) {
-          const li = outLinks[k], v = links[li].to, nd = dk + cost[li];
-          if (nd < dist[v]) { dist[v] = nd; pred[v] = li; heap.push(nd, v); }
+          const li = outLinks[k], r = restricted[li];
+          const vs = links[li].to * S + r;
+          const nd = dk + cost[li] + (r && !inRestricted ? RESTRICTED_ENTRY_S : 0);
+          if (nd < dist[vs]) { dist[vs] = nd; pred[vs] = li; predState[vs] = us; heap.push(nd, vs); }
         }
       }
       for (const oi of byOrigin.get(orig)!) {
         const od = ods[oi];
-        if (!Number.isFinite(dist[od.to])) continue;
+        let end = od.to * S;
+        if (S === 2 && dist[end + 1] < dist[end]) end++;
+        if (!Number.isFinite(dist[end])) continue;
         reachable[oi] = 1;
         scratch.length = 0;
-        for (let v = od.to; v !== orig; v = links[pred[v]].from) scratch.push(pred[v]);
+        for (let vs = end; vs !== start; vs = predState[vs]) scratch.push(pred[vs]);
         scratch.reverse();
         for (const li of scratch) { target[li] += od.pcu; targetVeh[li] += od.veh; }
         const key = scratch.join(',');

@@ -120,7 +120,18 @@ export interface QueueChain {
   seeds: number;
 }
 
-export interface Bottleneck { label: string; roadName: string; coordinates: [number, number, number]; vc: number; delayVehH: number; segmentKeys: string[]; atJunction: boolean }
+export interface Bottleneck {
+  label: string; roadName: string; coordinates: [number, number, number]; vc: number; delayVehH: number; segmentKeys: string[]; atJunction: boolean;
+  /**
+   * Share of the stretch's assigned traffic whose trip has no other route in the model network (0-1). Near 1, the
+   * v/c is demand forced through one link, not a choice among routes: a missing or disconnected road nearby, or more
+   * demand than the area's roads can carry across a cut (docs/OVERHAUL.md §17). Absent on older results.
+   */
+  noAlternativeShare?: number;
+}
+
+/** A stretch whose traffic mostly has no other route is labelled as such. */
+export const NO_ALTERNATIVE_LABEL_SHARE = 0.5;
 
 export interface RoadAnalysisResult {
   windowS: number;
@@ -445,6 +456,53 @@ export interface AreaContext {
   summary: RoadAnalysisResult['assignment'];
 }
 
+/**
+ * Share of a link's assigned vehicles whose OD has no route without it that the assignment would accept instead:
+ * none at all, or only through more roads closed to through traffic (access-restricted, entered from a public road)
+ * than its current route. Select-link on the stored paths, then a 0-1 search per origin counting restricted entries,
+ * with and without the link, under the assignment's rule (staticAssignment.ts).
+ */
+export function noAlternativeShare(res: AssignmentResult, linkIndex: number): number {
+  const sl = selectLink(res, new Set([linkIndex]));
+  const total = sl.byOd.reduce((n, x) => n + x.veh, 0);
+  if (total <= 0) return 0;
+  const N = res.nodes.length;
+  const out: number[][] = Array.from({ length: N }, () => []);
+  for (const l of res.links) out[l.from].push(l.index);
+  /** Fewest restricted entries to reach each node from `orig` (Infinity: unreachable), optionally without one link. */
+  const entries = (orig: number, without: number) => {
+    const d = new Float64Array(2 * N).fill(Infinity);
+    const startIn = out[orig].length > 0 && out[orig].every(li => res.links[li].restricted);
+    const start = 2 * orig + (startIn ? 1 : 0);
+    d[start] = 0;
+    const dq: number[] = [start];
+    let head = 0;
+    const front: number[] = [];
+    while (front.length || head < dq.length) {
+      const s = front.length ? front.pop()! : dq[head++];
+      const u = s >> 1, inR = (s & 1) === 1;
+      for (const li of out[u]) {
+        if (li === without) continue;
+        const r = res.links[li].restricted ? 1 : 0, w = r && !inR ? 1 : 0;
+        const t = 2 * res.links[li].to + r;
+        if (d[s] + w < d[t]) { d[t] = d[s] + w; if (w) dq.push(t); else front.push(t); }
+      }
+    }
+    const best = new Float64Array(N);
+    for (let v = 0; v < N; v++) best[v] = Math.min(d[2 * v], d[2 * v + 1]);
+    return best;
+  };
+  const cache = new Map<number, [Float64Array, Float64Array]>();
+  let forced = 0;
+  for (const { od, veh } of sl.byOd) {
+    const o = res.ods[od];
+    let e = cache.get(o.from);
+    if (!e) { e = [entries(o.from, -1), entries(o.from, linkIndex)]; cache.set(o.from, e); }
+    if (e[1][o.to] > e[0][o.to]) forced += veh;
+  }
+  return forced / total;
+}
+
 export function areaContext(res: AssignmentResult, area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, section: RoadSection, dirs: { linkIds: string[] }[], demandVph: number): AreaContext {
   const linkByAid = new Map(res.links.map(l => [l.id, l]));
   const segCoords = new Map(area.segments.map(s => [s.key, s.coordinates]));
@@ -531,14 +589,20 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
   const cand = res.links.map(l => ({ l, vc: res.volPcu[l.index] / Math.max(1, l.capacityPcu), extra: res.volVeh[l.index] * Math.max(0, res.timeS[l.index] - l.t0) / 3600 }))
     .filter(x => x.vc > 0.9 && x.extra > 0.5).sort((a, b) => b.extra - a.extra);
   const bottlenecks: Bottleneck[] = [];
+  const chosen: { name: string; vol: number }[] = [];
   for (const x of cand) {
     if (bottlenecks.length >= 6) break;
     const r = roads.get(x.l.roadId);
     const name = r?.name && !isGenericRoadName(r.name) ? r.name : 'Unnamed road';
     const c = res.nodeCoords[x.l.to];
     if (bottlenecks.some(b => distM(b.coordinates, c) < 250)) continue;
-    bottlenecks.push({ label: `${name}${x.l.stopLinePcu !== null ? ' at its signal' : ''}, ${compass(bearing(centre, c))} of the road, ${Math.round(distM(centre, c) / 100) * 100} m`, roadName: name, coordinates: c,
-      vc: x.vc, delayVehH: x.extra, segmentKeys: [x.l.segmentKey], atJunction: x.l.stopLinePcu !== null });
+    // Links of one chain carry the same flow: a second link of the same named road with the same volume is the same stretch
+    const vol = res.volPcu[x.l.index];
+    if (name !== 'Unnamed road' && chosen.some(b => b.name === name && Math.abs(b.vol - vol) <= 0.005 * Math.max(vol, 1))) continue;
+    chosen.push({ name, vol });
+    const noAlt = noAlternativeShare(res, x.l.index);
+    bottlenecks.push({ label: `${name}${x.l.stopLinePcu !== null ? ' at its signal' : ''}, ${compass(bearing(centre, c))} of the road, ${Math.round(distM(centre, c) / 100) * 100} m${noAlt >= NO_ALTERNATIVE_LABEL_SHARE ? ` (no other route in the model for ${Math.round(100 * noAlt)}% of its traffic)` : ''}`, roadName: name, coordinates: c,
+      vc: x.vc, delayVehH: x.extra, segmentKeys: [x.l.segmentKey], atJunction: x.l.stopLinePcu !== null, noAlternativeShare: noAlt });
   }
   return { directions, origins: places('from'), destinations: places('to'), composition: { throughShare: total ? through / total : 0, localShare: total ? 1 - through / total : 0 },
     selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks,
