@@ -20,7 +20,7 @@ describe('scenario comparison table', () => {
     expect(doc.querySelector('[data-testid="delta-before"]')!.textContent).toBe('389 s');
     expect(doc.querySelector('[data-testid="delta-after"]')!.textContent).toBe('376 s');
     const pill = doc.querySelector('[data-testid="change-pill"]')!;
-    expect(pill.textContent).toBe('-3%');
+    expect(pill.textContent).toBe('-3.3%');
     expect(pill.getAttribute('data-good')).toBe('true');
   });
   it('shows run agreement as a chip, amber when not every run agrees', () => {
@@ -42,6 +42,16 @@ describe('scenario comparison table', () => {
     const text = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html').body.textContent!;
     expect(text).not.toContain('%');
     expect(text).toContain('no change');
+  });
+  it('keeps one decimal under 10% so a change just under a noise threshold does not read as one above it', () => {
+    const html = renderToStaticMarkup(createElement(DeltaRows, { rows: [{ ...delta('Mean delay per trip', 174.76, 166.72), good: null }] }));
+    expect(new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html').querySelector('[data-testid="change-pill"]')!.textContent).toBe('-4.6%');
+  });
+  it('says no data, not no change, when a measure has no value', () => {
+    const d: Delta = { label: 'Worst junction delay at its ends', before: null, after: null, unit: 's', lowerIsBetter: true, change: null, good: null };
+    const html = renderToStaticMarkup(createElement(DeltaKpi, { d, label: 'End junction delay' }));
+    expect(html).toContain('no data');
+    expect(html).not.toContain('no change');
   });
   it('labels the proposal badge', () => {
     expect(renderToStaticMarkup(createElement(ProposalBadge))).toContain('Proposal');

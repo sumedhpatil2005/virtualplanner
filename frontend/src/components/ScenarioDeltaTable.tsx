@@ -14,9 +14,15 @@ const fmt = (n: number) => Math.round(n).toLocaleString();
 const fmtDeltaValue = (d: Delta, v: number | null) =>
   v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : d.unit === '%' ? '%' : d.unit === 'veh·h' ? ' veh·h' : ''}`;
 
-/** Change as a percentage, or null when it is too small to show. */
-const fmtChange = (d: Delta) =>
-  d.change !== null && Math.abs(d.change) >= 0.005 ? `${d.change > 0 ? '+' : ''}${Math.round(d.change * 100)}%` : null;
+/**
+ * Change as a percentage, or null when it is too small to show. Under 10% it keeps one decimal: the noise
+ * thresholds are 3–10%, and a −4.6% rounded to "−5%" in grey next to a green "−4%" read as a contradiction.
+ */
+const fmtChange = (d: Delta) => {
+  if (d.change === null || Math.abs(d.change) < 0.005) return null;
+  const pct = d.change * 100;
+  return `${pct > 0 ? '+' : ''}${Math.abs(pct) < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
+};
 
 const GOOD_TITLE = 'Better in every run, beyond the noise threshold';
 const BAD_TITLE = 'Worse in every run, beyond the noise threshold';
@@ -30,7 +36,7 @@ export const ChangePill: React.FC<{ d: Delta }> = ({ d }) => {
   return (
     <span data-testid="change-pill" data-good={String(d.good)} title={d.good === true ? GOOD_TITLE : d.good === false ? BAD_TITLE : NONE_TITLE}
       className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px text-[11px] font-semibold tabular-nums whitespace-nowrap ${cls}`}>
-      <Icon size={11} aria-hidden />{change ?? 'no change'}
+      <Icon size={11} aria-hidden />{change ?? (d.before === null || d.after === null ? 'no data' : 'no change')}
     </span>
   );
 };
