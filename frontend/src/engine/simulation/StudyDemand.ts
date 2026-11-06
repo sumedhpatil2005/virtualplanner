@@ -220,7 +220,10 @@ export function contentKey(value: unknown): string {
  * baseline (docs/OVERHAUL.md §14).
  */
 export function networkContentKey(roads: readonly unknown[], junctions: unknown, signalPoints: unknown): string {
-  const strip = (list: unknown) => Array.isArray(list) ? list.map(o => {
+  // In id order: undoing a deletion puts the road back at the end of the object list, the same network in another order
+  // (docs/OVERHAUL.md §19), which keyed apart, re-ran the analysis and read as a proposal against the baseline
+  const byId = (a: unknown, b: unknown) => { const x = String((a as { id?: unknown })?.id ?? ''), y = String((b as { id?: unknown })?.id ?? ''); return x < y ? -1 : x > y ? 1 : 0; };
+  const strip = (list: unknown) => Array.isArray(list) ? [...list].sort(byId).map(o => {
     if (!o || typeof o !== 'object') return o;
     const { createdAt: _c, updatedAt: _u, ...rest } = o as Record<string, unknown>;
     void _c; void _u;

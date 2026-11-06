@@ -147,6 +147,24 @@ describe('Build lane edits recompute the road analysis', () => {
     expect(a2.ctx.directions).toEqual(a0.ctx.directions);
   }, 60000);
 
+  it('undoing a deletion restores the original network key and result, although the road comes back at the end of the list', () => {
+    const r0 = simRoads(om), a0 = analyse(r0, 1);
+    const k0 = networkContentKey(r0, [], fx.signalPoints);
+    const piece = om.getById(EAST[0])!;
+    history.recordDelete(piece, 'Delete');
+    om.delete(EAST[0]);
+    expect(networkContentKey(simRoads(om), [], fx.signalPoints)).not.toBe(k0);
+    history.undo();
+    const r2 = simRoads(om);
+    expect(r2.map(r => r.id)).not.toEqual(r0.map(r => r.id));
+    expect(networkContentKey(r2, [], fx.signalPoints)).toBe(k0);
+    // The same loads link by link (link order follows road order, so compare by link id)
+    const a2 = analyse(r2, 2);
+    const byLink = (a: typeof a0) => new Map(a.res.links.map(l => [l.id, Math.round(a.res.volPcu[l.index] * 10) / 10]));
+    expect(byLink(a2)).toEqual(byLink(a0));
+    expect(a2.ctx.directions.map(d => [Math.round(d.midblockPcu), Math.round(d.demandPcu)])).toEqual(a0.ctx.directions.map(d => [Math.round(d.midblockPcu), Math.round(d.demandPcu)]));
+  }, 60000);
+
   it('an edit outside the study area changes nothing in it', () => {
     const a0 = analyse(simRoads(om), 1);
     const inArea = new Set([...a0.area.network.edges.values()].map(e => e.roadId));
