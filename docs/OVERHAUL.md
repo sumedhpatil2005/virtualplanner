@@ -691,3 +691,78 @@ With the network intact, the campus road now carries no through traffic. The 5�
 - The 959% is reproduced by construction (a piece removed). That the user's network had such a break is inferred from a figure-for-figure match: rows 1 and 2 at the same v/c, 887–970%, morning-level loads elsewhere. It is not observed. The user's project database and session were not available.
 - Signal positions are the 2026-11-03 OSM extract (85 points), not freshly loaded.
 - All volumes are model output on estimated edge demand (§5). They are not counts.
+
+## 18. Junction blocking and deadlocks
+
+**Observed (user report).** "Sometimes vehicles pile up inside intersections, stop moving and block the entire road."
+
+### Method
+
+Node/vitest probes outside the repository (`vp-overhaul/junction/scratch/`: `junctionProbe.scratch.ts`, `JunctionBox.scratch.test.ts`, `Merge.scratch.test.ts`) run the micro-simulation headless for 300 s warm-up + 1,500 s measured, seeds 42, 7 and 11, on:
+
+- the **Shivaji Bridge** neighbourhood as the analysis builds it (2026-11-04 dump of the running app: roads, 85 OSM signals, placed junctions, area demand at AM peak; 700 m corridor, 13,800 veh/h routed through it);
+- the **Sangamwadi Bridge** neighbourhood (`fixtures/sangamwadi.json`, correction layer, area demand without buildings; 9,743 veh/h);
+- synthetic junctions with a Pune-like mix (50% two-wheelers): a signalised crossroads (900 veh/h per approach, 40% turning; and 800 veh/h, 70% turning), an unsignalised arterial/local crossroads, a T-junction, and three junctions 35 m apart on an arterial (signal, priority, signal) loaded beyond what they pass.
+
+Every 5 simulated seconds the probe lists vehicles stopped (< 0.1 m/s) for over 60 s: inside a junction box (still driving the movement of the junction behind, `arriving`), with their body hanging back over the previous junction, or elsewhere; what each waits on (the vehicle ahead, a signal, no room ahead, a conflicting claim, giving way); the wait-for graph and its cycles; and where each blocked queue starts (following "no room" holds downstream). It also records, at every grant, whether the room on the far side was there or only projected; every gridlock removal (what the vehicle was held by); and stop-line discharge per approach lane. All figures are model output on estimated demand.
+
+**What "gridlock removals" are.** `TrafficMicroSim` removes the front vehicle of a lane after it has stood 180 s (`GRIDLOCK_S`), counts it, and frees its claims. That is a despawn, used as a reporting fallback; it is unchanged, nothing new of the kind was added, and it is counted before and after below.
+
+### Root causes (each in 3 of 3 seeds)
+
+1. **The keep-clear check counted room that could not exist.** Before clearing a vehicle into a junction, `tryGrant` asks for room on the exit lane: the movement's end, the vehicle's length and a standstill gap. It added to the free space how far the lane's last vehicle would roll on while this one reached the line and drove the turn, with no limit. A tail rolling at turning speed (4.5 m/s) was projected 20–35 m on even when it was itself entering a 10–13 m link already full. Each follower saw the one before still rolling, entered, and stopped inside the junction, keeping its claim on the box, so crossing movements were refused; between closely spaced junctions the blocked boxes formed rings. Evidence: of the vehicles that stood over a minute inside a box, the share whose grant rested on projected room (free space short by 9–37 m) was 706/723, 741/760 and 743/760 (Shivaji, seeds 42/7/11), 26/26, 26/26 and 52/52 (Sangamwadi), and all but the pairs riding abreast at the close junctions. Wait-for cycles through vehicles stopped in boxes: close junctions seed 42 (two boxes on a 35 m link, each holding the other's queue), Shivaji seeds 7 and 11.
+2. **Merging and crossing were not taken in turn.** Where two approaches that do not give way to each other feed one short lane, or cross, whichever kept the junction busy won every time: a dense turning stream on a 25–40 m movement always found room as its tail rolled on, or kept a claim on the box, while the straight-on queue beside it was refused until its front vehicle was removed. Found at Sangamwadi once the first cause was fixed (`osm_1118894175` into its 13 m, three-lane link, the turning stream from `osm_215075336`; 9, 7 and 1 removals there in seeds 7, 11 and 42), and reproduced on its own: a 13 m link fed by 1,800 veh/h turning and 500 veh/h straight on, both of one class, removes the straight-on front after 180 s in every seed before the fix (3, 3 and 5 removals).
+
+Not causes, as far as the probes show: signal handling (isolated signalised crossroads had no vehicle stuck in a box, no removal and no cycle before the fix, and are identical to the digit after it); amber (a vehicle that can stop does; a cleared platoon gives grants back at red, as before); missing lane connections (lanes map across every junction by `mappedLanes`, and no stuck vehicle in any run was a front vehicle with no movement onward; not examined further). Lane changing at the junction entry does not exist in this model (vehicles keep their lane; a blocked target lane falls back to another lane of the next link at the grant).
+
+### Fix (`TrafficMicroSim.ts`, commit `bd97cdf`)
+
+- `exitRoom`: the rolling tail counts only as far as the lane can close up, its vehicles packed nose to tail at standstill gaps against the lane's own stop line (`packedBack`; a rider abreast takes no length), unless the lane's front vehicle is leaving it (cleared through the next junction, or leaving the area). The room asked for is unchanged: past the movement's end, the vehicle's length and its standstill gap. This applies at signals too: green does not clear a vehicle whose exit is full.
+- `lostExitRoom`: a cleared vehicle that can still stop (comfortable deceleration) gives its grant back when the exit lane can no longer take it even closed up. Only the lane's capacity is judged here, not the tail's motion, so a discharging platoon is not held back. Room promised to vehicles cleared earlier is counted in grant order (`Reservation.seq`), so a follower's grant never revokes the leader's.
+- `heldFor` / `owesTurn`: a front vehicle held at its line for over `MERGE_TURN_S` = 60 s, for room in a lane another approach also feeds or by a crossing movement, gets the next turn: other approaches may not take that lane or start a movement across its path. Only approaches that do not give way to it are held (at a priority junction the main road keeps its priority; at a signal only a green approach counts), and waits are strictly ordered, so two approaches can never each wait for the other. A vehicle giving way under gap acceptance is not covered: that is priority, not a deadlock.
+
+Tests: `JunctionBlocking.test.ts` (2). The closely spaced junctions, seeds 42 and 11, 900 s: no vehicle stands in a box for over a minute (before: 368 vehicle-seconds, longest 160 s, 5 deadlock events), and the network stays over-loaded (trips finished under 70% of arrivals, mean delay over 120 s). The short-link merge, seeds 42 and 11, 1,200 s: no removal (before: 3 and 5), the straight-on front waits under 120 s (before: 180 s, then removed), trips finished unchanged within noise. Both fail on `29f1ca4`. Full suite 429 passed, 5 skipped (the 2 extra skips are the opt-in scratch probes, which are not committed).
+
+### Before and after (same scenarios, seeds and demand; `29f1ca4` vs `bd97cdf`; 1,500 s measured)
+
+| Scenario | Standing > 60 s in a box (veh-min, 3 seeds) | Removals per seed | Trips finished (mean) | Mean delay s | Standing > 60 s anywhere (veh-min) | Max 5-min PCU/h per lane | Cycles through boxes |
+|---|---|---|---|---|---|---|---|
+| Shivaji Bridge | 3,946 → 20 | 378/399/373 → 246/240/254 | 2,433 → 2,533 (+4.1%) | 221 → 202 | 50,329 → 45,854 | 1,655 → 1,420 | 2 → 0 |
+| Sangamwadi Bridge | 47.8 → 0 | 1/3/1 → 0/0/0 | 3,610 → 3,531 (−2.2%) | 103 → 122 | 756 → 354 | 1,552 → 1,526 | 0 → 0 |
+| 3 junctions 35 m apart | 44.5 → 0.3 | 47/16/29 → 10/7/3 | 798 → 1,080 (+35%) | 443 → 386 | 21,676 → 16,735 | 764 → 846 | 1 → 0 |
+| Signalised crossroads (both loads) | 0 → 0 | 0 → 0 | unchanged to the digit | unchanged | unchanged | 772 / 704, unchanged | 0 → 0 |
+| Unsignalised crossroads | 0 → 0 | 0/0/1 → 0/0/1 | 1,068 → 1,046 (−2.1%) | 98 → 88 | 1,505 → 1,632 | 929 → 906 | 0 → 0 |
+| T-junction | 0 → 0 | 0 → 0 | 1,158 → 1,154 | 113 → 108 | 419 → 692 | 1,165 → 1,064 | 0 → 0 |
+
+(Seed order 42/7/11. The probe also reports "give-way" pairs between two side roads as cycles; those edges are approximations, both side roads wait for main-road traffic that keeps moving, so they are left out of the cycle column.)
+
+- **Congestion stays where demand exceeds what the junctions pass.** Shivaji still holds ~1,900 vehicles in the corridor with ~1,950 waiting at its edge, and a mean delay of 200 s; the 35 m junctions still finish only about 60% of arrivals. The queues now stand on the approaches instead of inside the boxes. The deadlock detector (nothing crossing for 60 s with two approaches standing) still fires 75–89 times per Shivaji run (84–99 before): it counts spill-back from a full exit, which is real congestion, as well as boxes blocked from inside.
+- **Junction capacity is not inflated.** The highest stop-line discharge over any 5 minutes on any approach lane fell or stayed level in every scenario and is at most 1,526 PCU/h per lane, under a 1,800–1,900 veh/h/lane saturation flow. Peaks over a single minute reached 2,100 vehicles/h per lane before and after (half of them two-wheelers, often abreast).
+- **Sangamwadi pays for the turns in throughput.** Trips finished −2.2% and delay +19 s: the straight-on queue now gets its turn into the 13 m link, and each turn costs the turning stream the time its 25–40 m movement takes to clear, longer than the 2 s a real driver would need to slot in (the model keeps a lane strictly single-file, so a merging vehicle goes behind the last vehicle still on the turn). Before, the straight-on front was removed instead.
+
+### Browser check (Sangamwadi Bridge, 09:00)
+
+Headless Chromium (SwiftShader), production builds of `29f1ca4` and `bd97cdf` served statically, backend on a copy of the project database (`vp-overhaul/junction/browser/`). Sangamwadi deck `osm_208004768`, 1,000 m, 09:00, seeds 42/7/11, the app's own analysis (300 s warm-up, 900 s counted); values read from the page state, no screenshots. Overpass was unreachable, so roads came from the database. This neighbourhood carries 9,500 veh/h (the database has buildings, so it is not the same demand as the probe above). Model output.
+
+| | before (`29f1ca4`) | after (`bd97cdf`) |
+|---|---|---|
+| Gridlock removals per seed | 0 / 4 / 3 | 1 / 3 / 1 |
+| Trips finished per seed | 2,420 / 2,348 / 2,309 | 2,400 / 2,291 / 2,281 (−1.6%) |
+| Mean delay per seed (s) | 86 / 94 / 85 | 94 / 101 / 98 |
+| Share of demand that got on, per seed | 93 / 94 / 94% | 93 / 90 / 90% |
+| Deck, eastbound / westbound | 36 km/h LOS C / 23 km/h LOS B | 36 km/h LOS C / 24 km/h LOS B |
+| Analysis time | 16 s | 20 s |
+
+The direction matches the probe (fewer removals, slightly fewer trips and more delay on this neighbourhood); the removal counts are too small for three seeds to size the change. Vehicles standing inside boxes are not exposed in the page state, so that measure was not read in the browser. Shivaji Bridge was not run in the browser: its roads come from Overpass, which the sandbox cannot reach.
+
+### Gridlock removals that remain (Shivaji, 3 of 3 seeds)
+
+About 247 removals per 1,500 s at Shivaji (≈590 veh/h, 4% of the 13,800 veh/h routed through), from ≈383 (≈920 veh/h). Following each blocked queue downstream to where it starts: 66–70% start at a **priority junction where a side-road vehicle is refused because main-road traffic is moving through the box** (79–81% of the claims holding them are main-road vehicles already crossing), 16–20% at a vehicle that is moving (stop-and-go), 7–8% at a red signal, and none in a cycle. This is the model's priority rule doing what it says: the side road gets no gap in a dense main-road stream, its queue reaches back, and its front vehicle is removed at 180 s. In Pune a side-road driver would force a gap long before; the model has no forced-gap or priority-reversal behaviour. Adding one would change priority-junction capacity, which is calibrated against counts (CALIBRATION.md), so it was not done here.
+
+### Uncertainty, measured vs estimated
+
+- Everything above is simulation output on estimated demand (Measured: nothing; the junction counts in CALIBRATION.md were not re-run).
+- Three seeds and two real places. The causes are stated where all three seeds agree; the sizes vary by seed (Sangamwadi delay +11 to +25 s).
+- A vehicle longer than a very short link (a bus on a 9 m link) still hangs back over the previous junction while it waits: 20 vehicle-minutes per three Shivaji runs (432 before). The room check counts an empty short link as having room, and looking two links ahead was not attempted.
+- A few vehicles still stop inside a box at Shivaji (4–6 per run), cleared on the rolling tail of a lane whose front vehicle was leaving it and was then held at its own line.
+- `MERGE_TURN_S` = 60 s is a judgement, not a calibrated value: long enough that ordinary platoon closing-up changes nothing (isolated junctions unchanged), well under the 180 s removal.
