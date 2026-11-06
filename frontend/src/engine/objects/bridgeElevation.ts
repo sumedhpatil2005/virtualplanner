@@ -392,7 +392,7 @@ function lowerStale(changed: Map<RoadObject, BridgeGeometry>, notApproaches: rea
  * vertices are added to roads that do not rise).
  */
 function record(changed: Map<RoadObject, BridgeGeometry>, r: RoadObject, g: BridgeGeometry, groundApproach = false) {
-  if (groundApproach && g.coordinates.every(p => p[2] < 1e-6)) {
+  if (groundApproach && g.coordinates.every(p => Math.abs(p[2]) < 1e-6)) {
     if (r.coordinates.every(p => Math.abs(p[2] || 0) < 1e-9)) return;
     g = identity(r.coordinates.map(p => [p[0], p[1], 0] as [number, number, number]));
   }

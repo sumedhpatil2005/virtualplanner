@@ -77,6 +77,28 @@ describe('Flyover approaches the user edited', () => {
   });
 });
 
+describe('Underpasses and their approaches', () => {
+  // An underpass (layer -1) under a cross street, with ground approaches at both ends: the approaches ramp down to it.
+  // Before, an approach's descent (negative heights) was taken for "stays flat" and dropped, so the approaches stayed
+  // at 0 while the underpass ends were 3.5-6.5 m down, and the underpass was cut off from the network (Sadguru Morya
+  // Gosavi, Bankimchandra Chatopadhyay Path, Mula Road and G. D. Madgulkar underpasses near Shivajinagar).
+  it('the approaches descend to the underpass and the network joins them', () => {
+    const west = osmRoad('west', [pt(-300, 0), pt(-150, 0), pt(0, 0)]);
+    const cut = { ...osmRoad('cut', [pt(0, 0), pt(150, 0), pt(300, 0)]), osmProvenance: { osmId: 88, originalTags: { highway: 'trunk', layer: '-1' }, layer: -1, bridge: false, tunnel: false, roundabout: false } } as RoadObject;
+    const east = osmRoad('east', [pt(300, 0), pt(450, 0), pt(600, 0)]);
+    const over = osmRoad('over', [pt(150, -200), pt(150, 200)]);
+    const roads = [west, cut, east, over];
+    liftOsmBridges(roads);
+    const z = (id: string, end: 'first' | 'last') => { const c = roads.find(r => r.id === id)!.coordinates; return (end === 'first' ? c[0] : c.at(-1)!)[2]; };
+    expect(Math.min(...roads.find(r => r.id === 'cut')!.coordinates.map(p => p[2]))).toBeLessThan(-5);
+    expect(z('west', 'last')).toBeCloseTo(z('cut', 'first'), 6);
+    expect(z('east', 'first')).toBeCloseTo(z('cut', 'last'), 6);
+    expect(joined(roads, 'west', 'cut')).toBe(true);
+    expect(joined(roads, 'cut', 'east')).toBe(true);
+    expect(joined(roads, 'over', 'cut')).toBe(false);
+  });
+});
+
 // ── Forced overloads and the gaps behind them ────────────────────────────────
 
 
