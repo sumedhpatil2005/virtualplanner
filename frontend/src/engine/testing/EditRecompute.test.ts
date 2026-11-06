@@ -247,8 +247,19 @@ describe('Simulate after a Build edit (SimulationMode: road cache, compiled grap
     expect(mode.getState().analysis.key).toBe(key0);
     expect(read()).toEqual(first);
 
-    // Edit, then undo before the re-run lands: the shown result is current again, so it is not marked outdated
+    // Redo the same edit: its result is kept by analysis key (docs §16), so it comes back at once, not outdated
     buildLaneEdit(DECK, 'lanesForward', 3);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    expect(mode.getState().analysis.key).toBe(key1);
+    expect(mode.getState().analysis.outdated).toBeFalsy();
+    history.undo();
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    expect(mode.getState().analysis.key).toBe(key0);
+
+    // An edit with no kept result, then undo before its re-run lands: the shown result is current again, so it is not marked outdated
+    buildLaneEdit(DECK, 'lanesForward', 4);
     mode.networkChanged();
     await new Promise(r => setTimeout(r, 400));
     expect(mode.getState().analysis.outdated).toBe(true);

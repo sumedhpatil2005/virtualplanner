@@ -245,7 +245,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     : { level: 'low', text: `The ${nSeeds} runs do not all agree on the direction of the changes; run more seeds or treat the result as no clear change.` };
   const caveats: string[] = [];
   if (kind === 'development') caveats.push(`Land use changed too: demand went from ${Math.round(demand.before).toLocaleString()} to ${Math.round(demand.after).toLocaleString()} veh/h, so differences mix the new demand with any road changes.`);
-  caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (10% for junction delay, 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
+  caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange,
     laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks),
