@@ -811,77 +811,143 @@ Browser (measured on the page, 2026-11-06; roads from the database, Overpass HTT
 - The 500 m rule is distance-only: it can name a nearby gap the traffic does not use, or miss a farther one that matters. A rule based on which paths would use the missing link needs the network without the gap, which is exactly what is unknown.
 - Edge demand is still not limited by what the area's boundary roads can carry, so forced overloads remain possible on intact networks (they are now labelled as such).
 
-## 22. Through the day
+## 20. Vehicle accounting, priority gaps and long vehicles
 
-User report (screenshot not received): Sangamwadi Bridge, *Through the day*: morning 1,112 veh/h at 3 km/h Severe, midday 1,152 veh/h at 3 km/h Severe, evening 1,144 veh/h at 3 km/h Severe, night 844 veh/h at 12 km/h Congested. Questions: why the same speed and severe congestion all day, and why midday carries more than the morning.
+Follow-up to §18. Figures are model output on estimated demand (09:00) unless marked measured; headless figures come
+from vitest runs of the micro-simulation on the project's Shivajinagar and Sangamwadi test networks, seeds 42 / 7 / 11.
 
-### What was observed
+### What the "removals" were (correction)
+An earlier summary of this work said no vehicle is deleted. That was wrong: as §18 describes, `removeStuckVehicles`
+was on by default, and a lane's front vehicle that had stood 180 s (`GRIDLOCK_S`) was deleted and counted as a
+"gridlock removal". Those vehicles left the
+network without finishing their trip, so the analysis under-counted queues exactly where the network was jammed.
+Removal is now **off by default** (`4000000`): gridlock stays on the roads and is reported with its place and cause.
+The option remains for experiments.
 
-- **Not reproduced on the data available.** On a copy of the main checkout's database (18,273 roads; the local OSM index answered the area's road request, Overpass not used) and on the 1 km test fixture (`fixtures/sangamwadi.json`), the bridge is "Some delay" at both peaks and midday and "Flowing" at night (table below). The user's database and session were not available, so which inputs made their road saturated all day is not known.
-- **The user's pattern does appear once demand exceeds what the neighbourhood can pass.** With the demand set to a hypothetical 300% (Details → demand settings), three periods are Severe, the traffic that *got through* is nearly flat (2,522–2,901 veh/h) while the demand routed onto the bridge falls from 9,313 to 6,461 veh/h, and **midday moves more than the peaks** (2,901 against 2,522): the user's two observations together. In that run the westbound queue is mostly stopped behind a full road ahead (189 of 312 s/veh), and 53% of the traffic routed into the neighbourhood never got onto its roads (5,577 vehicles still waiting at its edge at the end). Past capacity, queues back through junctions and block them, so more demand moves fewer vehicles.
-- Before this change the row showed only the simulated traffic (`totalVph`, the vehicles that drove the road) labelled "veh/h", next to the speed of the *busier* direction and the status of the *worst* one. A capped figure that does not follow the hour, a speed from one direction and a status from the other, read as an error.
+### Vehicle accounting (`1447938`, `cb66d99`)
+Every vehicle the simulation creates is accounted for, per run:
+- **generated** = **waiting at the edge** (never got onto the network) + **entered**;
+- **entered** = **finished at a destination** inside the area + **left at the edge** + **removed** (by place: in the
+  junction box / at the approach line / on the link; by cause: waiting for a gap, held by crossing traffic, red signal,
+  no room ahead, lane change, no connection, other) + **on the network now**;
+- timeouts are always 0 (the model has no maximum trip time).
 
-### What was checked and found correct
+Also counted: **gridlock events** (a front vehicle reaching 180 s standing, counted once each, removed or not),
+**gridlocked now** (front vehicles standing ≥ 180 s at the end) and `gridlockSites()` (junctions holding them, with
+vehicle count, longest wait and causes). The analysis result carries the counters per seed and the worst sites;
+Understand shows a **Vehicle accounting** table (seed, entered, finished, on roads, at edge, gridlocked during /
+at end, removed) with a conservation check and the worst gridlock site; the live view's figures (Details → Live view
+figures) show the accounting line and a notice while vehicles stand gridlocked. Tests: `VehicleAccounting.test.ts`
+(conservation in every run, the default is off).
 
-- **Each period uses its own hour factor** (printed per row, browser and headless): 09:00 ×1.0000 of the 09:00 peak, 14:00 ×0.6956 and 23:00 ×0.1831 of the 19:00 peak, 19:00 ×1.0000. Area demand 10,800 / 7,512 / 10,800 / 1,977 veh/h (420 OD pairs) on the database copy; the area assignment's demand equals it in every period.
-- **Nothing is reused or scaled between periods.** Each period runs `runAnalysisJob` with its own trips × factor: a new user-equilibrium assignment of the whole area, a new corridor plan cut from it, and new micro-simulations from an empty network (300 s warm-up, 900 s counted). The rows carried no cache; the main analysis's kept-results cache (key includes hour, factor, profile-loaded, seeds) is not used by them.
-- **Profile loading:** with the Details tab never opened, the profile was `loading` on entering Simulate and `ready` before the first analysis (`timeProfile: loaded`), and the time-of-day runs wait for it.
-- **Profile source** (`backend/data/diurnal/pune_hourly_profile_v1.json`): 08:00–19:00 are measured (Gunjan Chowk counts, Thakur et al. 2017; 09:00–11:00 averaged with the Mendeley Pune CCTV counts, Jan 2023); all other hours, including 23:00, are estimated from TomTom 2025 congestion by hour (BPR-type inversion anchored to the measured hours). So the evening factor rests on counts and the night factor (0.18 of 19:00) is an estimate.
-- **What the figures are:** demand = the assignment's veh/h on the road's links (both directions summed in the row); got through = vehicles entering the road's links during the counted window, length-weighted (includes vehicles still on it at the end); speed = road length over the mean link traversal time of vehicles that completed each link.
-- **Level of service** is Indo-HCM urban-street LOS on travel speed / free-flow speed for each direction, F also when the assigned demand exceeds capacity and under 90% of it got through; the road's status is the worse direction. It is measured speed, not demand v/c, except in that forced case.
+### Root causes found
+1. **Real deadlocks through withdrawn clearance on very short links.** On 9–15 m links between two junctions a
+   vehicle could be cleared to cross, lose its clearance when the link ahead filled, and stop across the junction box
+   behind; two such links feeding each other locked.
+2. **Turn-taking spread jams.** Turn-taking (a queue gets its turn against a dense stream) was also granted against
+   priority and to vehicles held by a full road ahead, which let blocked traffic enter boxes it could not leave.
+3. **Whole-path claims on long turns blocked side roads.** A turning vehicle reserved its whole path through the
+   junction until it left, so side-road traffic waited for conflicts long past.
+4. **Side roads waited far too long for gaps.** Measured from the simulated grants, the side road's effective critical
+   gap was 7.3–8.5 s in all seeds, against 3.8 s in Indo-HCM 2017 for a minor-road movement.
+5. **Long vehicles stood across junctions.** A 12 m bus or truck entering a link shorter than itself could not wait
+   between two stop lines without blocking the junction behind; independently drawn signal offsets on such links
+   could keep the two greens apart for many cycles.
 
-### Root causes and fixes (`9f35cca`, `c0ffafc`)
+### Fixes
+- **Priority gap acceptance with impatience** (`da8ce51`): critical gap 3.8 s (Indo-HCM 2017) falling to a 3.0 s floor
+  over 40 s at the line; kinematic time-to-line of the oncoming vehicle; vehicles held at a line stop at it; follow-up
+  counts on the vehicle ahead accelerating away; a vehicle's claim on its movement ends once it is past the meeting
+  point (conflict-point timing); turn-taking never against priority and only for vehicles held by crossing traffic.
+- **Long vehicles** (`b18a928`, `b185010`, `3d6ee72`): a 12 m bus or truck enters a short link only if it can wait
+  there clear of the junction behind, or can drive through both junctions (next lane empty or leaving, green on
+  arrival, no gap to wait for, room beyond); a vehicle past its stopping point keeps its grant at red as at amber, and
+  a cleared vehicle counts as leaving its lane only if it beats the red; heavy vehicles turn at 11 km/h; bus length
+  12 m.
+- **Closely spaced signals coordinated** (`b18a928`, `bb6d12d`): signalised junctions joined by a link under 60 m run on
+  a common cycle (the group's longest) with offsets chosen so traffic released into each short link meets a green at
+  its far end (Signal Timing Manual, 2nd ed., NCHRP Report 812). Junctions with the project's own timing (placed
+  junctions with a set cycle, and edited junctions of §23) are excluded.
+- **Removal off by default** (`4000000`).
 
-1. **The row showed throughput as if it were the road's traffic, with no demand beside it** (`RoadAnalysisPanel.tsx`, new `timeOfDayView.ts`). Each row now shows: hour and factor ("×0.70 of the 19:00 peak"), *Demand* (assigned veh/h) and *Got through* (simulated veh/h) as two bars on one scale, the speed of the direction the status comes from with its free-flow speed, the level of service and what set it ("LOS F: speed 18% of free-flow" or "LOS F: demand 1.22× capacity, 62% of it got through"), the unserved veh/h and why (share that got into the neighbourhood, vehicles still waiting at its edge, gridlock removals), and "Held by a queue traced to <junction> (n/n runs)" when the runs agree on a traced queue. Under the rows, from the rows only: "Congested in all n periods…" with the traced junction and the night demand as a share of capacity, "the simulated traffic is about the same … while the demand ranges …" when throughput is capped, and "Less got through at the peak than at midday …" when it falls with more demand. "Per direction and per run" lists every period × direction with each seed's figures.
-2. **One seed per period** (seed 42) while the panel above uses three: a period could disagree with the analysis at the same hour, and run-to-run spread was invisible. The rows now use the analysis seeds (42, 7, 11); the 09:00 row equals the analysis at 09:00 (test).
-3. **The periods compiled their own plan, bypassing `studyPlan`:** a hypothetical demand multiplier was ignored in the time-of-day rows (so they described a different demand than the panel). They now use `studyPlan(area, landUsePeriod)`, the same plan as the analysis (calibrated, hypothetical, through-traffic setting, corrections); the reference hour comes from one `referenceHour()` shared with the clock.
-4. **Stale rows:** the rows' key was stored but never checked; after a Build edit, a demand-setting or calibration change, the old rows stayed on show unmarked. They are now marked outdated (amber notice, dimmed) when the network, plan, settings, day type, count peak, profile or seeds differ, and current again when changed back (verified in the browser after the ×3 change). Whether the user's rows came from an earlier network (for example one with the §19 flyover gap) is not known; it was possible.
-5. **Per-seed LOS ignored the over-capacity rule** the overall LOS uses, so a forced F could show as "runs disagree". Both now use the same rule; `DirectionFlow.losBasis` records which metric decided.
-6. **A duplicate analysis on Simulate entry** (found through the flaky `TimeProfileLoad` test, which failed on the base commit too): when the profile arrived while the analysis was still loading counts, the re-run it scheduled 700 ms later cancelled the run in flight and repeated it. `runAnalysis` now clears a pending re-run once it has read the current state (and returns if the road changed meanwhile).
+### Estimates, not sourced values
+The 40 s impatience ramp, the 60 m coordination threshold, the 3–12 s release span used for offsets and the 12 m bus
+length are this model's estimates. The 3.8 s base gap is Indo-HCM 2017; the impatience shape follows the
+critical-gap reductions with waiting time reported by Kittelson & Vandehey (1991), TRR 1320.
 
-Tests: `TimeOfDay.test.ts` (4; the two engine tests fail on the old `SimulationMode`), opt-in harness `DayInvestigation.test.ts` (`DAY_INV=1`, options `DAY_SCALE`, `DAY_DROP`, `DAY_LANES`, `DAY_SEEDS`, `DAY_ONLY`).
+### Side-road capacity against main-road flow (headless, `PriorityGaps.test.ts`)
+Car-only tee, side-road right turn (the left turn of right-hand traffic), mean of seeds 42 and 7, follow-up time from
+the side road's own discharge (2.72 s); reference capacities by Harders' formula.
 
-Checks: `npx tsc -b` clean; `npx vitest run` 460 passed, 4 skipped (was 456 / 3; +4 in `TimeOfDay.test.ts`, +1 skipped opt-in harness); `TimeProfileLoad.test.ts` now passes repeatedly (it failed 2 of 3 runs on the base commit); `npx oxlint` 0 errors, 5 old warnings; `npx vite build` succeeds.
+| Main-road flow (veh/h) | Model | HCM 2010 (tc 7.1 s, tf 3.5 s) | Indo-HCM (tc 3.8 s) | Floor (tc 3.0 s) |
+|---|---|---|---|---|
+| 300 | 863 | 656 | 1,077 | 1,151 |
+| 600 | 574 | 416 | 873 | 998 |
+| 1,200 | 317 | 163 | 567 | 740 |
+| 1,600 | 195 | 86 | 421 | 601 |
 
-### Measured in the browser (2026-11-06)
+The model lies between the HCM 2010 and Indo-HCM capacities at every flow, never above the floor-gap capacity.
 
-Production build of the worktree, headless Chromium (SwiftShader) on 2 shared CPUs, backend on a database copy, Cesium render loop stopped and canvas hidden. Sangamwadi Bridge, area 1 km, neighbourhood 700 m, seeds 42 / 7 / 11, weekday, Details tab never opened. Values read from `simMode.getState().timeline` and the DOM; scripts and JSON in `vp-wt-day-e2e/`, screenshots `vp-overhaul-shots/day-final-*.png`, all viewed (`day-final-sangamwadi-1km-demand-x3.png` is from the build before the last table-layout change, so its per-run figures wrap; figures identical) (working files, not in the repository).
+### Headless results (seeds 42 / 7 / 11)
+| Network | Trips completed | Removals | Gridlocked at end | Vehicles in a box > 60 s |
+|---|---|---|---|---|
+| Shivajinagar | 2,460 / 2,546 / 2,391 | 0 | 76 / 51 / 81 | 0 |
+| Sangamwadi | 3,943 / 3,963 / 3,904 | 0 | 0 | 0 |
 
-**Existing demand (estimate, 10,800 veh/h at the peak):** 87–145 s for the four periods (load from other sessions varied).
+Shivajinagar's gridlock stands mainly at 18.52247, 73.85314 ("no room ahead"). Tests changed: `delay-index` threshold
+0.9 → 0.95 (a one-lane stretch now passes about 1,700 PCU/h/lane, was about 1,430), `PriorityGaps` long-wait
+scenario at 2,000 veh/h main flow (was 1,800) so its waits still pass the minute.
 
-| Period | Factor | Direction | Demand veh/h | Got through veh/h (42 / 7 / 11) | Speed km/h (free flow) | LOS (per run) | Status |
-|---|---|---|---|---|---|---|---|
-| 09:00 | 1.0000 (09:00) | westbound | 1,433 | 1,276 (1,301 / 1,267 / 1,259) | 23.4 (30) | B (BBB) | Some delay 3/3 |
-| | | eastbound | 1,658 | 1,077 (1,077 / 1,058 / 1,096) | 36.6 (50) | C (CCC) | |
-| 14:00 | 0.6956 (19:00) | eastbound | 1,153 | 999 (992 / 972 / 1,033) | 36.9 (50) | C (CCC) | Some delay 3/3 |
-| | | westbound | 997 | 993 (1,038 / 981 / 960) | 24.4 (30) | B (BBB) | |
-| 19:00 | 1.0000 (19:00) | as 09:00 | | | | | Some delay 3/3 |
-| 23:00 | 0.1831 (19:00) | eastbound | 304 | 326 (378 / 332 / 268) | 38.1 (50) | B (BCB) | Flowing, runs disagree |
-| | | westbound | 262 | 278 (287 / 319 / 228) | 26.2 (30) | A (AAA) | |
-
-At the peaks 3,091 veh/h is routed onto the bridge and 2,353 got through. The eastbound shortfall is not on the bridge, which runs at 37 of 50 km/h with no traced queue; it is consistent with the entry limit upstream: 82% of the neighbourhood's demand got onto its roads (525 vehicles waiting at its edge at the end). No queue is traced in any period. A second run of the four periods in the same session, and runs in two later sessions on the final build, gave identical figures to the digit, also for the 300% case (deterministic for the network, demand, hour and seeds). Changing the demand setting marked the rows outdated at once.
-
-**Hypothetical 300% demand:** 135–184 s.
-
-| Period | Factor | Direction | Demand veh/h | Got through veh/h (42 / 7 / 11) | Speed km/h (free flow) | LOS, what set it | Status |
-|---|---|---|---|---|---|---|---|
-| 09:00 / 19:00 | 1.0000 | westbound | 4,320 | 1,446 (1,430 / 1,645 / 1,263) | 5.2 (30) | F, speed 18% of free flow | Severe 3/3 |
-| | | eastbound | 4,993 | 1,076 (1,095 / 1,031 / 1,103) | 36.4 (50) | F, demand 2.04× capacity | |
-| 14:00 | 0.6956 | westbound | 2,991 | 1,856 (1,845 / 1,833 / 1,890) | 17.5 (30) | F, demand 1.22× capacity | Severe 3/3 |
-| | | eastbound | 3,470 | 1,045 (1,056 / 1,004 / 1,075) | 36.5 (50) | F, demand 1.42× capacity | |
-| 23:00 | 0.1831 | eastbound | 911 | 865 (866 / 847 / 881) | 37.0 (50) | C, speed | Some delay 3/3 |
-| | | westbound | 787 | 803 (886 / 783 / 740) | 24.6 (30) | B, speed | |
-
-Share of the neighbourhood's demand that got onto its roads: 47% at the peaks, 57% midday, 99% at night; gridlock removals 7, 3 and 0 vehicles per run (mean). The westbound peak delay is 61% stopped behind a full road ahead, but the runs do not trace it to the same junction, so no junction is named (the *Why* rule from §10.3).
+### Regression against `c046da3`
+Shivajinagar vehicles gridlocked at the end rose from 60 / 40 / 55 to 76 / 51 / 81. Before, many of these vehicles
+were deleted after 180 s; now they stay. The count is not like for like, but the larger numbers are real jams left on
+the roads, and they are not resolved.
 
 ### Limitations
+- **Bus starvation under strict priority:** a 12 m bus on a side road needs a longer gap than the impatience floor
+  gives, so at high main-road flow it can wait much longer than cars behind it would.
+- **Coordination trades throughput:** a common cycle stretches the shorter cycles of a group; offsets favour getting
+  traffic through each short link over each junction's own delay.
+- Gridlock is reported, not cleared: a run whose network locks keeps its locked queues to the end.
 
-- The user's case is not reproduced; the explanation of their figures (demand above what the neighbourhood passes, so the shown traffic is capped and falls at the busiest hours) is shown on a hypothetical demand, not on their data. Their night (844 veh/h at 12 km/h) implies night demand on the road at least that high, about 0.18 of a peak far above this estimate; that is consistent with a calibrated or otherwise much larger demand, a network gap forcing traffic onto the bridge (§19), or rows left from an earlier network (fix 4), and none of these could be checked.
-- Speed comes from vehicles that completed a link; vehicles still queued on it at the end are counted in "got through" but not in the speed, so under saturation the speed is optimistic. The 15-minute count after a 5-minute warm-up from an empty network is not a steady state when demand exceeds capacity: queues are still growing when counting stops.
-- Even at night (v/c 0.12) the simulated eastbound speed is 38 of 50 km/h (76%, LOS B/C boundary): the free-flow reference is the speed limit-based free-flow time, which simulated vehicles do not reach on this section (probably acceleration from and deceleration to its end junctions; not investigated). Low-volume periods therefore rate up to one band worse than a field free-flow speed would give. Not changed here (it belongs to the simulator's free-flow calibration); the row now prints the percentage so the reader can see it.
-- AM = PM under the uncalibrated estimate remains (§19): edge flows have no morning/evening pattern and each peak is the reference of its half of the day. The panel says so.
-- The four periods take 1.5–3 minutes in the browser with three seeds (one seed took about 50 s).
-- `TrafficMicroSim.test.ts` "keeps up with a large area" (a ms-per-step limit) failed in the full run and alone while other agents' browsers kept the load average near 7 on 2 CPUs; not related to this change.
+### Final browser verification, 2026-11-07
+
+Production build of `7cc3057` (vite build of this worktree), headless Chromium (SwiftShader) on 2 shared CPUs, backend on a copy of the project database; roads come from the database copy because every Overpass mirror answered 429 or timed out (the panel shows its "could not be loaded" banner). Cesium render loop stopped and canvas hidden for element screenshots. Seeds 42 / 7 / 11, weekday. Scripts, JSON and screenshots are working files outside the repository (`/workspace/work/vp-final2-e2e/`, `/workspace/work/vp-overhaul-shots/final2-*.png`); every screenshot named here was viewed.
+
+Measured in the browser (earlier run of this pass on the same build):
+
+| Sangamwadi Bridge, area 1 km, 09:00 | seed 42 | seed 7 | seed 11 |
+|---|---|---|---|
+| Entered | 3,334 | 3,341 | 3,294 |
+| Finished | 2,590 | 2,699 | 2,643 |
+| On the roads at the end | 744 | 642 | 651 |
+| Waiting at the edge | 328 | 398 | 456 |
+| Gridlock events | 55 | 5 | 7 |
+| Gridlocked at the end | 8 | 1 | 3 |
+
+- Removals 0 in every run; the accounting identity held (conservation true); a repeat gave identical counters.
+- Gridlocked at the end is 8 / 1 / 3 here against 0 headless: the browser's roads are the database copy, not the
+  test network, so the two are not the same network. Worst site 18.53629, 73.85094, "no room ahead".
+- Shivajinagar, area 2 km, 29,200 veh/h: trips 2,569 / 2,692 / 2,609, removals 0, gridlocked at the end 12 / 5 / 9
+  (headless 76 / 51 / 81; the setups differ: demand, area and roads). Seed 42's worst site 18.52247, 73.85314.
+- Vehicle mix: two-wheelers 1,495, cars 888, autos 309, buses 114, trucks 52. Longest time in a junction
+  box 18.3 s; longest standing in a box 11.8 s.
+- Lane discharge: 143 lane discharges measured, none above 1,900 PCU/h averaged over the run; highest per-lane
+  average 1,501 PCU/h; highest 1-minute peak 2,139 PCU/h (a single minute).
+
+This run (2026-11-07): Sangamwadi 1 km at 09:00 gave gridlock removals 0 / 0 / 0 (`gridlockRemovalsVph` 0 for each
+seed), served share 0.882 / 0.869 / 0.865 of 11,148 veh/h, and the same bridge figures as §22's 09:00 row to the
+digit. Gridlock counts were not re-read in this run.
+
+Checks on `7cc3057` in this run: vitest 516 passed, 5 skipped (66 files; full run 506 passed in 65 files, the 66th,
+`EditScope.test.ts`, failed to start its worker ("Timeout waiting for worker to respond") and passed alone, 10 of 10;
+`TrafficMicroSim` "keeps up with a large area" passed in the full run, 6.5 s); `oxlint` 0 errors, 5 warnings (unused
+imports and catch parameters); `npx tsc -b` clean; `npx vite build` passes.
+
+Test change in this pass (`593bc63`): in `JunctionEditing.test.ts` a minor approach's wait for crossing traffic is now
+checked as give-way plus conflict, since the priority rules' conflict-point timing records most of it as conflict
+(12.75 s give-way + 166.5 s conflict as the minor approach, 0 as the major). Test expectation only; no engine change.
+
 ## 21. Connectivity and carriageway definition
 
 Follow-up to §17 and §19: why the flyover chain beside COEP Road could fall apart in a session, and why the
@@ -997,6 +1063,158 @@ a reversed way gives the same pieces and fields as without the layer.
 `EditRecompute` rerun alone when a group hit the 120 s limit). `TimeProfileLoad` "Midday chosen" fails on the
 base in another checkout (fixed on the vp-day branch); it passed in these runs. Browser verification is
 pending the final integration pass (scripts and expected values: `/workspace/work/vp-conn-e2e/README.md`).
+
+### Final browser verification, 2026-11-07
+
+Production build of `7cc3057` (vite build of this worktree), headless Chromium (SwiftShader) on 2 shared CPUs, backend on a copy of the project database; roads come from the database copy because every Overpass mirror answered 429 or timed out (the panel shows its "could not be loaded" banner). Cesium render loop stopped and canvas hidden for element screenshots. Seeds 42 / 7 / 11, weekday. Scripts, JSON and screenshots are working files outside the repository (`/workspace/work/vp-final2-e2e/`, `/workspace/work/vp-overhaul-shots/final2-*.png`); every screenshot named here was viewed.
+
+Earlier run of this pass: c00, the six-way chain at COEP Road, intact (all present, none deleted by the user, no
+clipped pieces). c02, Nyaymurti junction: widening the north-east approach raised its capacity from 643 to
+1,286 PCU/h; the stub was excluded from the carriageway; the preview ids equalled the changed ids. Sangamwadi Bridge
+eastbound carriageway: 3 pieces, 564 m. c01 (whole import, undo, study-area load) was not run: it needs Overpass.
+
+**This run, Sangamwadi deck `osm_208004768`, 1 km, 09:00, lanes 2 → 3 (`steps_main.json`):**
+
+| Scope | Preview (count, length, ids) | Changed ids | Eastbound capacity, binding | Westbound capacity |
+|---|---|---|---|---|
+| Before | | | 2,571 PCU/h, deck 2 lanes 367 m | 2,571 PCU/h, `osm_227095239` 2 lanes 260 m |
+| This segment only | 1 piece, 367 m, `osm_208004768` | `osm_208004768` | 2,571 PCU/h (lanes 2–3), bound by `osm_1151682763` 2 lanes 136 m | 2,571 PCU/h |
+| Entire carriageway | 3 pieces, 564 m, `osm_208004768`, `osm_1151682763`, `osm_661187162` | the same three | 3,857 PCU/h (3 lanes), deck 367 m | 2,571 PCU/h |
+
+- Preview ids equal changed ids in both scopes; the opposite carriageway is untouched (no westbound id changed).
+- Segment only: the card says "Eastbound: capacity 2,571 PCU/h is set by its 2-lane stretch of Sangamwadi Bridge:
+  osm_1151682763 (136 m), osm_661187162 (60 m). The 3-lane osm_208004768 (367 m) isn't the constraint: widen the
+  narrower stretch too to raise it." (screenshot `final2-scope-capacity-stretch-seg.png`); "Show on map" highlights
+  those two pieces.
+- Undo: every road serialised to JSON (sections, lane count, lanes, one-way, profile flag, coordinates) and compared
+  string for string: no difference from before the edit after undo, undo–redo–undo and undo of the carriageway
+  edit; the network key returns to `cd3e05f9` and the kept result object is reused (deep-equal). Undo while the
+  re-run is still pending also restores the identical roads and result, with nothing left running.
+- Carriageway comparison: inputs matched (same demand key, 420 trips, 10,800 veh/h, 09:00, seeds, 900 s); verdict
+  "No clear change", confidence low (eastbound demand 1,658 veh/h is already below the old 2,571 PCU/h).
+
+**COEP Road, flyover piece deleted (`steps_coep.json`, `e_chainvol.js`): area 2 km around COEP Road at 14:00**
+(factor 0.6956, 20,519 veh/h, roads from the database copy):
+
+| | Before | Flyover piece `osm_661187172` deleted | After undo |
+|---|---|---|---|
+| Network key | `6662cdee` | `a8dbaa90` (full re-run) | `6662cdee` |
+| COEP Road highest v/c | 0 (no assigned flow on its 8 links) | 6.71 | 0 |
+| COEP Road highest flow, assignment / micro-sim veh/h | 0 / 0 | 4,113 / 625 | 0 / 0 |
+| `osm_661187172` assignment / micro-sim | 4,119 / no counted link | no link (way gone) / no link | 4,119 / no counted link |
+| `osm_317550167` (beyond the deleted piece) assignment / micro-sim | 2,972 / no counted link | 0 / no counted link | 2,972 / no counted link |
+| Links over capacity | 243 | 252 | 243 |
+
+- After the delete COEP Road is first in "What's wrong": "COEP Road, south-east of the road, 300 m (demand 6.7× its
+  capacity: more than can pass, not a flow; no other route in the model for 100% of its traffic; network gap:
+  Mokshagundam Vishweshvarayya Flyover ends without a connection 100 m away)", with the line "Network gap:
+  Mokshagundam Vishweshvarayya Flyover ends without a connection, 100 m away" (`final2-coep-flyover-gap-card.png`).
+  The run lists three gaps 116–127 m from the piece (one one-way trap, two one-way sources).
+- The three forced stretches more than 500 m from the piece were already forced before the delete (no other route
+  for 100% of their traffic in both runs), so the delete did not create them.
+- Volume: the deleted way carries nothing in either the assignment or the micro-simulation, and the way left with no
+  connection beyond it (`osm_317550167`) gets 0 veh/h in the assignment and no micro-sim count. Checked for the six
+  chain ways only, not for every disconnected road in the area. `osm_661187172` and `osm_317550167` have no
+  micro-sim link count even before the delete (their assignment flow is 4,119 and 2,972); why the simulation counts
+  no link there was not investigated.
+- Undo restores the exact key (`6662cdee`), the same result object (no re-run), no road differing from before
+  (serialised compare), and every chain volume to the value before the delete.
+
+## 22. Through the day
+
+User report (screenshot not received): Sangamwadi Bridge, *Through the day*: morning 1,112 veh/h at 3 km/h Severe, midday 1,152 veh/h at 3 km/h Severe, evening 1,144 veh/h at 3 km/h Severe, night 844 veh/h at 12 km/h Congested. Questions: why the same speed and severe congestion all day, and why midday carries more than the morning.
+
+### What was observed
+
+- **Not reproduced on the data available.** On a copy of the main checkout's database (18,273 roads; the local OSM index answered the area's road request, Overpass not used) and on the 1 km test fixture (`fixtures/sangamwadi.json`), the bridge is "Some delay" at both peaks and midday and "Flowing" at night (table below). The user's database and session were not available, so which inputs made their road saturated all day is not known.
+- **The user's pattern does appear once demand exceeds what the neighbourhood can pass.** With the demand set to a hypothetical 300% (Details → demand settings), three periods are Severe, the traffic that *got through* is nearly flat (2,522–2,901 veh/h) while the demand routed onto the bridge falls from 9,313 to 6,461 veh/h, and **midday moves more than the peaks** (2,901 against 2,522): the user's two observations together. In that run the westbound queue is mostly stopped behind a full road ahead (189 of 312 s/veh), and 53% of the traffic routed into the neighbourhood never got onto its roads (5,577 vehicles still waiting at its edge at the end). Past capacity, queues back through junctions and block them, so more demand moves fewer vehicles.
+- Before this change the row showed only the simulated traffic (`totalVph`, the vehicles that drove the road) labelled "veh/h", next to the speed of the *busier* direction and the status of the *worst* one. A capped figure that does not follow the hour, a speed from one direction and a status from the other, read as an error.
+
+### What was checked and found correct
+
+- **Each period uses its own hour factor** (printed per row, browser and headless): 09:00 ×1.0000 of the 09:00 peak, 14:00 ×0.6956 and 23:00 ×0.1831 of the 19:00 peak, 19:00 ×1.0000. Area demand 10,800 / 7,512 / 10,800 / 1,977 veh/h (420 OD pairs) on the database copy; the area assignment's demand equals it in every period.
+- **Nothing is reused or scaled between periods.** Each period runs `runAnalysisJob` with its own trips × factor: a new user-equilibrium assignment of the whole area, a new corridor plan cut from it, and new micro-simulations from an empty network (300 s warm-up, 900 s counted). The rows carried no cache; the main analysis's kept-results cache (key includes hour, factor, profile-loaded, seeds) is not used by them.
+- **Profile loading:** with the Details tab never opened, the profile was `loading` on entering Simulate and `ready` before the first analysis (`timeProfile: loaded`), and the time-of-day runs wait for it.
+- **Profile source** (`backend/data/diurnal/pune_hourly_profile_v1.json`): 08:00–19:00 are measured (Gunjan Chowk counts, Thakur et al. 2017; 09:00–11:00 averaged with the Mendeley Pune CCTV counts, Jan 2023); all other hours, including 23:00, are estimated from TomTom 2025 congestion by hour (BPR-type inversion anchored to the measured hours). So the evening factor rests on counts and the night factor (0.18 of 19:00) is an estimate.
+- **What the figures are:** demand = the assignment's veh/h on the road's links (both directions summed in the row); got through = vehicles entering the road's links during the counted window, length-weighted (includes vehicles still on it at the end); speed = road length over the mean link traversal time of vehicles that completed each link.
+- **Level of service** is Indo-HCM urban-street LOS on travel speed / free-flow speed for each direction, F also when the assigned demand exceeds capacity and under 90% of it got through; the road's status is the worse direction. It is measured speed, not demand v/c, except in that forced case.
+
+### Root causes and fixes (`9f35cca`, `c0ffafc`)
+
+1. **The row showed throughput as if it were the road's traffic, with no demand beside it** (`RoadAnalysisPanel.tsx`, new `timeOfDayView.ts`). Each row now shows: hour and factor ("×0.70 of the 19:00 peak"), *Demand* (assigned veh/h) and *Got through* (simulated veh/h) as two bars on one scale, the speed of the direction the status comes from with its free-flow speed, the level of service and what set it ("LOS F: speed 18% of free-flow" or "LOS F: demand 1.22× capacity, 62% of it got through"), the unserved veh/h and why (share that got into the neighbourhood, vehicles still waiting at its edge, gridlock removals), and "Held by a queue traced to <junction> (n/n runs)" when the runs agree on a traced queue. Under the rows, from the rows only: "Congested in all n periods…" with the traced junction and the night demand as a share of capacity, "the simulated traffic is about the same … while the demand ranges …" when throughput is capped, and "Less got through at the peak than at midday …" when it falls with more demand. "Per direction and per run" lists every period × direction with each seed's figures.
+2. **One seed per period** (seed 42) while the panel above uses three: a period could disagree with the analysis at the same hour, and run-to-run spread was invisible. The rows now use the analysis seeds (42, 7, 11); the 09:00 row equals the analysis at 09:00 (test).
+3. **The periods compiled their own plan, bypassing `studyPlan`:** a hypothetical demand multiplier was ignored in the time-of-day rows (so they described a different demand than the panel). They now use `studyPlan(area, landUsePeriod)`, the same plan as the analysis (calibrated, hypothetical, through-traffic setting, corrections); the reference hour comes from one `referenceHour()` shared with the clock.
+4. **Stale rows:** the rows' key was stored but never checked; after a Build edit, a demand-setting or calibration change, the old rows stayed on show unmarked. They are now marked outdated (amber notice, dimmed) when the network, plan, settings, day type, count peak, profile or seeds differ, and current again when changed back (verified in the browser after the ×3 change). Whether the user's rows came from an earlier network (for example one with the §19 flyover gap) is not known; it was possible.
+5. **Per-seed LOS ignored the over-capacity rule** the overall LOS uses, so a forced F could show as "runs disagree". Both now use the same rule; `DirectionFlow.losBasis` records which metric decided.
+6. **A duplicate analysis on Simulate entry** (found through the flaky `TimeProfileLoad` test, which failed on the base commit too): when the profile arrived while the analysis was still loading counts, the re-run it scheduled 700 ms later cancelled the run in flight and repeated it. `runAnalysis` now clears a pending re-run once it has read the current state (and returns if the road changed meanwhile).
+
+Tests: `TimeOfDay.test.ts` (4; the two engine tests fail on the old `SimulationMode`), opt-in harness `DayInvestigation.test.ts` (`DAY_INV=1`, options `DAY_SCALE`, `DAY_DROP`, `DAY_LANES`, `DAY_SEEDS`, `DAY_ONLY`).
+
+Checks: `npx tsc -b` clean; `npx vitest run` 460 passed, 4 skipped (was 456 / 3; +4 in `TimeOfDay.test.ts`, +1 skipped opt-in harness); `TimeProfileLoad.test.ts` now passes repeatedly (it failed 2 of 3 runs on the base commit); `npx oxlint` 0 errors, 5 old warnings; `npx vite build` succeeds.
+
+### Measured in the browser (2026-11-06)
+
+Production build of the worktree, headless Chromium (SwiftShader) on 2 shared CPUs, backend on a database copy, Cesium render loop stopped and canvas hidden. Sangamwadi Bridge, area 1 km, neighbourhood 700 m, seeds 42 / 7 / 11, weekday, Details tab never opened. Values read from `simMode.getState().timeline` and the DOM; scripts and JSON in `vp-wt-day-e2e/`, screenshots `vp-overhaul-shots/day-final-*.png`, all viewed (`day-final-sangamwadi-1km-demand-x3.png` is from the build before the last table-layout change, so its per-run figures wrap; figures identical) (working files, not in the repository).
+
+**Existing demand (estimate, 10,800 veh/h at the peak):** 87–145 s for the four periods (load from other sessions varied).
+
+| Period | Factor | Direction | Demand veh/h | Got through veh/h (42 / 7 / 11) | Speed km/h (free flow) | LOS (per run) | Status |
+|---|---|---|---|---|---|---|---|
+| 09:00 | 1.0000 (09:00) | westbound | 1,433 | 1,276 (1,301 / 1,267 / 1,259) | 23.4 (30) | B (BBB) | Some delay 3/3 |
+| | | eastbound | 1,658 | 1,077 (1,077 / 1,058 / 1,096) | 36.6 (50) | C (CCC) | |
+| 14:00 | 0.6956 (19:00) | eastbound | 1,153 | 999 (992 / 972 / 1,033) | 36.9 (50) | C (CCC) | Some delay 3/3 |
+| | | westbound | 997 | 993 (1,038 / 981 / 960) | 24.4 (30) | B (BBB) | |
+| 19:00 | 1.0000 (19:00) | as 09:00 | | | | | Some delay 3/3 |
+| 23:00 | 0.1831 (19:00) | eastbound | 304 | 326 (378 / 332 / 268) | 38.1 (50) | B (BCB) | Flowing, runs disagree |
+| | | westbound | 262 | 278 (287 / 319 / 228) | 26.2 (30) | A (AAA) | |
+
+At the peaks 3,091 veh/h is routed onto the bridge and 2,353 got through. The eastbound shortfall is not on the bridge, which runs at 37 of 50 km/h with no traced queue; it is consistent with the entry limit upstream: 82% of the neighbourhood's demand got onto its roads (525 vehicles waiting at its edge at the end). No queue is traced in any period. A second run of the four periods in the same session, and runs in two later sessions on the final build, gave identical figures to the digit, also for the 300% case (deterministic for the network, demand, hour and seeds). Changing the demand setting marked the rows outdated at once.
+
+**Hypothetical 300% demand:** 135–184 s.
+
+| Period | Factor | Direction | Demand veh/h | Got through veh/h (42 / 7 / 11) | Speed km/h (free flow) | LOS, what set it | Status |
+|---|---|---|---|---|---|---|---|
+| 09:00 / 19:00 | 1.0000 | westbound | 4,320 | 1,446 (1,430 / 1,645 / 1,263) | 5.2 (30) | F, speed 18% of free flow | Severe 3/3 |
+| | | eastbound | 4,993 | 1,076 (1,095 / 1,031 / 1,103) | 36.4 (50) | F, demand 2.04× capacity | |
+| 14:00 | 0.6956 | westbound | 2,991 | 1,856 (1,845 / 1,833 / 1,890) | 17.5 (30) | F, demand 1.22× capacity | Severe 3/3 |
+| | | eastbound | 3,470 | 1,045 (1,056 / 1,004 / 1,075) | 36.5 (50) | F, demand 1.42× capacity | |
+| 23:00 | 0.1831 | eastbound | 911 | 865 (866 / 847 / 881) | 37.0 (50) | C, speed | Some delay 3/3 |
+| | | westbound | 787 | 803 (886 / 783 / 740) | 24.6 (30) | B, speed | |
+
+Share of the neighbourhood's demand that got onto its roads: 47% at the peaks, 57% midday, 99% at night; gridlock removals 7, 3 and 0 vehicles per run (mean). The westbound peak delay is 61% stopped behind a full road ahead, but the runs do not trace it to the same junction, so no junction is named (the *Why* rule from §10.3).
+
+### Limitations
+
+- The user's case is not reproduced; the explanation of their figures (demand above what the neighbourhood passes, so the shown traffic is capped and falls at the busiest hours) is shown on a hypothetical demand, not on their data. Their night (844 veh/h at 12 km/h) implies night demand on the road at least that high, about 0.18 of a peak far above this estimate; that is consistent with a calibrated or otherwise much larger demand, a network gap forcing traffic onto the bridge (§19), or rows left from an earlier network (fix 4), and none of these could be checked.
+- Speed comes from vehicles that completed a link; vehicles still queued on it at the end are counted in "got through" but not in the speed, so under saturation the speed is optimistic. The 15-minute count after a 5-minute warm-up from an empty network is not a steady state when demand exceeds capacity: queues are still growing when counting stops.
+- Even at night (v/c 0.12) the simulated eastbound speed is 38 of 50 km/h (76%, LOS B/C boundary): the free-flow reference is the speed limit-based free-flow time, which simulated vehicles do not reach on this section (probably acceleration from and deceleration to its end junctions; not investigated). Low-volume periods therefore rate up to one band worse than a field free-flow speed would give. Not changed here (it belongs to the simulator's free-flow calibration); the row now prints the percentage so the reader can see it.
+- AM = PM under the uncalibrated estimate remains (§19): edge flows have no morning/evening pattern and each peak is the reference of its half of the day. The panel says so.
+- The four periods take 1.5–3 minutes in the browser with three seeds (one seed took about 50 s).
+- `TrafficMicroSim.test.ts` "keeps up with a large area" (a ms-per-step limit) failed in the full run and alone while other agents' browsers kept the load average near 7 on 2 CPUs; not related to this change.
+
+### Final browser verification, 2026-11-07
+
+Production build of `7cc3057` (vite build of this worktree), headless Chromium (SwiftShader) on 2 shared CPUs, backend on a copy of the project database; roads come from the database copy because every Overpass mirror answered 429 or timed out (the panel shows its "could not be loaded" banner). Cesium render loop stopped and canvas hidden for element screenshots. Seeds 42 / 7 / 11, weekday. Scripts, JSON and screenshots are working files outside the repository (`/workspace/work/vp-final2-e2e/`, `/workspace/work/vp-overhaul-shots/final2-*.png`); every screenshot named here was viewed.
+
+Earlier run of this pass, Sangamwadi Bridge, area 1 km, Details never opened:
+
+| Period | Factor | Direction | Demand veh/h | Got through veh/h | Speed km/h (free flow) | LOS |
+|---|---|---|---|---|---|---|
+| 09:00 | 1.0 | westbound | 1,433 | 1,304 | 23.3 (30) | B |
+| | | eastbound | 1,658 | 1,199 | 35.7 (50) | C |
+| 14:00 | 0.6956 | westbound | 997 | 1,023 | 24.0 | B |
+| | | eastbound | 1,153 | 1,084 | 36.0 | C |
+| 19:00 | 1.0 | as 09:00 | | | | |
+| 23:00 | 0.1831 | westbound | 262 | 278 | | A |
+| | | eastbound | 304 | 326 | | C (runs C / C / B disagree) |
+
+These differ from the 2026-11-06 table above (for example 09:00 eastbound 1,199 against 1,077 got through). That table
+was measured on an earlier build (before the §20 and §23 commits) in another harness; the difference was not traced.
+
+This run (2026-11-07): 09:00 gave the same figures to the digit (westbound 1,433 / 1,304, 23.3 km/h, B; eastbound
+1,658 / 1,199, 35.7 km/h, C), and Midday from the run bar gave westbound 997 / 1,023, 24.0 km/h, B and eastbound
+1,153 / 1,084, 36.0 km/h, C, also identical, in 11 s, with Details still closed. 19:00 and 23:00 were not re-run.
+
 ## 23. Junction-level editing
 
 Build showed an imported (OSM) junction as the single piece that was clicked: a 12 m stub of a divided-road square. Junction-level editing groups the nodes and short pieces of one real junction and edits its control, signal plan, priority, banned turns and lane connections as a whole, applied as one Undo step. Road geometry is never changed.
@@ -1105,3 +1323,16 @@ Apply writes one history step. The network content key changes, so Simulate show
 - **Starting values come from the first seed only.** Webster greens are rounded to whole seconds in the editor. Neither matters for a no-op Apply, which keeps the engine's own control.
 - **Edits under the old id are orphaned.** An edit saved before the grouping fix, under `jx_159364f9`, is still compiled by its node keys, but the editor opens the junction under `jx_961a3746` without it.
 - **Proximity rules are heuristics.** The 60 m enclosed-chain and 70 m slip radii are judged on Pune layouts. A real side loop shorter than 60 m whose middle node has only 2 stretches would be taken into the junction.
+
+### Final browser verification, 2026-11-07
+
+Production build of `7cc3057` (vite build of this worktree), headless Chromium (SwiftShader) on 2 shared CPUs, backend on a copy of the project database; roads come from the database copy because every Overpass mirror answered 429 or timed out (the panel shows its "could not be loaded" banner). Cesium render loop stopped and canvas hidden for element screenshots. Seeds 42 / 7 / 11, weekday. Scripts, JSON and screenshots are working files outside the repository (`/workspace/work/vp-final2-e2e/`, `/workspace/work/vp-overhaul-shots/final2-*.png`); every screenshot named here was viewed.
+
+Measured in the browser (earlier run of this pass; not repeated in this run):
+- "Open the junction in Build": `jx_961a3746`, 13 nodes, 18 pieces, 3 slips,
+  4 approaches, 3 exits, as expected. Camera at 100 m, pitch −60°.
+- Starting greens [48, 21, 33, 29] + 48 → 204 s cycle. A no-op Apply gave an identical result.
+- +20 s on the south-west approach → 224 s cycle; north-east delay 810 → 446 s; per-approach change SW −78 s,
+  NW −78 s, SE +7.5 s, N +227 s. Comparison inputs matched; undo and redo exact; the edit persisted across a reload.
+- UI: the centred tool bar ran under a 22rem / 27rem side panel at 1,600 px and covered the junction editor's title;
+  fixed in `7cc3057` (compact layout below 1,700 / 1,830 px).
