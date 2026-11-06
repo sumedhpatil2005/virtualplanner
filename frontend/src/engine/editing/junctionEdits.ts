@@ -63,6 +63,24 @@ export function junctionOfRoad(objects: readonly CityObject[], road: DrivableObj
   return null;
 }
 
+/**
+ * Camera framing for an opened junction: the sphere around everything the
+ * junction preview draws (member nodes, internal pieces, approach and exit
+ * stubs), and the camera distance that keeps it on screen with a margin for
+ * the editor panel (a 60 degree field of view needs 2 x radius; 2.6 x leaves room).
+ */
+export function junctionFrame(points: readonly (readonly number[])[]): { centre: [number, number, number]; radiusM: number; rangeM: number } {
+  const pts = points.filter(p => p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (!pts.length) return { centre: [0, 0, 0], radiusM: 0, rangeM: 0 };
+  const lngs = pts.map(p => p[0]), lats = pts.map(p => p[1]);
+  const centre: [number, number, number] = [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2, pts.reduce((n, p) => n + (p[2] || 0), 0) / pts.length];
+  const kx = M_PER_DEG_LAT * Math.cos(centre[1] * Math.PI / 180);
+  const radiusM = Math.max(...pts.map(p => Math.hypot((p[0] - centre[0]) * kx, (p[1] - centre[1]) * M_PER_DEG_LAT)));
+  return { centre, radiusM, rangeM: Math.min(1500, Math.max(FRAME_MIN_RANGE_M, radiusM * FRAME_RANGE_PER_RADIUS)) };
+}
+export const FRAME_RANGE_PER_RADIUS = 2.6;
+export const FRAME_MIN_RANGE_M = 150;
+
 function lengthM(cs: readonly (readonly number[])[]) {
   let n = 0;
   for (let i = 1; i < cs.length; i++) n += Math.hypot((cs[i][0] - cs[i - 1][0]) * M_PER_DEG_LAT * Math.cos(cs[i][1] * Math.PI / 180), (cs[i][1] - cs[i - 1][1]) * M_PER_DEG_LAT);

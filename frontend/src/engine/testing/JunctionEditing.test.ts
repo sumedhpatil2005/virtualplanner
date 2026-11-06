@@ -19,14 +19,15 @@ import { HistoryManager } from '../history/HistoryManager';
 import { TrafficNetworkBuilder } from '../simulation/TrafficNetworkBuilder';
 import { StudyAreaExplorer, type StudyArea, type DrivableObject } from '../simulation/StudyAreaExplorer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroDemandTrip, type VehicleKind } from '../simulation/TrafficMicroSim';
-import { groupJunctions, nodeKey, INTERNAL_MAX_M, type LogicalJunction } from '../simulation/junctionGroups';
-import { defaultEdit, validateEdit, cycleOf, splitJunctionObjects, type JunctionEditSpec } from '../simulation/junctionControl';
+import { groupJunctions, nodeKey, INTERNAL_MAX_M, ENCLOSED_CHAIN_M, MAX_SPAN_M, type LogicalJunction } from '../simulation/junctionGroups';
+import { defaultEdit, validateEdit, cycleOf, splitJunctionObjects, compileJunctionEdits, simJunctionSetups, type JunctionEditSpec } from '../simulation/junctionControl';
+import { runSignalStructure } from '../simulation/RoadAnalysis';
 import { buildAssignmentNetwork, assignTraffic } from '../simulation/staticAssignment';
-import { junctionsAround, junctionOfRoad, applyJunctionEdit, junctionEditObject } from '../editing/junctionEdits';
+import { junctionsAround, junctionOfRoad, applyJunctionEdit, junctionEditObject, junctionFrame, FRAME_RANGE_PER_RADIUS } from '../editing/junctionEdits';
 import { networkContentKey } from '../simulation/StudyDemand';
 import { SimulationMode } from '../simulation/SimulationMode';
 import { junctionApproachDeltas } from '../simulation/junctionCompare';
-import { startingDraft, setGreen, toggleArmInPhase, toggleBan, toggleLane, defaultLanePairs, lastRunTiming } from '../editing/junctionDraft';
+import { startingDraft, startingNote, lastRunControl, setGreen, setControl, setTiming, toggleMajor, toggleArmInPhase, toggleBan, toggleLane, defaultLanePairs } from '../editing/junctionDraft';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { JunctionCompareCard } from '../../components/JunctionCompareCard';
@@ -180,6 +181,8 @@ const nodeAt = (area: StudyArea, x: number, y: number) => {
 const MIX: [VehicleKind, number][] = [['two_wheeler', 0.5], ['car', 0.35], ['auto', 0.15]];
 const trips = (area: StudyArea, pairs: [[number, number], [number, number], number][]): MicroDemandTrip[] =>
   pairs.flatMap(([a, b, vph]) => MIX.map(([kind, s]) => ({ fromNodeId: nodeAt(area, ...a), toNodeId: nodeAt(area, ...b), vehiclesPerHour: vph * s, kind })));
+/** A hand-made edit: the starting values without the "as run" mark, so its control and plan run as written. */
+const editOf = (j: LogicalJunction): JunctionEditSpec => { const { asRun: _asRun, ...e } = defaultEdit(j); void _asRun; return e; };
 const arm = (j: LogicalJunction, label: string) => [...j.approaches, ...j.exits].find(a => a.label === label)!;
 const simOf = (area: StudyArea, roads: RoadObject[], demand: MicroDemandTrip[], edits?: JunctionEditSpec[], seed = 42) =>
   new TrafficMicroSim(area, new Map(roads.map(r => [r.id, r])), { demandLevel: OD_REFERENCE_LEVEL, seed, demandTrips: demand, signalPoints: [[pt(0, 0)[0], pt(0, 0)[1]]], signalTiming: 'webster', junctionEdits: edits });
@@ -194,7 +197,7 @@ const linkOutOf = (area: StudyArea, roadId: string) => [...area.network.edges.va
 
 describe('the engine honours a junction edit', () => {
   const plan = (j: LogicalJunction, ewGreen: number, nsGreen: number): JunctionEditSpec => {
-    const e = defaultEdit(j);
+    const e = editOf(j);
     const ew = [arm(j, 'West Road from the west').id, arm(j, 'East Road from the east').id], ns = [arm(j, 'North Road from the north').id, arm(j, 'South Road from the south').id];
     return { ...e, control: 'signal', signal: { amberS: 3, allRedS: 2, phases: [{ greenS: ewGreen, arms: ew }, { greenS: nsGreen, arms: ns }] } };
   };
@@ -237,7 +240,7 @@ describe('the engine honours a junction edit', () => {
     expect(w(ed).stopLinePcu!).toBeGreaterThan(w(base).stopLinePcu!);
     expect(s(ed).stopLinePcu!).toBeLessThan(s(base).stopLinePcu!);
     // No control: no signal at all
-    const none = buildAssignmentNetwork(area, map, sig, [{ ...defaultEdit(j), control: 'none' }]);
+    const none = buildAssignmentNetwork(area, map, sig, [{ ...editOf(j), control: 'none' }]);
     expect(w(none).gC).toBeNull();
   });
 
@@ -273,7 +276,7 @@ describe('the engine honours a junction edit', () => {
     const { roads, area, j } = crossroads();
     const demand = trips(area, [[[-300, 0], [300, 0], 600], [[300, 0], [-300, 0], 600], [[0, -300], [0, 300], 300]]);
     const giveWay = (major: string[]) => {
-      const sim = simOf(area, roads, demand, [{ ...defaultEdit(j), control: 'priority', majorArms: major.map(l => arm(j, l).id) }]);
+      const sim = simOf(area, roads, demand, [{ ...editOf(j), control: 'priority', majorArms: major.map(l => arm(j, l).id) }]);
       const c = runFor(sim, 200, 600);
       return c.links.find(l => l.id === linkInto(area, 's'))!.hold.giveWay;
     };
@@ -299,7 +302,7 @@ describe('the engine honours a junction edit', () => {
       }
       return { lanesUsed, through: sim.getMetrics().completedTrips };
     };
-    const base = { ...defaultEdit(j), control: 'none' as const };
+    const base = { ...editOf(j), control: 'none' as const };
     const dflt = run([base]);
     const one = run([{ ...base, laneConnections: { [move]: [[0, 0], [1, 0]] } }]);
     expect(dflt.lanesUsed[0]).toBeGreaterThan(0);
@@ -339,7 +342,7 @@ describe('a junction edit is a Build edit: key change, re-run, comparison, undo'
     await mode.captureBaseline();
 
     // Edit: signal with the Veer Santaji Ghorpade Road approach given a long green of its own
-    const spec = defaultEdit(j);
+    const spec = editOf(j);
     const others = j.approaches.filter(a => a.id !== vsg.id).map(a => a.id);
     spec.control = 'signal';
     spec.signal = { amberS: 3, allRedS: 2, phases: [{ greenS: 60, arms: [vsg.id] }, { greenS: 20, arms: others }] };
@@ -409,21 +412,51 @@ describe('a junction edit is a Build edit: key change, re-run, comparison, undo'
 
 describe('junction editor draft and comparison card', () => {
   const j = junctionWithNode(fxJunctions, ...AMBEDKAR);
-  it('starts from what the engine does: mapped signal, one phase per approach at 25 s, 3 s amber, 2 s all-red; from the last run\'s greens when there is one', () => {
+  it('with no analysis yet, starts from what the engine does: mapped signal, one phase per approach at 25 s, 3 s amber, 2 s all-red, marked as the engine\'s own', () => {
     const d = startingDraft(j, null, null);
     expect(d.source).toBe('default');
     expect(d.draft.control).toBe('signal');
+    expect(d.draft.asRun).toBe(true);
     expect(d.draft.signal!.phases).toHaveLength(j.approaches.length);
     expect(d.draft.signal!.phases.every(p => p.greenS === 25 && p.arms.length === 1)).toBe(true);
     expect(cycleOf(d.draft.signal!)).toBe(30 * j.approaches.length);
-    // Last run: two approaches at 40% of a 100 s cycle, the others at 10%
-    const linkDelay = new Map<string, { delayS: number | null; vph: number; gC: number | null }>();
-    j.approaches.forEach((a, i) => a.edgeIds.forEach(id => linkDelay.set(id, { delayS: 10, vph: 100, gC: i < 2 ? 0.4 : 0.1 })));
-    const r = { linkDelay, signalCycles: new Map([[j.nodeIds[0], 100]]) } as never;
-    expect(lastRunTiming(j, r)!.cycleS).toBe(100);
-    const l = startingDraft(j, null, r);
+    expect(startingNote(j, d)).toMatch(/Applying them unchanged keeps the simulation exactly as it was/);
+  });
+  it('from the last run: each approach gets the phase and green of the first signal that held it; an approach no signal held is always green', () => {
+    // A run with one signal at the first corner: two approaches in phase 0 (40 s), one in phase 1 (10 s), a phase 2 (20 s) that held only pieces inside; the rest no signal
+    const node = 'sim_corner';
+    const signalLinks = new Map<string, { node: string; phase: number }>();
+    const [a0, a1, a2] = j.approaches;
+    for (const id of a0.edgeIds) signalLinks.set(id, { node, phase: 0 });
+    for (const id of a1.edgeIds) signalLinks.set(id, { node, phase: 0 });
+    for (const id of a2.edgeIds) signalLinks.set(id, { node, phase: 1 });
+    const r = { signalLinks, signalGreens: new Map([[node, [40, 10, 20]]]), signalCycles: new Map([[node, 85]]) } as never;
+    const run = lastRunControl(j, r, fxNet)!;
+    expect(run.signals).toEqual([{ node, cycleS: 85, arms: [a0.id, a1.id, a2.id] }]);
+    const rest = j.approaches.slice(3).map(a => a.id);
+    expect(run.alwaysGreen).toEqual(rest);
+    expect(run.plan).toEqual({ amberS: 3, allRedS: 2, phases: [{ greenS: 40, arms: [a0.id, a1.id, ...rest] }, { greenS: 10, arms: [a2.id, ...rest] }, { greenS: 20, arms: rest }] });
+    expect(cycleOf(run.plan!)).toBe(85);
+    const l = startingDraft(j, null, r, fxNet);
     expect(l.source).toBe('last-run');
-    expect(l.draft.signal!.phases.map(p => [p.greenS, p.arms.length]).sort()).toEqual([[10, j.approaches.length - 2], [40, 2]]);
+    expect(l.draft).toMatchObject({ control: 'signal', asRun: true });
+    expect(startingNote(j, l)).toMatch(/always green/);
+    // A run covering the junction with no signal there: priority, as run
+    const p = startingDraft(j, null, { signalLinks: new Map(), signalGreens: new Map(), signalCycles: new Map() } as never, fxNet);
+    expect(p.source).toBe('last-run');
+    expect(p.draft).toMatchObject({ control: 'priority', asRun: true });
+  });
+  it('changing the control, a green, amber, a phase or the major approaches makes the plan the user\'s own; a ban or lane change keeps the engine\'s control', () => {
+    const d = startingDraft(j, null, null).draft;
+    expect(setGreen(d, 0, d.signal!.phases[0].greenS)).toBe(d);
+    expect(setGreen(d, 0, 40).asRun).toBeUndefined();
+    expect(setTiming(d, 'amberS', 4).asRun).toBeUndefined();
+    expect(setControl(d, 'priority').asRun).toBeUndefined();
+    expect(setControl(d, 'signal')).toBe(d);
+    expect(toggleArmInPhase(d, 0, j.approaches[1].id).asRun).toBeUndefined();
+    expect(toggleMajor(d, j.approaches[0].id).asRun).toBeUndefined();
+    expect(toggleBan(d, j.movements[0].key).asRun).toBe(true);
+    expect(toggleLane(d, j.movements[0].key, 0, 0, 2, 2).asRun).toBe(true);
   });
   it('draft changes: green, phase membership, bans, lane connections from the default', () => {
     let d = startingDraft(j, null, null).draft;
@@ -454,4 +487,225 @@ describe('junction editor draft and comparison card', () => {
     expect(html).toContain('+25 s, longer');
     expect(html).toContain('green 30% → 50% of cycle');
   });
+});
+
+// ── The reported junction on the backend's roads (no signals loaded) ────────
+
+/**
+ * fixtures/ambedkar_db.json: the backend DB's roads within 250 m of Babasaheb
+ * Ambedkar Marg / Veer Santaji Ghorpade Road, as the browser run had them (the
+ * signal layer failed to load there, so no signal points).
+ */
+const db = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/ambedkar_db.json'), 'utf8')) as { roads: RoadObject[] };
+const dbRoads = new Map(db.roads.map(r => [r.id, r as DrivableObject]));
+const dbNet = new TrafficNetworkBuilder().build(db.roads).network;
+const dbJunctions = groupJunctions(dbNet, dbRoads, {});
+const M_LAT = 111320;
+const dM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * M_LAT * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_LAT);
+const dbNodeAt = (lng: number, lat: number) => [...dbNet.nodes.values()].sort((a, b) => dM(a.coordinates, [lng, lat]) - dM(b.coordinates, [lng, lat]))[0];
+const dbJunctionOf = (lng: number, lat: number) => dbJunctions.find(j => j.nodeIds.includes(dbNodeAt(lng, lat).id));
+const stretches = (nodeId: string) => { const n = dbNet.nodes.get(nodeId)!; return new Set([...n.incomingSegments, ...n.outgoingSegments].map(s => s.replace(/_(fwd|bwd)$/, ''))).size; };
+/** Where Veer Santaji Ghorpade Road becomes Veer Santaji Ghorpade Marg, 8 m before the square: a plain node (2 stretches) with no signal loaded. */
+const NAME_CHANGE = [73.8633, 18.52788] as const;
+
+describe('grouping on the backend DB roads (the reported junction, no signals loaded)', () => {
+  const j = dbJunctionOf(...AMBEDKAR)!;
+
+  it('"Veer Santaji Ghorpade Marg" is the last 8 m of the north-east-bound carriageway, not a neighbouring junction: it is inside the junction, and the junction is the same with or without signals', () => {
+    const q = dbNodeAt(...NAME_CHANGE);
+    expect(dM(q.coordinates, NAME_CHANGE)).toBeLessThan(1);
+    // A plain node: Veer Santaji Ghorpade Road in, Veer Santaji Ghorpade Marg out, nothing else; 2 m from the junction centre
+    expect(stretches(q.id)).toBe(2);
+    expect(dM(q.coordinates, j.centre)).toBeLessThan(5);
+    expect(j.nodeIds).toContain(q.id);
+    // The 39.5 m piece into it (from where the slip lane leaves) and the 7.9 m Marg piece are internal
+    const marg = [...dbNet.edges.values()].find(e => e.roadId === 'osm_1146886465')!;
+    expect(marg.length).toBeCloseTo(7.9, 0);
+    expect(j.internalEdgeIds).toContain(marg.id);
+    expect(j.internalRoadIds).toContain('osm_218681353');
+    expect(j.approaches.map(a => a.label)).toEqual(['Unnamed road from the north', 'Babasaheb Ambedkar Marg from the south-east', 'Veer Santaji Ghorpade Road from the south-west', 'Arjunrao Pawar Path from the north-west']);
+    expect(j.exits.map(a => a.label)).toEqual(['Underpass to the north', 'Babasaheb Ambedkar Marg to the south-east', 'Veer Santaji Ghorpade Road to the south-west']);
+    expect([...j.approaches, ...j.exits].some(a => a.name === 'Veer Santaji Ghorpade Marg')).toBe(false);
+    expect(j.nodeIds).toHaveLength(13);
+    expect(j.internalEdgeIds).toHaveLength(18);
+    expect(j.radiusM).toBeLessThan(55);
+    // Same junction (id, nodes, arms) as on the Sangamwadi roads with the mapped signals loaded
+    const withSignals = junctionWithNode(fxJunctions, ...AMBEDKAR);
+    expect(j.id).toBe(withSignals.id);
+    expect(j.nodeKeys).toEqual(withSignals.nodeKeys);
+    expect(j.approaches.map(a => a.id)).toEqual(withSignals.approaches.map(a => a.id));
+    expect(j.exits.map(a => a.id)).toEqual(withSignals.exits.map(a => a.id));
+  });
+
+  it('the neighbouring junctions stay separate: the residential T 8 m past the south-west slip lane end (56 m out) and the one 16 m past the south-east end (68 m out)', () => {
+    const swT = dbNodeAt(73.86288, 18.52756), seT = dbNodeAt(73.86377, 18.52745);
+    for (const n of [swT, seT]) {
+      expect(stretches(n.id)).toBe(3);
+      expect(j.nodeIds).not.toContain(n.id);
+      expect(dbJunctions.find(x => x.nodeIds.includes(n.id))!.id).not.toBe(j.id);
+    }
+    expect(dM(swT.coordinates, j.centre)).toBeGreaterThan(MAX_SPAN_M);
+    expect(dM(seT.coordinates, j.centre)).toBeGreaterThan(MAX_SPAN_M);
+    // Every member node is a junction node of this junction's roads or a slip lane end: no side road meets any of them
+    const own = new Set([...j.internalRoadIds, ...j.approaches.flatMap(a => a.roadIds), ...j.exits.flatMap(a => a.roadIds)]);
+    for (const id of j.nodeIds) {
+      const n = dbNet.nodes.get(id)!;
+      for (const e of [...n.incomingSegments, ...n.outgoingSegments]) expect(own.has(dbNet.edges.get(e)!.roadId), `${id} ${e}`).toBe(true);
+    }
+  });
+
+  it('a road leaving a junction and coming back through plain nodes is inside it only when short: a 40 m dog-leg is absorbed, a 150 m loop is not', () => {
+    const mk = (out: number) => [
+      road('main', [[-300, 0], [-10, 0], [10, 0], [300, 0]], { name: 'Main Road', cls: 'arterial' }),
+      road('side', [[-10, 0], [-10, -300]], { name: 'Side A' }),
+      road('side2', [[10, 0], [10, 300]], { name: 'Side B' }),
+      // Leaves the west node and comes back into the east node; the two ways meet at a plain node (a name change)
+      road('loopA', [[-10, 0], [0, -out]], { name: 'Loop Lane', cls: 'local' }),
+      road('loopB', [[0, -out], [10, 0]], { name: 'Loop Lane', cls: 'local' }),
+    ];
+    const short = groupsOf(mk(15)).js.filter(x => x.nodeIds.length > 1);
+    expect(short).toHaveLength(1);
+    expect(short[0].nodeIds).toHaveLength(3);
+    expect(short[0].internalRoadIds).toEqual(expect.arrayContaining(['loopA', 'loopB']));
+    expect(short[0].approaches.concat(short[0].exits).some(a => a.name === 'Loop Lane')).toBe(false);
+    // 2 x 75 m: longer than ENCLOSED_CHAIN_M, so the bend stays outside and the lane is an exit and an approach
+    const long = groupsOf(mk(75)).js.filter(x => x.nodeIds.length > 1);
+    expect(long).toHaveLength(1);
+    expect(long[0].nodeIds).toHaveLength(2);
+    expect(long[0].exits.some(a => a.name === 'Loop Lane')).toBe(true);
+    expect(ENCLOSED_CHAIN_M).toBeLessThan(2 * 75);
+  });
+
+  it('the camera frames the whole junction: every member, internal piece and arm stub inside the sphere, from far enough to see it', () => {
+    const pts = [...j.nodeIds.map(id => dbNet.nodes.get(id)!.coordinates), ...j.internalEdgeIds.flatMap(id => dbNet.edges.get(id)!.coordinates)];
+    const f = junctionFrame(pts);
+    for (const p of pts) expect(dM(p, f.centre)).toBeLessThanOrEqual(f.radiusM + 0.01);
+    expect(f.radiusM).toBeGreaterThan(40);
+    expect(f.rangeM).toBeGreaterThanOrEqual(2 * f.radiusM);
+    expect(f.rangeM).toBeCloseTo(Math.max(150, f.radiusM * FRAME_RANGE_PER_RADIUS), 6);
+    expect(dM(f.centre, j.centre)).toBeLessThan(f.radiusM);
+    expect(junctionFrame([])).toEqual({ centre: [0, 0, 0], radiusM: 0, rangeM: 0 });
+  });
+});
+
+describe('the editor starts from exactly what the simulation ran; applying it unchanged changes nothing', () => {
+  // The Sangamwadi roads with no signals loaded (as in the browser run): signals estimated from road classes
+  const area = new StudyAreaExplorer().explore(fx.roads, 1, { seedRoadIds: ['osm_218681353'], rangeMeters: 700, direction: 'both' });
+  const jArea = groupJunctions(area.network, fxRoads, {}).find(x => x.id === junctionWithNode(fxJunctions, ...AMBEDKAR).id)!;
+  const probe = new TrafficMicroSim(area, fxRoads, { demandLevel: OD_REFERENCE_LEVEL, seed: 1 });
+  const sources = probe.getSourceNodes(), sinks = probe.getSinkNodes();
+  const MIXK: [VehicleKind, number][] = [['two_wheeler', 0.5], ['car', 0.35], ['auto', 0.15]];
+  // Traffic from every edge entry to the exits on the far side of the junction (so its approaches carry flow and the signals are timed by Webster)
+  const far = (from: string) => sinks.filter(t => t !== from).sort((a, b) => dM(area.network.nodes.get(b)!.coordinates, area.network.nodes.get(from)!.coordinates) - dM(area.network.nodes.get(a)!.coordinates, area.network.nodes.get(from)!.coordinates)).slice(0, 2);
+  const demand: MicroDemandTrip[] = sources.flatMap(a => far(a).flatMap(b => MIXK.map(([kind, sh]) => ({ fromNodeId: a, toNodeId: b, vehiclesPerHour: 120 * sh, kind }))));
+  const sim = (edits?: JunctionEditSpec[]) => {
+    const s = new TrafficMicroSim(area, fxRoads, { demandLevel: OD_REFERENCE_LEVEL, seed: 42, demandTrips: demand, signalTiming: 'webster', junctionEdits: edits });
+    return { s, c: runFor(s, 300, 600) };
+  };
+
+  it('the plan is the run\'s (the signal that held most approaches: its phases and greens, a phase that held only pieces inside kept; then the other signals\' phases); a no-op Apply gives the identical simulation and assignment', () => {
+    const base = sim();
+    expect(base.s.getMetrics().completedTrips).toBeGreaterThan(100);
+    const st = runSignalStructure(base.s, base.c.links);
+    const start = startingDraft(jArea, null, st as never, area.network);
+    expect(start.source).toBe('last-run');
+    const run = start.run!;
+    expect(run.signals.length).toBeGreaterThanOrEqual(1);
+    const plans = new Map(base.s.signalPlans().map(p => [p.nodeId, p]));
+    const p0 = plans.get(run.signals[0].node)!;
+    // Webster timing from the flows, not the 25 s default
+    expect(p0.flowRatioSum).not.toBeNull();
+    const plan = start.draft.signal!;
+    const n0 = p0.greensS.length;
+    expect(plan.phases.slice(0, n0).map(p => p.greenS)).toEqual(p0.greensS.map(g => Math.max(5, Math.round(g))));
+    expect(Math.abs(cycleOf({ ...plan, phases: plan.phases.slice(0, n0) }) - p0.cycleS)).toBeLessThanOrEqual(n0);
+    // Every approach held by a signal is in the phase(s) of the signal that held it; the others are in every phase
+    for (const a of jArea.approaches) {
+      const inPhases = plan.phases.filter(p => p.arms.includes(a.id)).length;
+      if (run.alwaysGreen.includes(a.id)) expect(inPhases).toBe(plan.phases.length);
+      else expect(inPhases).toBeGreaterThanOrEqual(1);
+    }
+    expect(run.signals.reduce((n, x) => n + x.arms.length, 0)).toBeGreaterThanOrEqual(run.signalHeld);
+    expect(start.draft).toMatchObject({ control: 'signal', asRun: true });
+
+    // No-op Apply: the same simulation to the last vehicle, the same assignment
+    const same = sim([start.draft]);
+    expect(JSON.stringify(same.c.links)).toBe(JSON.stringify(base.c.links));
+    expect(JSON.stringify(same.s.getMetrics())).toBe(JSON.stringify(base.s.getMetrics()));
+    expect(JSON.stringify(same.s.signalPlans())).toBe(JSON.stringify(base.s.signalPlans()));
+    const a0 = assignTraffic(area, fxRoads, demand), a1 = assignTraffic(area, fxRoads, demand, { junctionEdits: [start.draft] });
+    expect(JSON.stringify(a1.links)).toBe(JSON.stringify(a0.links));
+
+    // One green changed: the plan is the user's, fixed as entered, one cycle over every simulated junction of it
+    const edited = setGreen(start.draft, 0, plan.phases[0].greenS + 20);
+    expect(edited.asRun).toBeUndefined();
+    const changed = sim([edited]);
+    const mine = changed.s.signalPlans().filter(p => jArea.nodeIds.some(n => changed.s.junctionOfNode(n) === p.nodeId));
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every(p => p.cycleS === cycleOf(edited.signal!))).toBe(true);
+    expect(JSON.stringify(changed.c.links)).not.toBe(JSON.stringify(base.c.links));
+  }, 120000);
+
+  it('in the simulator an approach in every phase is never stopped, and pieces inside the junction are never stopped', () => {
+    const first = jArea.approaches[0].id;
+    const c = compileJunctionEdits(area.network, [{ ...editOf(jArea), control: 'signal', signal: { amberS: 3, allRedS: 2, phases: [
+      { greenS: 20, arms: jArea.approaches.map(a => a.id) }, { greenS: 20, arms: [first] }] } }]);
+    const links = (probe as unknown as { links: { index: number; id: string; from: string; to: string; roadId: string; lanes: unknown[] }[] }).links.map(l => ({ index: l.index, id: l.id, from: l.from, to: l.to, roadId: l.roadId, lanes: l.lanes.length }));
+    const { setups } = simJunctionSetups(c, links, n => [n, ...area.network.nodes.has(n) ? jArea.nodeIds.filter(m => probe.junctionOfNode(m) === n) : []]);
+    expect(setups.length).toBeGreaterThan(0);
+    let firstSeen = 0, othersSeen = 0, insideSeen = 0;
+    const inside = new Set(setups.map(x => x.simNode));
+    for (const x of setups) for (const [index, phase] of x.phaseOfLink) {
+      const l = links[index];
+      if (inside.has(l.from)) { expect(phase).toBe(-1); insideSeen++; continue; }
+      const arm = c[0].approachOfEdge.get(l.id) ?? c[0].chainOfEdge.get(l.id);
+      // The first approach is in both phases (always green), the others only in phase 1
+      if (arm === first) { expect(phase).toBe(-1); firstSeen++; } else if (arm) { expect(phase).toBe(0); othersSeen++; }
+    }
+    expect(firstSeen).toBeGreaterThan(0);
+    expect(othersSeen).toBeGreaterThan(0);
+    expect(insideSeen).toBeGreaterThan(0);
+  });
+});
+
+describe('a no-op Apply through the whole analysis: same numbers', () => {
+  it('apply the unchanged starting plan → new network key, the analysis re-runs → identical results; a changed green → different results', async () => {
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    const history = new HistoryManager(om);
+    const junctionObjs = () => om.getAll().filter((o): o is JunctionObject => o.type === 'junction');
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, null, () => ({ buildings: [], junctions: junctionObjs() }),
+      () => Promise.reject(new Error('no counts')), null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(700);
+    mode.selectRoad('osm_218681353', false);
+    await mode.runAnalysis();
+    const key0 = mode.getState().analysis.key, out0 = mode.getState().analysis.output!;
+    expect(out0.result.signalLinks?.size).toBeGreaterThan(0);
+    const net = mode.getState().area!.network;
+    const j = groupJunctions(net, fxRoads, {}).find(x => x.id === junctionWithNode(fxJunctions, ...AMBEDKAR).id)!;
+    const start = startingDraft(j, null, out0.result, net);
+    expect(start.source).toBe('last-run');
+    expect(start.draft).toMatchObject({ control: 'signal', asRun: true });
+    applyJunctionEdit(om, history, start.draft, 'base', j.centre);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    expect(mode.getState().analysis.outdated).toBe(true);
+    await mode.runAnalysis();
+    const out1 = mode.getState().analysis.output!;
+    expect(mode.getState().analysis.key).not.toBe(key0);
+    expect(out1).not.toBe(out0);
+    const plain = (r: unknown) => JSON.stringify(r, (k, x) => (k === 'elapsedMs' || k === 'timings' ? undefined : x instanceof Map ? [...x] : x));
+    expect(plain(out1.result)).toBe(plain(out0.result));
+
+    // A real change: 20 s more green in the first phase
+    history.undo();
+    applyJunctionEdit(om, history, setGreen(start.draft, 0, start.draft.signal!.phases[0].greenS + 20), 'base', j.centre);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    await mode.runAnalysis();
+    expect(plain(mode.getState().analysis.output!.result)).not.toBe(plain(out0.result));
+    mode.dispose();
+  }, 240000);
 });

@@ -235,6 +235,10 @@ export interface RoadAnalysisResult {
   linkDelay?: Map<string, { delayS: number | null; vph: number; gC: number | null }>;
   /** Signal cycle (s) per simulated junction node, from the first run. Absent on older results. */
   signalCycles?: Map<string, number>;
+  /** Green (s) per phase of each signalised simulated junction node, from the first run (docs/OVERHAUL.md §23). Absent on older results. */
+  signalGreens?: Map<string, number[]>;
+  /** Per link ending at a signal in the first run: the simulated junction node and the phase that serves it (-1: never stopped). Absent on older results. */
+  signalLinks?: Map<string, { node: string; phase: number }>;
   /** Assigned volumes by area link (veh/h), for comparisons. */
   areaLinkVph: Map<string, number>;
   /** Worst places in the wider area (assignment v/c), for "which parts suffer most". */
@@ -428,6 +432,8 @@ export interface CorridorRun {
   /** Per link: delay per vehicle that left it (s) or null, vehicles per hour entering, green ratio (docs/OVERHAUL.md §23). */
   linkDelay?: Map<string, { delayS: number | null; vph: number; gC: number | null }>;
   signalCycles?: Map<string, number>;
+  signalGreens?: Map<string, number[]>;
+  signalLinks?: Map<string, { node: string; phase: number }>;
   network: MicroSimMetrics;
   load: LoadCheck;
   gridlockSites?: GridlockSite[];
@@ -493,10 +499,32 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
   for (const l of counts.links) linkVph.set(l.id, l.entries * perH);
   const linkDelay = new Map<string, { delayS: number | null; vph: number; gC: number | null }>();
   for (const l of counts.links) if (l.entries > 0 || l.meanTimeS !== null) linkDelay.set(l.id, { delayS: l.meanTimeS !== null ? Math.max(0, l.meanTimeS - l.freeFlowS) : null, vph: l.entries * perH, gC: l.signal ? l.gC : null });
-  const signalCycles = new Map(sim.signalPlans().map(p => [p.nodeId, p.cycleS]));
+  const { signalCycles, signalGreens, signalLinks } = runSignalStructure(sim, counts.links);
   const network = sim.getMetrics();
   const load = loadCheck(Math.max(0, demandVph - counts.load.unroutable * perH), { ...counts.load, gridlockedNow: network.accounting.gridlockedNow }, counts.windowS, network.waitingToEnter);
-  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, linkDelay, signalCycles, network, load, gridlockSites: sim.gridlockSites().slice(0, 3) };
+  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, linkDelay, signalCycles, signalGreens, signalLinks, network, load, gridlockSites: sim.gridlockSites().slice(0, 3) };
+}
+
+/**
+ * The signals a run had in force: cycle and greens per signalised simulated
+ * junction, and the junction and phase of every link that ends at one, so the
+ * junction editor can start from exactly the plan the run used
+ * (junctionDraft.lastRunControl, docs/OVERHAUL.md §23). The phase of a link is
+ * read from the simulator's control table (it has no public accessor for it;
+ * element access keeps the read type-checked).
+ */
+export function runSignalStructure(sim: TrafficMicroSim, links: readonly { id: string; to: string }[] = sim.analysisCounts()?.links ?? []): { signalCycles: Map<string, number>; signalGreens: Map<string, number[]>; signalLinks: Map<string, { node: string; phase: number }> } {
+  const plans = sim.signalPlans();
+  const signalCycles = new Map(plans.map(p => [p.nodeId, p.cycleS]));
+  const signalGreens = new Map(plans.map(p => [p.nodeId, [...p.greensS]]));
+  const signalLinks = new Map<string, { node: string; phase: number }>();
+  const controls = sim['controls'];
+  controls?.forEach((c, node) => {
+    if (c.kind !== 'signal') return;
+    // Links are listed in simulator order: the index of a link is its position
+    c.groups.forEach((phase, index) => { const l = links[index]; if (l && l.to === node) signalLinks.set(l.id, { node, phase }); });
+  });
+  return { signalCycles, signalGreens, signalLinks };
 }
 
 /**
@@ -880,7 +908,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     section: { name: section.name, lengthM: section.lengthM, carriageways: section.carriageways, endsAt: section.endsAt, segmentKeys: section.segmentKeys },
     directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, explainedDirection: status === 'no_traffic' || !worst ? null : worst.label, bottleneck,
     origins: area.origins, destinations: area.destinations, composition: area.composition, feeders: area.feeders, nearby: area.nearby, junctions,
-    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, linkDelay, signalCycles: runs[0]?.signalCycles, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
+    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, linkDelay, signalCycles: runs[0]?.signalCycles, signalGreens: runs[0]?.signalGreens, signalLinks: runs[0]?.signalLinks, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
     network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
       gridlockRemovals: Math.round(mean(runs.map(r => r.network.gridlockRemovals))), waitingToEnter: Math.round(mean(runs.map(r => r.network.waitingToEnter))), onNetwork: Math.round(mean(runs.map(r => r.network.onNetwork))) },
     load: { ...runs[0].load, servedShare: mean(runs.map(r => r.load.servedShare)), overloaded: overloadedRuns > n / 2, message: overloadedRuns > n / 2 ? loadMsg : null },

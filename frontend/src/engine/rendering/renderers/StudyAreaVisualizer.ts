@@ -522,6 +522,13 @@ export class StudyAreaVisualizer {
     });
   }
 
+  /** Frames a sphere (radius m) from `rangeM` away, tilted 60 degrees down. */
+  public flyToSphere(centre: [number, number, number], radiusM: number, rangeM: number) {
+    if (!this.viewer) return;
+    const sphere = new BoundingSphere(scenePoint(centre[0], centre[1], centre[2] || 0), Math.max(10, radiusM));
+    this.viewer.camera.flyToBoundingSphere(sphere, { offset: new HeadingPitchRange(0, CesiumMath.toRadians(-60), rangeM), duration: 1.0 });
+  }
+
   public flyToPoint(coords: [number, number, number]) {
     if (!this.viewer) return;
     const sphere = new BoundingSphere(scenePoint(coords[0], coords[1], coords[2] || 0), 30);

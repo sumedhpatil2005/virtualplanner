@@ -732,6 +732,11 @@ export class SimulationMode {
     this.visualizer.flyToBounds(bounds);
   }
 
+  /** Camera on a sphere (centre, radius m) from `rangeM` away (Build's junction editor: junctionEdits.junctionFrame). */
+  public flyToSphere(centre: [number, number, number], radiusM: number, rangeM: number) {
+    this.visualizer.flyToSphere(centre, radiusM, rangeM);
+  }
+
   private recompute(fly: boolean, reveal: boolean) {
     if (!this.state.active) return;
     this.analysisStale = true;

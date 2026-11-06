@@ -142,7 +142,8 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   // Edited junctions (docs/OVERHAUL.md §23) are controlled as edited, not by the mapped signals
   const compiled = compileJunctionEdits(area.network, junctionEdits);
   const editedAt = new Map<string, CompiledJunction>();
-  for (const c of compiled) for (const n of c.nodeIds) editedAt.set(n, c);
+  // An edit that keeps the engine's own control (asRun) leaves the signals as they were
+  for (const c of compiled) if (!c.controlAsRun) for (const n of c.nodeIds) editedAt.set(n, c);
   const signalised = new Set<string>();
   for (const [id, s] of arms) if (!editedAt.has(id) && s.size >= 3 && signalNear(id)) signalised.add(id);
   // Approaches per signalised node: links ending there whose start is not itself signalised (not an internal link of the junction)

@@ -4,7 +4,7 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import type { RoadObject } from '../engine/objects/types';
 import type { LogicalJunction } from '../engine/simulation/junctionGroups';
 import { cycleOf, armGreenS, validateEdit, type JunctionEditSpec } from '../engine/simulation/junctionControl';
-import { startingDraft, setControl, setGreen, setTiming, toggleArmInPhase, addPhase, removePhase, toggleMajor, toggleBan, toggleLane, resetLanes, defaultLanePairs, sameEdit } from '../engine/editing/junctionDraft';
+import { startingDraft, startingNote, setControl, setGreen, setTiming, toggleArmInPhase, addPhase, removePhase, toggleMajor, toggleBan, toggleLane, resetLanes, defaultLanePairs, sameEdit } from '../engine/editing/junctionDraft';
 import { SidePanel, PanelHeader, PanelBody, Section, Button, Segmented, Notice } from './ui/kit';
 import { JUNCTION_HIGHLIGHT_STYLE } from '../engine/rendering/renderers/JunctionHighlight';
 
@@ -32,7 +32,12 @@ export const JunctionPanel: React.FC = () => {
 
 const JunctionEditor: React.FC<{ j: LogicalJunction }> = ({ j }) => {
   const applied = useSyncExternalStore(subscribe, () => engineInstance.getImportedJunctionEdit(j.id));
-  const start = useMemo(() => startingDraft(j, applied, engineInstance.simMode.getState().analysis.output?.result), [j, applied]);
+  const start = useMemo(() => {
+    // The last analysis's own network first (its link ids are the run's), else the roads compiled around the junction
+    const st = engineInstance.simMode.getState(), result = st.analysis.output?.result;
+    const fromRun = startingDraft(j, applied, result, st.area?.network);
+    return fromRun.source === 'default' ? startingDraft(j, applied, result, engineInstance.getOpenImportedJunction()?.local.network) : fromRun;
+  }, [j, applied]);
   const [draft, setDraft] = useState<JunctionEditSpec>(start.draft);
   const [move, setMove] = useState<string | null>(null);
   const [hoverArms, setHoverArms] = useState<string[]>([]);
@@ -88,11 +93,7 @@ const JunctionEditor: React.FC<{ j: LogicalJunction }> = ({ j }) => {
         <Section title="Control">
           <Segmented label="Junction control" value={draft.control} onChange={c => setDraft(setControl(draft, c))}
             options={[{ value: 'none', label: 'No control' }, { value: 'priority', label: 'Priority' }, { value: 'signal', label: 'Signal' }]} />
-          <p className="text-xs text-slate-500">
-            {start.source === 'last-run' && !applied ? 'Starting values: the signal plan the last analysis ran here (Webster timing from its flows).'
-              : start.source === 'default' && !applied ? `Starting values: what the simulation does here now (${j.signalised ? 'mapped signal, one phase per approach' : 'no mapped signal: priority to the main roads'}).`
-                : 'Values: the edit applied to this junction.'}
-          </p>
+          <p className="text-xs text-slate-500" data-testid="junction-start-note">{applied ? startingNote(j, { source: 'edit', run: null }) : startingNote(j, start)}</p>
         </Section>
 
         {draft.control === 'signal' && plan && (
@@ -101,7 +102,7 @@ const JunctionEditor: React.FC<{ j: LogicalJunction }> = ({ j }) => {
               {plan.phases.map((p, i) => (
                 <div key={i} className="rounded-xl bg-white/[0.04] border border-white/5 p-2.5 space-y-2" data-phase={i}>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-300 w-14">Phase {i + 1}</span>
+                    <span className="text-xs font-semibold text-slate-300 w-14" title={p.arms.length ? undefined : 'No approach has green in this phase (in the last run it served only pieces inside the junction)'}>Phase {i + 1}{p.arms.length ? '' : '*'}</span>
                     <input type="range" min={5} max={120} value={p.greenS} aria-label={`Phase ${i + 1} green`} onChange={e => setDraft(setGreen(draft, i, Number(e.target.value)))} className="flex-1 accent-emerald-400" />
                     <input type="number" min={5} max={180} value={p.greenS} aria-label={`Phase ${i + 1} green (s)`} data-testid={`phase-green-${i}`} onChange={e => setDraft(setGreen(draft, i, Number(e.target.value)))}
                       className="w-14 bg-slate-900 border border-slate-700/50 rounded-md px-1.5 py-0.5 text-sm text-right tabular-nums" />
@@ -129,7 +130,7 @@ const JunctionEditor: React.FC<{ j: LogicalJunction }> = ({ j }) => {
               <Button size="sm" variant="ghost" icon={Plus} onClick={() => setDraft(addPhase(draft))}>Phase</Button>
             </div>
             <ul className="text-xs text-slate-400 space-y-0.5" data-testid="junction-green-per-approach">
-              {j.approaches.map(a => <li key={a.id} className="flex justify-between"><span>{a.label}</span><span className="tabular-nums text-slate-300">{armGreenS(plan, a.id)} s green of {cycle} s</span></li>)}
+              {j.approaches.map(a => <li key={a.id} className="flex justify-between"><span>{a.label}</span><span className="tabular-nums text-slate-300">{plan.phases.length > 1 && plan.phases.every(p => p.arms.includes(a.id)) ? 'always green' : `${armGreenS(plan, a.id)} s green of ${cycle} s`}</span></li>)}
             </ul>
           </Section>
         )}

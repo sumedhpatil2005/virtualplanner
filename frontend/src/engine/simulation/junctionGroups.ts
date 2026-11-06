@@ -23,6 +23,12 @@ import { reliableRoadName, compassWord, bearingBetween, angleDiff, normaliseDeg 
  * Then slip lanes: a `*_link` stretch of at most SLIP_MAX_M whose two ends
  * both lie within SLIP_RADIUS_M of a group's centre pulls those ends in (with
  * the end nodes alone: a side road meeting a slip lane's end stays its own junction).
+ * Then enclosed plain nodes: a road that leaves a group and comes back into it
+ * through plain (two-stretch) nodes only, within ENCLOSED_CHAIN_M and
+ * SLIP_RADIUS_M of the centre, is inside the junction (OSM splits a
+ * carriageway where its name changes or a signal stands; when no signal is
+ * loaded that node is plain, and leaving it out cut one approach into a false
+ * exit and a false approach).
  *
  * Two separate junctions 60 m apart stay separate: the stretch between them is
  * longer than INTERNAL_MAX_M, and a group could not span them anyway.
@@ -33,6 +39,8 @@ export const MAX_SPAN_M = 50;
 export const SLIP_MAX_M = 120;
 export const SLIP_RADIUS_M = 70;
 export const SIGNAL_NODE_M = 12;
+/** A road leaving a junction and coming back into it through plain nodes within this length (m) is inside it. */
+export const ENCLOSED_CHAIN_M = 60;
 /** An approach's direction is taken from a point this far back along it (m). */
 const ARM_LOOKBACK_M = 40;
 /** Pieces of an approach followed back through plain (two-stretch) nodes up to this length (m). */
@@ -196,10 +204,39 @@ export function groupJunctions(net: TrafficNetwork, roads: ReadonlyMap<string, D
     for (const end of [s.a, s.b]) if (find(end) !== target) { detach(end); merge(target, end); }
     (slipRoads.get(find(target)) ?? slipRoads.set(find(target), new Set()).get(find(target))!).add(s.roadId);
   }
+  // Enclosed plain nodes: a road leaving a group and coming back into it through plain (two-stretch) nodes
+  // only, short and near the centre, is inside the junction (OSM splits a carriageway where its name
+  // changes or a signal stands; with no signal loaded such a node is plain and would cut one approach
+  // into a false exit and a false approach)
+  const adj = new Map<string, { other: string; len: number }[]>();
+  for (const sg of segLen.values()) {
+    if (sg.a === sg.b) continue;
+    (adj.get(sg.a) ?? adj.set(sg.a, []).get(sg.a)!).push({ other: sg.b, len: sg.len });
+    (adj.get(sg.b) ?? adj.set(sg.b, []).get(sg.b)!).push({ other: sg.a, len: sg.len });
+  }
+  const isPlain = (id: string) => (arms.get(id)?.size ?? 0) === 2 && !isJunctionNode(id);
+  for (const g of [...members.keys()]) {
+    if (!members.has(g)) continue;
+    const ids = membersOf(g), inGroup = new Set(ids), c = centreOf(ids);
+    const absorb: string[] = [];
+    for (const m of ids) for (const first of adj.get(m) ?? []) {
+      if (inGroup.has(first.other) || !isPlain(first.other)) continue;
+      let prev = m, cur = first.other, len = first.len;
+      const chain: string[] = [];
+      while (isPlain(cur) && !inGroup.has(cur) && len <= ENCLOSED_CHAIN_M && distM(coord(cur), c) <= SLIP_RADIUS_M && chain.length < 8) {
+        chain.push(cur);
+        const step = (adj.get(cur) ?? []).find(x => x.other !== prev);
+        if (!step) break;
+        prev = cur; cur = step.other; len += step.len;
+      }
+      if (chain.length && inGroup.has(cur) && len <= ENCLOSED_CHAIN_M) absorb.push(...chain);
+    }
+    for (const n of new Set(absorb)) if (find(n) === n && !members.has(n)) merge(g, n);
+  }
   // Every junction node not grouped is a junction of its own
   const groups = new Map<string, string[]>();
   for (const id of net.nodes.keys()) {
-    if (!isJunctionNode(id) || !inScope(id)) continue;
+    if ((!isJunctionNode(id) && !members.has(find(id))) || !inScope(id)) continue;
     const g = find(id);
     if (!groups.has(g)) groups.set(g, membersOf(g));
   }

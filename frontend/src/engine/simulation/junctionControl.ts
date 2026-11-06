@@ -52,6 +52,14 @@ export interface JunctionEditSpec {
   nodeKeys: string[];
   arms: JunctionEditArm[];
   control: JunctionControlKind;
+  /**
+   * The control and timing are what the engine ran here by itself (the
+   * editor's starting values, untouched): the engine keeps its own control
+   * (mapped or estimated signals, Webster timing, priority by road class) and
+   * only the bans and lane connections apply, so applying the starting values
+   * changes nothing. Any change to the control, plan or major approaches clears it.
+   */
+  asRun?: boolean;
   signal?: SignalPlan;
   /** Approach arms with priority (control 'priority'). */
   majorArms?: string[];
@@ -76,34 +84,27 @@ export const armGreenS = (plan: SignalPlan, armId: string) => plan.phases.reduce
 const armOf = (a: JunctionArm): JunctionEditArm => ({ id: a.id, kind: a.kind, label: a.label, keys: [...a.keys], chainKeys: [...a.chainKeys], lanes: a.lanes });
 
 /**
- * What the engine does at this junction with no edit, as an editable spec:
- * a mapped signal gives a signal with one phase per approach (the
- * simulator's approach-wise plan: 25 s green, 3 s amber, 2 s all-red; the
- * simulator retimes such a plan by Webster from its flows, an edited plan is
- * fixed as entered); otherwise priority to the highest-class approaches.
- * `lastRun` (from the last analysis) replaces the greens with the ones that run used.
+ * The editor's starting values: what the engine does at this junction by
+ * itself, as an editable spec marked `asRun` (applying it unchanged keeps the
+ * engine's own control, so the results are identical).
+ *  - `lastRun` with a plan (junctionDraft.lastRunControl): the signal plan the
+ *    last analysis ran, greens as run, approaches no signal held always green;
+ *  - `lastRun` without a plan: the run had no signal here: priority to the
+ *    highest-class approaches;
+ *  - no `lastRun`: a mapped signal gives one phase per approach (the
+ *    simulator's approach-wise plan: 25 s green, 3 s amber, 2 s all-red, which
+ *    it retimes by Webster from its flows); otherwise priority.
+ * Once the plan is changed it runs as entered (fixed time, not retimed).
  */
-export function defaultEdit(j: LogicalJunction, lastRun?: { cycleS: number; greenRatioByArm: Map<string, number> } | null): JunctionEditSpec {
+export function defaultEdit(j: LogicalJunction, lastRun?: { plan: SignalPlan | null } | null): JunctionEditSpec {
   const topRank = Math.max(0, ...j.approaches.map(a => a.rank));
   const major = j.approaches.filter(a => a.rank === topRank).map(a => a.id);
-  let phases: SignalPhase[] = j.approaches.map(a => ({ greenS: DEFAULT_GREEN_S, arms: [a.id] }));
-  if (lastRun && lastRun.cycleS > 0) {
-    // Approaches the last run gave the same green share ran in one phase (to the nearest second)
-    const byGreen = new Map<number, string[]>();
-    for (const a of j.approaches) {
-      const r = lastRun.greenRatioByArm.get(a.id);
-      if (r === undefined) continue;
-      const g = Math.max(MIN_GREEN_EDIT_S, Math.round(r * lastRun.cycleS));
-      (byGreen.get(g) ?? byGreen.set(g, []).get(g)!).push(a.id);
-    }
-    const covered = new Set([...byGreen.values()].flat());
-    if (covered.size === j.approaches.length) phases = [...byGreen].map(([greenS, arms]) => ({ greenS, arms }));
-  }
+  const approachWise: SignalPlan = { amberS: DEFAULT_AMBER_S, allRedS: DEFAULT_ALL_RED_S, phases: j.approaches.map(a => ({ greenS: DEFAULT_GREEN_S, arms: [a.id] })) };
+  const signal = lastRun?.plan ? structuredClone(lastRun.plan) : approachWise;
+  const control: JunctionControlKind = lastRun ? (lastRun.plan ? 'signal' : 'priority') : j.signalised ? 'signal' : 'priority';
   return {
     junctionId: j.id, label: j.label, nodeKeys: [...j.nodeKeys], arms: [...j.approaches, ...j.exits].map(armOf),
-    control: j.signalised ? 'signal' : 'priority',
-    signal: { amberS: DEFAULT_AMBER_S, allRedS: DEFAULT_ALL_RED_S, phases },
-    majorArms: major, bannedMovements: [], laneConnections: {},
+    control, asRun: true, signal, majorArms: major, bannedMovements: [], laneConnections: {},
   };
 }
 
@@ -137,6 +138,8 @@ export interface CompiledJunction {
   chainOfEdge: Map<string, string>;
   internalEdges: Set<string>;
   bannedArmPairs: Set<string>;
+  /** The engine keeps its own control here (spec.asRun): only bans and lane connections apply. */
+  controlAsRun: boolean;
 }
 
 /** Matches each edit to the network: its member nodes (by OSM node position) and the stretches of its arms. Edits whose nodes are not in the network are left out. */
@@ -161,7 +164,7 @@ export function compileJunctionEdits(net: TrafficNetwork, edits: readonly Juncti
         if (a) chainOfEdge.set(e.id, a);
       }
     }
-    out.push({ spec, nodeIds, approachOfEdge, exitOfEdge, chainOfEdge, internalEdges, bannedArmPairs: new Set(spec.bannedMovements ?? []) });
+    out.push({ spec, nodeIds, approachOfEdge, exitOfEdge, chainOfEdge, internalEdges, bannedArmPairs: new Set(spec.bannedMovements ?? []), controlAsRun: !!spec.asRun });
   }
   return out;
 }
@@ -169,7 +172,7 @@ export function compileJunctionEdits(net: TrafficNetwork, edits: readonly Juncti
 /** Green ratio g/C of an approach arm (signal control), or null. */
 export function armGreenRatio(c: CompiledJunction, armId: string): number | null {
   const plan = c.spec.signal;
-  if (c.spec.control !== 'signal' || !plan) return null;
+  if (c.controlAsRun || c.spec.control !== 'signal' || !plan) return null;
   const cyc = cycleOf(plan);
   return cyc > 0 ? armGreenS(plan, armId) / cyc : null;
 }
@@ -354,12 +357,15 @@ export function simJunctionSetups(compiled: readonly CompiledJunction[], links: 
     if (!mine.length) continue;
     const inside = new Set(mine);
     const plan = c.spec.signal;
+    // An approach in one phase stops outside it; one in every phase never stops (-1); one in some phases gets the first of them (the simulator has one phase per link)
     const phaseOfArm = new Map<string, number>();
     plan?.phases.forEach((p, i) => p.arms.forEach(a => { if (!phaseOfArm.has(a)) phaseOfArm.set(a, i); }));
+    if (plan && plan.phases.length > 1) for (const a of phaseOfArm.keys()) if (plan.phases.every(p => p.arms.includes(a))) phaseOfArm.set(a, -1);
     const armOfIn = (l: SimLinkView) => c.approachOfEdge.get(l.id) ?? c.chainOfEdge.get(l.id);
     const armOfOut = (l: SimLinkView) => c.exitOfEdge.get(l.id) ?? c.chainOfEdge.get(l.id);
     const majors = new Set(c.spec.majorArms ?? []);
-    for (const node of mine) {
+    // The engine's own control stays (lane connections below still apply)
+    if (!c.controlAsRun) for (const node of mine) {
       const incoming = links.filter(l => l.to === node);
       const phaseOfLink = new Map<number, number>();
       const majorLinks = new Set<number>();

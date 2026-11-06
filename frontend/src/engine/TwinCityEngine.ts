@@ -54,7 +54,7 @@ import { apiGet } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
 import { RoadHighlight, type RoadHighlightKind } from './rendering/renderers/RoadHighlight';
 import { JunctionHighlight, cutPath, ARM_DRAW_M } from './rendering/renderers/JunctionHighlight';
-import { junctionAt, junctionOfRoad, applyJunctionEdit, removeJunctionEdit, junctionEditOf, type LocalJunctions } from './editing/junctionEdits';
+import { junctionAt, junctionOfRoad, applyJunctionEdit, removeJunctionEdit, junctionEditOf, junctionFrame, type LocalJunctions } from './editing/junctionEdits';
 import type { LogicalJunction } from './simulation/junctionGroups';
 import type { JunctionEditSpec } from './simulation/junctionControl';
 import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
@@ -942,7 +942,12 @@ export class TwinCityEngine {
     this.openJunction = hit;
     this.selection.selectSingle(`ljunction:${hit.junction.id}`);
     this.previewImportedJunction();
-    if (fly) this.simMode.flyTo([hit.junction.centre[0], hit.junction.centre[1], 0]);
+    if (fly) {
+      // Frame everything the preview draws (members, internal pieces, arm stubs), not just the centre
+      const d = this.junctionDrawPaths(hit);
+      const f = junctionFrame([...hit.junction.nodeIds.map(id => hit.local.network.nodes.get(id)?.coordinates ?? []), ...[...d.approaches, ...d.exits, ...d.internal].flatMap(x => x.path)]);
+      this.simMode.flyToSphere(f.centre, f.radiusM, f.rangeM);
+    }
     this.emitJunction();
     return hit.junction;
   }
@@ -969,15 +974,18 @@ export class TwinCityEngine {
   public previewImportedJunction(focusArmIds: readonly string[] = []) {
     const open = this.openJunction;
     if (!open) { this.junctionHighlight.clear(); return; }
+    this.junctionHighlight.show({ junctionId: open.junction.id, ...this.junctionDrawPaths(open), focusArmIds });
+  }
+
+  /** What the junction preview draws: approach and exit stubs (ARM_DRAW_M) and the internal pieces. */
+  private junctionDrawPaths(open: { junction: LogicalJunction; local: LocalJunctions }) {
     const { junction: j, local } = open;
     const path = (edgeId: string) => local.network.edges.get(edgeId)?.coordinates ?? [];
-    this.junctionHighlight.show({
-      junctionId: j.id,
+    return {
       approaches: j.approaches.flatMap(a => a.edgeIds.map(id => ({ id: a.id, path: cutPath(path(id), ARM_DRAW_M, true) }))),
       exits: j.exits.flatMap(a => a.edgeIds.map(id => ({ id: a.id, path: cutPath(path(id), ARM_DRAW_M, false) }))),
       internal: j.internalEdgeIds.map(id => ({ id, path: path(id) })),
-      focusArmIds,
-    });
+    };
   }
 
   /** The junction preview on show (ids), for tests and the browser check. */
