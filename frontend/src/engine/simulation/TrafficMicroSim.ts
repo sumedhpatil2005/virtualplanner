@@ -113,6 +113,14 @@ const TURN_SPEED_MPS = 4.5;
 const TURN_SLOWDOWN_M = 40;
 /** A vehicle stopped this long at the front of a queue is removed (gridlock), and counted. */
 export const GRIDLOCK_S = 180;
+/**
+ * A vehicle held at its line this long (s), for room in a lane another approach
+ * also feeds or by a movement crossing its path from an approach it does not
+ * give way to, gets the next turn: the lane, or the junction, is left to it
+ * (merging and crossing in turn). Shorter waits change nothing. Well under
+ * GRIDLOCK_S, so a vehicle that only had to wait its turn is never removed.
+ */
+const MERGE_TURN_S = 60;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
 /**
@@ -328,6 +336,8 @@ interface Reservation {
   toLane: number;
   /** Crossing beside a partner: takes no room of its own in the next lane. */
   alongside?: boolean;
+  /** Order in which grants were given (a vehicle's room counts only those cleared before it). */
+  seq: number;
 }
 
 interface Link {
@@ -573,6 +583,7 @@ export class TrafficMicroSim {
   private excessTimeSum = 0;
   private stopsSum = 0;
   private gridlockRemovals = 0;
+  private grantSeq = 0;
   private unroutable = 0;
   private readonly watchedLinks = new Set<number>();
   private watchedPassed = 0;
@@ -1539,7 +1550,7 @@ export class TrafficMicroSim {
     // vehicle, after every vehicle already cleared into the same lane. What is free
     // now counts, plus what a moving tail clears before this one reaches its line.
     // A rider beside its partner needs no room of its own.
-    const need = (connector: LaneConnector) => connector.entry + veh.type.lengthM + veh.type.minGapM;
+    const need = (connector: LaneConnector) => this.exitNeed(veh, connector);
     // The room is needed where the movement ends, when this vehicle gets there: a
     // moving tail goes on at its speed for as long as this vehicle takes to reach
     // the line and drive the movement (kinematics from its speed and acceleration,
@@ -1547,13 +1558,7 @@ export class TrafficMicroSim {
     // the line (at the line: none) made every follower wait for the whole gap to
     // open before moving, so a turning queue could not discharge as a platoon
     // (one vehicle per lane every 4-5 s).
-    const room = (k: number, d: number, connector: LaneConnector) => {
-      const target = next.lanes[k];
-      const tail = target[target.length - 1];
-      const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? TURN_SPEED_MPS : next.speed * veh.speedFactor);
-      const ahead = tail && rearMoving(target) ? tail.v * tArrive : 0;
-      return this.backSpace(target) + ahead - this.pendingInto(next.index, k, veh);
-    };
+    const room = (k: number, d: number, connector: LaneConnector) => this.exitRoom(veh, next, k, d, connector);
     let lane = withPartner ? partner!.grantLane! : this.mappedLane(link, veh.lane, next);
     let connector = this.connectorFor(link, veh.lane, next, lane);
     dist = connector.start - veh.pos;
@@ -1591,6 +1596,7 @@ export class TrafficMicroSim {
     }
 
     if (this.conflictingClaim(veh, link, connector, false)) return this.refuse(link, 'conflict', veh, next.index);
+    if (!withPartner && this.owesTurn(veh, link, connector)) return this.refuse(link, 'conflict', veh, next.index);
 
     if (c?.kind === 'signal') {
       // Permissive right turn: give way to opposing green traffic (gap acceptance)
@@ -1684,11 +1690,125 @@ export class TrafficMicroSim {
     return false;
   }
 
+  /** Room a vehicle needs on the far side to be clear of the junction: past the end of its movement, its length and a standstill gap. */
+  private exitNeed(veh: Vehicle, connector: LaneConnector): number {
+    return connector.entry + veh.type.lengthM + veh.type.minGapM;
+  }
+
+  /**
+   * Room in lane `k` of `next` that a vehicle `d` metres before its movement can
+   * count on when it gets there: what is free now behind the lane's last vehicle,
+   * plus how far a moving tail goes on meanwhile (the vehicle's own time to the
+   * line and through the movement), less what vehicles already cleared into the
+   * lane will take.
+   *
+   * Unless the lane's front vehicle is leaving it (cleared through the next
+   * junction, or leaving the area), the tail can only go on as far as the lane
+   * can close up: the vehicles in it packed nose to tail at their standstill gaps
+   * against the lane's own stop line (`packedBack`). Before, a tail moving at
+   * turning speed was projected 20-35 m on even when the lane ahead of it was a
+   * 10 m link already full, so each follower saw the one before it still rolling,
+   * entered, and stopped inside the junction holding its claim (docs/OVERHAUL.md
+   * §18). A lane the next room owed to a longer-waiting vehicle on another
+   * approach has no room for this one (`heldFor`).
+   */
+  private exitRoom(veh: Vehicle, next: Link, k: number, d: number, connector: LaneConnector): number {
+    const target = next.lanes[k];
+    const tail = target[target.length - 1];
+    const free = this.backSpace(target);
+    let ahead = 0;
+    if (tail && rearMoving(target)) {
+      const tArrive = timeToCover(Math.max(0, d) + connector.length, veh.v, veh.type.maxAccel, connector.turn ? TURN_SPEED_MPS : next.speed * veh.speedFactor);
+      const front = target[0];
+      const leaving = front.routeIdx >= front.route.length - 1 || front.grantLane !== null;
+      ahead = leaving ? tail.v * tArrive : Math.min(tail.v * tArrive, Math.max(0, this.packedBack(next, target) - free));
+    }
+    if (this.heldFor(next, k, veh)) return -Infinity;
+    return free + ahead - this.pendingInto(next.index, k, veh);
+  }
+
+  /**
+   * Front vehicles on other approaches to the junction at the start of `next`
+   * that have waited longer than `veh`, and over MERGE_TURN_S, at their line for
+   * room or for a gap: the ones whose turn it is (calls `each` with the vehicle,
+   * its approach and the lane it would take; stops when `each` returns true).
+   * Only a turn the other vehicle could take now counts: its signal is green,
+   * and at a priority junction it does not give way to `veh`'s road. Waits are
+   * strictly ordered, so two approaches can never each wait for the other.
+   */
+  private longerWaiting(node: string, mine: Link, veh: Vehicle, each: (f: Vehicle, other: Link, lane: number) => boolean): boolean {
+    const c = this.controls.get(node);
+    if (!c) return false;
+    for (const [idx, other] of this.incomingOf(node)) {
+      if (idx === mine.index) continue;
+      if (c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
+      if (c.kind === 'priority' && this.hasPriorityOver(mine, other, c)) continue;
+      for (let li = 0; li < other.lanes.length; li++) {
+        const f = other.lanes[li][0];
+        if (!f || f.grantLane !== null || f.holdNext === undefined || f.waitS < MERGE_TURN_S || f.waitS <= veh.waitS) continue;
+        if (f.hold !== 'room' && f.hold !== 'room-wait' && f.hold !== 'conflict') continue;
+        if (each(f, other, li)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Whether lane `k` of `next` is owed to a longer-waiting vehicle on another
+   * approach (merging in turn). Without it, where two approaches feed one short
+   * lane, whichever kept the lane's tail rolling took every gap: a turning
+   * stream on a long movement always found room as its tail rolled on, and the
+   * straight-on queue beside it was refused until its front vehicle was removed
+   * as gridlock (docs/OVERHAUL.md §18).
+   */
+  private heldFor(next: Link, k: number, veh: Vehicle): boolean {
+    return this.longerWaiting(next.from, this.links[veh.link], veh, (f, other, li) => {
+      if (f.holdNext !== next.index) return false;
+      const [lo, hi] = this.mappedLanes(other, li, next);
+      return k >= lo && k <= hi;
+    });
+  }
+
+  /**
+   * Whether `veh`'s movement would cross the path of a longer-waiting vehicle on
+   * another approach (its turn to go). Among approaches that do not give way to
+   * each other, a dense stream from one otherwise kept a claim on the junction
+   * at every moment, and a vehicle on the other could wait until it was removed
+   * as gridlock.
+   */
+  private owesTurn(veh: Vehicle, link: Link, connector: LaneConnector): boolean {
+    return this.longerWaiting(link.to, link, veh, (f, other, li) => {
+      const fNext = this.links[f.holdNext!];
+      if (!fNext || f.route[f.routeIdx + 1] !== fNext.index) return false;
+      return connectorsConflict(connector, this.connectorFor(other, li, fNext, this.mappedLanes(other, li, fNext)[0]));
+    });
+  }
+
+  /**
+   * Where the back of a lane's queue would be with every vehicle in it closed up
+   * to its standstill gap behind the one ahead, the front one at its stop line
+   * (or the end of the link, where it leaves the area). A rider abreast of its
+   * partner takes no length of its own.
+   */
+  private packedBack(link: Link, lane: Vehicle[]): number {
+    if (!lane.length) return Infinity;
+    const front = lane[0];
+    const reach = Math.max(front.pos, front.routeIdx >= front.route.length - 1 ? link.length : this.stopLine(front, link));
+    let back = reach - front.type.lengthM;
+    for (let i = 1; i < lane.length; i++) {
+      const v = lane[i];
+      if (v.abreast) continue;
+      back -= v.type.minGapM + v.type.lengthM;
+    }
+    return Math.max(back, this.backSpace(lane));
+  }
+
   /** Room in a lane already promised to vehicles cleared into it that have not reached it yet. */
   private pendingInto(linkIndex: number, lane: number, except: Vehicle): number {
     let m = 0;
+    const before = except.reservation?.seq ?? Infinity;
     for (const r of this.reservations) {
-      if (r.toLink !== linkIndex || r.toLane !== lane || r.veh === except || r.veh.reservation !== r || r.alongside) continue;
+      if (r.toLink !== linkIndex || r.toLane !== lane || r.veh === except || r.veh.reservation !== r || r.alongside || r.seq > before) continue;
       m += r.veh.type.lengthM + r.veh.type.minGapM;
     }
     return m;
@@ -1699,7 +1819,7 @@ export class TrafficMicroSim {
     veh.connector = connector;
     const link = this.links[veh.link];
     if (this.controls.has(link.to)) {
-      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector, toLink: veh.route[veh.routeIdx + 1], toLane: lane, alongside: !!veh.pairCross };
+      veh.reservation = { veh, vehId: veh.id, node: link.to, from: link.index, connector, toLink: veh.route[veh.routeIdx + 1], toLane: lane, alongside: !!veh.pairCross, seq: this.grantSeq++ };
       this.reservations.add(veh.reservation);
     }
   }
@@ -1719,6 +1839,20 @@ export class TrafficMicroSim {
       }
     }
     return false;
+  }
+
+  /**
+   * A cleared vehicle still able to stop before its line whose exit lane can no
+   * longer take it even with every vehicle there closed up (the queue reached
+   * back while it approached): it gives its grant back rather than enter and stop
+   * inside the junction (keep the box clear). Only the lane's capacity counts
+   * here, not the tail's motion: re-judging a moving tail over the shrinking time
+   * to the line would hold back every follower of a discharging platoon.
+   */
+  private lostExitRoom(veh: Vehicle): boolean {
+    const next = this.links[veh.route[veh.routeIdx + 1]];
+    const lane = next.lanes[veh.grantLane!];
+    return this.packedBack(next, lane) - this.pendingInto(next.index, veh.grantLane!, veh) < this.exitNeed(veh, veh.connector!);
   }
 
   /** Withdraws a grant not yet used (e.g. the signal turned red before the stop line). */
@@ -1843,7 +1977,8 @@ export class TrafficMicroSim {
             const distance = queuedBehind ? Infinity : veh.connector.start - veh.pos;
             const canStop = distance > veh.v * veh.v / (2 * veh.type.comfortDecel);
             if (signal === 'red' || (signal === 'amber' && canStop) ||
-              (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true))) this.revokeGrant(veh);
+              (canStop && veh.reservation && this.conflictingClaim(veh, link, veh.connector, true)) ||
+              (canStop && !veh.pairCross && !queuedBehind && this.lostExitRoom(veh))) this.revokeGrant(veh);
           }
         }
         for (let i = 0; i < lane.length && i < platoon; i++) {
