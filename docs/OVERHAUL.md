@@ -1848,7 +1848,14 @@ Export of the project database (`/workspace/work/vp-wt-edit-e2e/objects.json`, 2
 | speed limit | 200 | 0 | 204 s |
 | road class | 200 | 0 | 241 s |
 | one-way toggle | 200 | 0 | 261 s |
+| lanes, entire carriageway | 200 | 0 (68 samples changed several pieces, each previewed) | 439 s |
+| delete (harness rule before 4468fe6) | 200 | 26 flagged neighbours on 13 samples (bridge 6, underpass 5, approach 2): harness rule, not the app | 1,148 s |
+| reshape, Road ends: Connect (code before d3a8e4e) | 200 (of 3,761 roads with an end gap) | 2 not joined in the traffic network: real bug, fixed | 219 s |
 RESULTS_PENDING
+
+**Delete, 26 flagged neighbours: harness rule.** Example: deleting the underpass piece osm_893001784 (layer −1, at −6.5 m) takes its ramp neighbour osm_893001787 from 11 points (−6.5 m climbing to −1.1 m, points inserted at load to shape the ramp) back to its 3 stored points at 0 m. The harness allowed inserted points but not the removal of points that densifying had inserted; every one of the 13 samples also passed the stronger check that the result equals a fresh load of the database without the deleted road. The rule now accepts either direction when the fewer points are all kept in order (4468fe6); the fresh-load comparison still catches a wrong result. Rerun in the table below.
+
+**Connect, 2 of 200 not joined: real bug in the network builder, fixed (d3a8e4e).** osm_1120061757 (Service Road) carried 14.7 m onto the first vertex of osm_1122018468 (Service Road); osm_531916978 (Blue Ridge Chowk, one-way) carried 14.2 m onto the first vertex of osm_1306328077 (Blue Ridge Approach Road). The edited way no longer counts as an OSM way (its end moved), so it joins by geometry, and the builder took the earliest-created node within its 6.6 m join tolerance: an older node of a third road 4.5 m / 5.3 m away, not the target's node at exactly that point. The two roads stayed apart, so traffic could not pass where the user had connected them. Fix: a node at exactly the point (same level, or a shared OSM node at any height) wins over a node merely within the tolerance. Check: the unedited whole-database network is identical before and after (28,619 nodes, 62,242 edges, same hash of every edge's id and end nodes); after the fix both samples join their target's node; network test files (TrafficNetwork, NetworkHeadings, JunctionNetwork, NetworkGaps, OsmStudyNetwork, NetworkRealism, EditingWorkflow, ImportConnectivity, NetworkValidation) pass, 69 tests. UNIT-TESTED (EditIsolationFixes.test.ts, fails before the fix).
 
 One-way toggle: every sample also changes laneCount, trafficCapacity and width of that road (the toggle re-derives them from the new direction count); the harness lists these as intended side effects of the toggle, on the toggled road only.
 
