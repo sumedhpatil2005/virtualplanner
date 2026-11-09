@@ -149,6 +149,41 @@ describe('a road raised as an approach and lowered again has its own points back
   });
 });
 
+describe('Undo of a deletion puts back the stored heights of the roads it lowered', () => {
+  it('deleting the Mokshagundam Vishweshvarayya Flyover deck piece osm_657054224 and undoing it gives back the exact heights of its approach osm_327073028 and the same network key; redo the lowered state; nothing is sent to the backend for the heights', () => {
+    const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/sangamwadi.json'), 'utf8')) as { roads: any[] };
+    const fxRows = fx.roads.filter(r => r.type === 'road').map(({ id, type, name, layerId, scenarioId, coordinates, ...properties }) => ({ id, type, name, layerId, scenarioId, coordinates, properties }));
+    // The project database stores raised heights a save of an earlier session wrote (osm_327073028 ends at
+    // 1.5165771146731644 m there); a load keeps a stored height within 1e-9 m of the one it works out. Here: the
+    // heights this load works out, stored 1e-12 m off, as an earlier computation in another order leaves them.
+    const lifted = (loadNetwork(fxRows as any, false).om.getById('osm_327073028') as RoadObject).coordinates;
+    const rows = fxRows.map(r => r.id !== 'osm_327073028' ? r : { ...r, coordinates: lifted.map(p => [p[0], p[1], (p[2] ?? 0) > 0 ? (p[2] ?? 0) + 1e-12 : 0]) });
+    const { om, history } = loadNetwork(rows as any);
+    const posts: string[] = [];
+    Object.assign(om, { syncPost: async (o: CityObject) => { posts.push(o.id); }, syncPostMultiple: async (os: CityObject[]) => { posts.push(...os.map(o => o.id)); } });
+    const s0 = snap(om), k0 = keyOf(om);
+    const ramp0 = (om.getById('osm_327073028') as RoadObject).coordinates;
+    expect(ramp0.some(p => (p[2] ?? 0) > 1)).toBe(true);
+    expect(ramp0).toEqual(rows.find(r => r.id === 'osm_327073028')!.coordinates);
+    deleteWithHistory(om, history, 'osm_657054224');
+    const s1 = snap(om), k1 = keyOf(om);
+    // The approach goes back down with the deck gone (as a fresh load without it gives it)
+    expect((om.getById('osm_327073028') as RoadObject).coordinates.every(p => (p[2] ?? 0) === 0)).toBe(true);
+    expect(contentChanged(snap(loadNetwork((rows as any[]).filter(r => r.id !== 'osm_657054224'), false).om), s1).filter(id => id !== 'osm_657054224')).toEqual([]);
+    expect(history.getUndoStackCount()).toBe(1);
+    history.undo();
+    // Before the fix the heights were worked out again on Undo (on the database 1e-16 m off the stored ones): another network key
+    expect((om.getById('osm_327073028') as RoadObject).coordinates).toEqual(ramp0);
+    expect(contentChanged(s0, snap(om))).toEqual([]);
+    expect(keyOf(om)).toBe(k0);
+    history.redo();
+    expect(contentChanged(s1, snap(om))).toEqual([]);
+    expect(keyOf(om)).toBe(k1);
+    // Only the deleted road itself is saved again (put back by Undo); worked-out heights stay in memory
+    expect(posts.filter(id => id !== 'osm_657054224')).toEqual([]);
+  });
+});
+
 describe('a drawn road snaps only to points at its own level', () => {
   it('a ground click 10 m from a flyover deck vertex does not join the deck in mid-air; the foot of the ramp and a ground road still snap; a flyover drawing still snaps to the deck', () => {
     // A deck at 6.5 m from (100, 0), its approach ramp coming down to the ground at (0, 0); a ground road ending at (100, -40)

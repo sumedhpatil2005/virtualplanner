@@ -13,6 +13,11 @@ export type HistoryDiff =
       id: string;
       before: CityObject;
       after: CityObject;
+      /**
+       * Heights the app works out itself on every load (bridge decks and their approaches, ObjectManager.liftBridges):
+       * kept in memory only, never sent to the backend, which holds the stored points they are worked out from.
+       */
+      local?: boolean;
     }
   | {
       type: 'delete';
@@ -190,7 +195,7 @@ export class HistoryManager {
         break;
       case 'update':
         // The whole object as it was, not merged into the current one (docs/OVERHAUL.md §27)
-        om.update(diff.id, this.clone(undo ? diff.before : diff.after), false, true);
+        om.update(diff.id, this.clone(undo ? diff.before : diff.after), !!diff.local, true);
         break;
       case 'delete':
         if (undo) om.addMultiple(this.clone(diff.objects));
@@ -312,6 +317,7 @@ export class HistoryManager {
 export function deleteWithHistory(objects: ObjectManager, history: HistoryManager, id: string): CityObject | null {
   const obj = objects.getById(id);
   if (!obj) return null;
+  const beforeAll = new Map(objects.getAll().map(o => [o.id, o]));
   // A drawn flyover gives back the capacity its ramps took from the surface roads, in the same Undo step
   const impacted = (obj.type === 'flyover' || obj.type === 'metro_flyover')
     ? objects.getAll().filter((o): o is RoadObject => o.type === 'road' && o.flyoverImpact?.flyoverId === id) : [];
@@ -321,9 +327,31 @@ export function deleteWithHistory(objects: ObjectManager, history: HistoryManage
       void _gone;
       return { type: 'update', id: before.id, before, after: after as CityObject, description: `Ramp merge removed from ${before.name || before.id}` };
     });
-    history.pushDiff({ type: 'batch', description: `Delete ${obj.name || obj.type}`, diffs: [...diffs, { type: 'delete', objects: [obj] }] });
     for (const d of diffs) if (d.type === 'update') objects.update(d.id, d.after, false, true);
-  } else history.recordDelete(obj, `Delete ${obj.name || obj.type}`);
+    for (const d of diffs) if (d.type === 'update') beforeAll.set(d.id, objects.getById(d.id)!);
+    objects.delete(id);
+    history.pushDiff({ type: 'batch', description: `Delete ${obj.name || obj.type}`, diffs: [...diffs, { type: 'delete', objects: [obj] }, ...heightDiffs(objects, beforeAll, id)] });
+    return obj;
+  }
   objects.delete(id);
+  const heights = heightDiffs(objects, beforeAll, id);
+  if (heights.length) history.pushDiff({ type: 'batch', description: `Delete ${obj.name || obj.type}`, diffs: [{ type: 'delete', objects: [obj] }, ...heights] });
+  else history.recordDelete(obj, `Delete ${obj.name || obj.type}`);
   return obj;
+}
+
+/**
+ * Roads whose heights the deletion worked out again (a ramp next to a deleted deck goes back down), as updates in
+ * the same Undo step. Undo puts back the exact stored values; worked out again when the road came back they
+ * differed in the last bits (1e-16 m on osm_327073028 after deleting osm_657054224, a different network key from
+ * before the deletion: docs/OVERHAUL.md §27.7). In memory only, as the heights themselves (`local`).
+ */
+function heightDiffs(objects: ObjectManager, before: ReadonlyMap<string, CityObject>, deletedId: string): HistoryDiff[] {
+  const out: HistoryDiff[] = [];
+  for (const o of objects.getAll()) {
+    const b = before.get(o.id);
+    if (!b || b === o || o.id === deletedId) continue;
+    out.push({ type: 'update', id: o.id, before: b, after: o, local: true, description: `Heights of ${o.name || o.id} worked out again` });
+  }
+  return out;
 }
