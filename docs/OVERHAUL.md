@@ -1815,3 +1815,28 @@ Production build of this worktree, headless Chromium (SwiftShader, 2 CPUs), back
 **Sangamwadi (§26.5) on the final build**, deck `osm_208004768`, 1 km: the run has no signal (7 mapped in the area, none at a junction it simulated). Opened in Build: in the run, `jx_7bfad8d1` (69 m from the deck) Priority, "the last analysis ran this junction without a signal" (no OSM signal there); outside the run, all seven mapped junctions tried (Ambedkar, Raja Bahadur Mill Marg / Underpass, Sassoon Marg / JN Marg, Shivaji Road / Ganeshkhind Road, Ganeshkhind Road, Dr. Rajendra Prasad Path / Bankimchandra Chatopadhyay Path, Ganeshkhind Road / Shivajinagar Railway Station Road) open as **Signal** (mapped, editable greens); unmapped ones as Priority. Before the fixes all of them opened as Priority.
 
 **Not done / limits:** J3 is not next to a flyover: no bridge/layer/tunnel way lies within 200 m of it in the database tags; the flyover-adjacent case is covered by J2 (underpass and bridge at 103–153 m) and J1 (underpass approach). J4's effect could not be shown in the results because it lies outside the run's corridor. Screenshot of a deck panel timed out (not retried). Webster greens elsewhere change after any edit because flows re-route; that is model behaviour, not an edit reaching another junction (the controller structure outside stays identical). Full vitest not re-run; run here: `JunctionNetwork` 12, `JunctionEditing` 29, `SignalBox` 4 — all pass; `tsc` clean.
+## 27. Network-wide edit isolation
+
+Question: does a Build edit (delete, lanes, speed, class, one-way, reshape/Connect, drawing a road or flyover, deck elevation) change only what it is meant to, anywhere in the network, and does undo/redo return exactly to the state before? Commits c31c9a2 (edit-isolation fixes, = 997d4cc on the edit worktree) and 47f93fa (level-aware snapping).
+
+### 27.1 Harness
+`frontend/src/engine/testing/editHarness.ts` + `NetworkEditIsolation.test.ts`. For each operation a stratified random sample of roads (bridges/flyovers, underpasses, ramp approaches, slip lanes, junction pieces, plain roads; fixed seed per op) is edited through the same code the Build panel uses (`commitRoadFieldEdit`, ObjectManager/HistoryManager, EditingEngine draw/split). After each edit every object is compared with the snapshot before: only the intended objects/fields may differ; heights round a deletion must equal a fresh load; drawn roads must be joined in the traffic network at their own level and used by routes; undo must return the exact pre-edit objects, redo the exact post-edit objects. Network: the Sangamwadi Bridge OSM fixture by default (24 samples/op), or a whole project-database export with `VP_OBJECTS=<objects.json>` (default 200 samples/op). `VP_OPS`, `VP_N`, `VP_SEQ_RUNS`, `VP_REPORT` select operations, sample size, number of random sequences and a JSON report directory.
+
+### 27.2 Root causes found and fixed (c31c9a2), UNIT-TESTED (`EditIsolationFixes.test.ts`, harness)
+1. Drawing a road split any road its end lay near, at any level: a ground road ending under a flyover split the deck. Now only a road its end lies on at the same level is split.
+2. Drawing a flyover cut the capacity of the surface road it crosses in a separate, unpersisted step: undo of the flyover left the surface road cut, and a reload lost the cut. The cut is now made inside the same undo step and persisted.
+3. Undo/redo restored objects by reference, so a later edit to the live object changed the history entry ("redo" then replayed a mutated object). Undo/redo now store and restore whole objects as copies.
+4. Deleting a road lowers neighbours that were raised to meet it; undo of the deletion did not restore those neighbours' original points. It now does.
+5. Speed and class edits wrote the whole road object from the panel's copy, so other fields edited meanwhile (or recomputed) were overwritten. They now change only that field.
+6. Bridge-crossing search over all roads was quadratic; replaced by a grid search with identical output (needed to run the harness on the whole database; not a behaviour change).
+
+Level-aware snapping (47f93fa), UNIT-TESTED: a road or junction drawn on the ground snaps only to points within 2.5 m of the clicked height. Before, a ground click within the ~16 m vertex radius of a flyover deck vertex joined the deck in mid-air. A ramp's foot and ground roads still snap; flyover drawing keeps the any-level snap; the hover preview uses the same rule.
+
+### 27.3 Results
+Fixture (Sangamwadi), 24 samples/op, UNIT-TESTED. Failures before the fixes: reconnect 22, flyover draw/elevation 179 (count of differing objects/fields over the sample), speed 12, class 9; all other ops 0. After the fixes: 0 failures on every operation, including 6 random 20-op undo/redo sequences.
+
+Whole database (`VP_OBJECTS` export, earlier runs): lanes, this-segment scope: 200 samples, 0 failures (UNIT-TESTED harness run, not a committed fixture). Other operations: see 27.4.
+
+Browser (BROWSER-VERIFIED, earlier session, br_run1.log): flyover piece delete/undo/redo exact; lanes Entire carriageway; one-way toggle; Road ends: Connect; a 6-edit undo/redo sequence back to the identical state.
+
+Open at the time of writing: a browser script's "This segment only" lane edit changed 3 pieces while `laneEditPieces('segment')` returns 1; browser reconnection not run (script bug). See 27.4–27.5.
