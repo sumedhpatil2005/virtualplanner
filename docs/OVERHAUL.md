@@ -1721,3 +1721,27 @@ The day summary (`timeline-summary`) is only rendered when a period is congested
 All 40 logical junctions within 1.2 km of the deck opened in the junction editor with control "Priority" although the mapped signals were loaded (backend `/api/osm/signals` answered); not investigated here (the editor's starting control comes from the last run, §23), noted for the junction work.
 
 Analysis error seen: with through traffic off, the road analysis above the rows went to status `error` (the rows were correctly marked); not investigated here.
+
+### 25.2 The user's Sangam Bridge "Severe all day" (§22 report): reproduced on the code of 2026-11-06
+
+User's rows (as reported): 09:00 1,112 veh/h 3 km/h Severe; 14:00 1,152 Severe (3 km/h); 19:00 1,144 Severe (3 km/h); 23:00 844 veh/h 12 km/h Congested. All figures below are **model output** (estimated land-use demand, not measured counts), one seed (42, the only seed the rows used before 9f35cca), Sangam Bridge `osm_23028035` (eastbound one-way in the data), Through the day, weekday, database copy, builds of the old commits in worktrees `vp-sev-old-29f1ca4` / `vp-sev-old-b7f319e` (their own backends), headless browser. Scripts `vp-sev2-e2e/mk.sh`, `queue.sh`, `js/setup.js`, `js/tl.js`, results `vp-sev2-e2e/out/*-tl.json` (working files).
+
+| Code | Area | Signals | 09:00 veh/h (km/h) | 14:00 | 19:00 | 23:00 | Statuses |
+|---|---|---|---|---|---|---|---|
+| user | ? | ? | 1,112 (3) | 1,152 (3) | 1,144 (3) | 844 (12) | S S S Congested |
+| 29f1ca4 | 2 km | mapped (index, 70) | 1,308 (7) | 1,136 (6) | 1,308 (7) | 0 (–) | S S S no traffic |
+| b7f319e | 2 km | mapped (index, 86) | 1,124 (2.5) | 1,092 (2.3) | 1,124 (2.5) | 784 (20) | S S S Congested |
+| b7f319e | 2 km | none loaded (no index, Overpass 429: status error, estimated signals) | 1,156 (2.5, shown 3) | 988 (2.3) | 1,156 (2.5) | 780 (12.4) | S S S Congested |
+| b7f319e | 2 km, flyover piece `osm_661187172` deleted | mapped | 1,380 (3.2) | 1,296 (3.1) | 1,380 (3.2) | 772 (18) | S S S Congested |
+| b7f319e | 1 km | mapped (22) | 1,436 (3.5) | 1,624 (4.4) | 1,436 (3.5) | 992 (33) | S S S Moderate |
+| b7f319e | 3 km | mapped (156) | 1,156 (2.8) | 952 (2.7) | 1,156 (2.8) | 424 (46) | S S S Flowing |
+
+29f1ca4 with the index gave the same figures as the earlier run of that commit (§ earlier sev work), so its night 0 is not a signal-source effect.
+
+**Reproduced (within 10% on all four volumes):** b7f319e, 2 km, mapped signals: +1%, −5%, −2%, −7%, the same four statuses, speeds 2–3 km/h at the three day periods. Without mapped signals the volumes are within +4%, −14%, +1%, −8% and the speeds match as shown (3 and 12 km/h). In both, at 2 km the area is over-saturated in the model (893 links over capacity at 09:00; 56–57% of the corridor's routed demand got onto the network), the bridge carries what gets past queues reaching back onto it (demand 2,500–3,700 veh/h routed onto a 2,571 PCU/h one-way), and at 23:00 demand (≈780 veh/h) is far below capacity yet speed is 12–20 km/h (LOS E). So the user's pattern is what the code before the §22 fixes (9f35cca) produced for a 2 km area: the all-day Severe is the model's saturated 2 km neighbourhood, not a display error, and it depends on the area size (1 km: night Moderate; 3 km: night Flowing). 29f1ca4 (before the §19 changes) did not produce it (night 0). Which §19 change moved the night row was not isolated (one seed).
+
+**Not reproduced:** (a) midday above the morning (user 1,152 > 1,112; every run here has midday ≤ 09:00 except 1 km); (b) 09:00 ≠ 19:00 (user 1,112 vs 1,144). In this code the two peaks use the same demand and seed and are identical to the digit, so in the user's session something differed between the 09:00 and 19:00 periods (signals or roads arriving during the run, an edit, or a different commit between b7f319e and 9f35cca). Whether their signals were mapped is not settled: volumes fit mapped signals slightly better, the night speed fits estimated signals (12 km/h).
+
+**What would settle it:** the user's commit (`git rev-parse HEAD`), area size, and from the browser console after the rows are shown: `JSON.stringify({key: engineInstance.simMode.getState().timeline.key, signals: engineInstance.simMode.getState().signals?.status, range: engineInstance.simMode.getState().area?.rangeMeters, rows: engineInstance.simMode.getState().timeline.rows.map(r => [r.period, r.hourFactor, r.demandVph, r.result?.totalVph, r.result?.network?.signals])})`; or a copy of their `backend/twincity.db` and whether `backend/data/osm` exists on their machine.
+
+Label: BROWSER-VERIFIED reproduction runs (old commits, one seed each, 7 runs); cause statement rests on 2 of 2 signal settings agreeing at 2 km.
