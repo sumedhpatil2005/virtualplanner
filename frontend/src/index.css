@@ -86,9 +86,14 @@ html, body, #root {
   right: 1rem !important;
 }
 
+/* Beside the panel, below the Mode bar's row (at top: 1rem the centred Mode bar covered it at 1,024-1,366 px) */
 .panel-open .cesium-viewer-toolbar {
-  top: 1rem !important;
+  top: 4.5rem !important;
   right: 24rem !important;
+}
+/* Wide windows: the centred Mode bar ends well left of it, and Build's centred toolbar sits at 4.25rem */
+@media (min-width: 1500px) {
+  .panel-open .cesium-viewer-toolbar { top: 1rem !important; }
 }
 
 /* Fullscreen button: out from under the panel */
@@ -149,4 +154,30 @@ html, body, #root {
 }
 @media (max-width: 760px) {
   .simulation-hud { display: none; }
+}
+
+/* Mode bar (21rem wide): centred while it fits between the top-left box (to 19rem) and the right panel
+   (22rem, or 27rem for Simulate and the junction editor); else just right of the top-left box; else under it
+   (and Build's compact toolbar moves down to make room) */
+.mode-bar-wrap { top: 1rem; left: 50%; transform: translateX(-50%); }
+@media (max-width: 960px) {
+  .mode-bar-wrap { left: 19.5rem; transform: none; }
+}
+@media (max-width: 1090px) {
+  .panel-open .mode-bar-wrap { left: 19.5rem; transform: none; }
+}
+@media (max-width: 1250px) {
+  .panel-wide-open .mode-bar-wrap { left: 19.5rem; transform: none; }
+}
+@media (max-width: 669px) {
+  .mode-bar-wrap { left: 1rem; top: 12.75rem; }
+  .build-toolbar { top: 16.5rem !important; }
+}
+@media (max-width: 1021px) {
+  .panel-open .mode-bar-wrap { left: 1rem; top: 12.75rem; }
+  .panel-open .build-toolbar { top: 16.5rem; }
+}
+@media (max-width: 1101px) {
+  .panel-wide-open .mode-bar-wrap { left: 1rem; top: 12.75rem; }
+  .panel-wide-open .build-toolbar { top: 16.5rem; }
 }

@@ -158,6 +158,16 @@ describe('road analysis panel pieces', () => {
     expect(none).toBeDefined();
     expect(none?.action).toBeUndefined();
   });
+  it('a flowing road whose routed traffic mostly did not get through is not "No pressing problem" (browser workflow 2026-11-09, Sangamwadi: 886 of 1,954 veh/h)', () => {
+    const flowing = { status: 'flowing' as const, statusBySeed: ['flowing', 'flowing', 'flowing'] as RoadAnalysisResult['statusBySeed'], cause: { kind: 'mixed' as const, text: 't', chain: null }, headline: 'Eastbound traffic moves freely: 45 km/h against a free-flow 50 km/h (level of service A).' };
+    const held = improvementsFor(result({ ...flowing, directions: [dir({ label: 'eastbound', vph: 886, demandVph: 1954, vc: 0.3 }), dir({})] }), ['osm_1'], null);
+    expect(held.map(x => x.title)).toEqual(['The road flows, but traffic is held before it']);
+    expect(held[0].evidence).toContain('Only 886 of the 1,954 veh/h routed eastbound got onto it');
+    expect(held[0].figure?.value).toBe('45%');
+    // Most of the routed traffic got through: the old wording stays
+    const fine = improvementsFor(result({ ...flowing, directions: [dir({ label: 'eastbound', vph: 900, demandVph: 950, vc: 0.3 }), dir({})] }), ['osm_1'], null);
+    expect(fine.map(x => x.title)).toEqual(['No pressing problem at this hour']);
+  });
   it('disclosures are closed by default; per-run detail lists every seed', () => {
     expect(renderToStaticMarkup(createElement(Disclosure, { title: 'How this is calculated' }, 'x'))).not.toMatch(/<details[^>]*open/);
     const d = doc(renderToStaticMarkup(createElement(PerRunDetail, { r: result() })));

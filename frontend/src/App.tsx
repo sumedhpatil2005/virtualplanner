@@ -103,7 +103,7 @@ function App() {
       </div>
 
       {/* Top centre: mode, and Build's tools */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
+      <div className="mode-bar-wrap absolute z-30 flex flex-col items-center gap-2 pointer-events-none">
         <ModeBar />
       </div>
       {mode === 'build' && <div className="build-toolbar absolute z-30 flex justify-center pointer-events-none"><Toolbar /></div>}

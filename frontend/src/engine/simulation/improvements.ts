@@ -89,6 +89,14 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
       why: 'Treat the road as near the threshold; a count or travel-time survey would settle it.' });
   }
   if (r.status === 'flowing' || r.status === 'moderate') {
+    // The road itself flows, but much of the traffic routed along it never got onto it (held at the area's
+    // entries or junctions further back): "no pressing problem" would contradict the routed-vs-through figures
+    // shown beside it (browser workflow 2026-11-09, Sangamwadi: 886 of 1,954 veh/h got through). Wording only.
+    const held = r.directions.filter(d => d.demandVph >= 100 && d.vph < 0.8 * d.demandVph).sort((a, b) => (b.demandVph - b.vph) - (a.demandVph - a.vph))[0];
+    if (!out.length && held) out.push({ kind: 'times', title: 'The road flows, but traffic is held before it',
+      evidence: `${r.headline} Only ${Math.round(held.vph).toLocaleString()} of the ${Math.round(held.demandVph).toLocaleString()} veh/h routed ${held.label} got onto it in the simulation; the rest was held further back.`,
+      figure: { value: `${Math.round(100 * held.vph / held.demandVph)}%`, label: `of the traffic routed ${held.label} got through` },
+      why: 'The limit is before this road, not on it: see the worst places, and compare the other times of day before changing this road.' });
     if (!out.length) out.push({ kind: 'times', title: 'No pressing problem at this hour',
       evidence: r.headline,
       why: 'Compare the other times of day before concluding; spare capacity could also give space to footpaths, a bus lane or a cycle track.' });
