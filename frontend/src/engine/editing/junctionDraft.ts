@@ -39,6 +39,11 @@ export function lastRunControl(j: LogicalJunction, r: RoadAnalysisResult | null 
   const spec0 = { junctionId: j.id, label: j.label, nodeKeys: [...j.nodeKeys], arms: [...j.approaches, ...j.exits].map(a => ({ id: a.id, kind: a.kind, label: a.label, keys: [...a.keys], chainKeys: [...a.chainKeys], lanes: a.lanes })), control: 'priority' as const };
   const c = compileJunctionEdits(net, [spec0])[0];
   if (!c) return null;
+  // The run simulated only its own area (the corridor round the road, smaller than the area the
+  // network was explored in): a junction none of whose pieces it ran was not covered, so its
+  // control is the engine's default (a mapped signal, else priority), not "ran without a signal"
+  const ran = (id: string) => r.linkVph.has(id);
+  if (r.linkVph && ![...c.approachOfEdge.keys(), ...c.internalEdges].some(ran)) return null;
   const sl = r.signalLinks;
   const internalFrom = new Map<string, string[]>();
   for (const id of c.internalEdges) { const e = net.edges.get(id)!; (internalFrom.get(e.fromNodeId) ?? internalFrom.set(e.fromNodeId, []).get(e.fromNodeId)!).push(id); }

@@ -445,9 +445,16 @@ describe('junction editor draft and comparison card', () => {
     expect(l.draft).toMatchObject({ control: 'signal', asRun: true });
     expect(startingNote(j, l)).toMatch(/always green/);
     // A run covering the junction with no signal there: priority, as run
-    const p = startingDraft(j, null, { signalLinks: new Map(), signalGreens: new Map(), signalCycles: new Map() } as never, fxNet);
+    const ranHere = new Map(j.approaches.flatMap(a => a.edgeIds).map(id => [id, 100]));
+    const p = startingDraft(j, null, { signalLinks: new Map(), signalGreens: new Map(), signalCycles: new Map(), linkVph: ranHere } as never, fxNet);
     expect(p.source).toBe('last-run');
     expect(p.draft).toMatchObject({ control: 'priority', asRun: true });
+    // A run that did not simulate this junction at all (it lies outside the run's corridor): not "ran without a signal",
+    // but what the engine does here, the mapped signal (the Sangamwadi report: every junction opened as Priority, §26)
+    expect(j.signalised).toBe(true);
+    const out = startingDraft(j, null, { signalLinks: new Map(), signalGreens: new Map(), signalCycles: new Map(), linkVph: new Map([['elsewhere', 100]]) } as never, fxNet);
+    expect(out.source).toBe('default');
+    expect(out.draft).toMatchObject({ control: 'signal', asRun: true });
   });
   it('changing the control, a green, amber, a phase or the major approaches makes the plan the user\'s own; a ban or lane change keeps the engine\'s control', () => {
     const d = startingDraft(j, null, null).draft;
@@ -715,4 +722,44 @@ describe('a no-op Apply through the whole analysis: same numbers', () => {
     expect(plain(mode.getState().analysis.output!.result)).not.toBe(plain(out0.result));
     mode.dispose();
   }, 240000);
+});
+
+describe('with mapped signals loaded, a junction the run did not simulate starts from the engine\'s control, not as Priority (§26)', () => {
+  // Reported: with mapped signals, every junction round the Sangamwadi deck opened as Priority. The run simulates its corridor
+  // (here the 1 km area's 700 m corridor) and the OSM signals of the area lie at or beyond its edge, so inside it Priority is
+  // what OSM maps; but the junctions outside it, never simulated, were shown as "ran without a signal" too.
+  it('Sangamwadi deck, 1 km, the fixture\'s OSM signal positions: inside the run as run (no signal mapped there), outside as the engine does (mapped signal)', async () => {
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    const signals = { signalsIn: async (b: { minLng: number; maxLng: number; minLat: number; maxLat: number }) => fx.signalPoints.filter(([x, y]) => x >= b.minLng && x <= b.maxLng && y >= b.minLat && y <= b.maxLat) } as never;
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, signals, () => ({ buildings: [], junctions: [] }),
+      () => Promise.reject(new Error('no counts')), null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(1000);
+    mode.selectRoad('osm_208004768', false);
+    for (let i = 0; i < 50 && mode.getState().signals.status !== 'ready'; i++) await new Promise(r => setTimeout(r, 50));
+    expect(mode.getState().signals.status).toBe('ready');
+    await mode.runAnalysis();
+    const st = mode.getState(), r = st.analysis.output!.result, net = st.area!.network;
+    const sigs = fx.signalPoints.filter(([x, y]) => { const b = st.area!.bounds; return x >= b.minLng && x <= b.maxLng && y >= b.minLat && y <= b.maxLat; });
+    const js = groupJunctions(net, fxRoads, { signalPoints: sigs }).filter(j => j.nodeIds.length > 1 || j.signalised);
+    let inRun = 0, outMapped = 0;
+    for (const j of js) {
+      const s = startingDraft(j, null, r, net);
+      const ran = j.approaches.some(a => a.edgeIds.some(id => r.linkVph.has(id)));
+      if (ran) {
+        inRun++;
+        expect(s.source).toBe('last-run');
+        // Priority only where OSM maps no signal at the junction
+        if (s.draft.control === 'priority') expect(j.signalised).toBe(false);
+      } else if (!j.internalEdgeIds.some(id => r.linkVph.has(id))) {
+        expect(s.source).toBe('default');
+        expect(s.draft.control).toBe(j.signalised ? 'signal' : 'priority');
+        if (j.signalised) outMapped++;
+      }
+    }
+    expect(inRun).toBeGreaterThan(10);
+    expect(outMapped).toBeGreaterThanOrEqual(3);
+  }, 120000);
 });
