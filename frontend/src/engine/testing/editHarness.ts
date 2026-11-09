@@ -85,17 +85,27 @@ export function fieldsChanged(a: CityObject | undefined, b: CityObject | undefin
   return [...ks].filter(k => canon((a as any)[k]) !== canon((b as any)[k])).sort();
 }
 
-/** Whether `b` differs from `a` only in heights (and points inserted by densifying, with sections remapped). */
-export function onlyHeightsChanged(a: RoadObject, b: RoadObject): boolean {
-  const f = fieldsChanged(a, b).filter(x => x !== 'coordinates' && x !== 'sections');
-  if (f.length) return false;
-  // Every original plan point is still there, in order
+/** Whether every plan point of `a` is in `b`, in order. */
+function planPointsKept(a: RoadObject, b: RoadObject): boolean {
   let j = 0;
   for (const p of a.coordinates) {
     while (j < b.coordinates.length && (b.coordinates[j][0] !== p[0] || b.coordinates[j][1] !== p[1])) j++;
     if (j === b.coordinates.length) return false;
     j++;
   }
+  return true;
+}
+
+/**
+ * Whether `b` differs from `a` only in heights, with points inserted by densifying a ramp or the points such
+ * densifying had inserted taken out again (a ramp that no longer climbs to a deleted bridge or underpass goes back to
+ * its stored points, as a fresh load gives; the delete check also compares with a fresh load), sections remapped.
+ */
+export function onlyHeightsChanged(a: RoadObject, b: RoadObject): boolean {
+  const f = fieldsChanged(a, b).filter(x => x !== 'coordinates' && x !== 'sections');
+  if (f.length) return false;
+  // Every plan point of the one with fewer points is in the other, in order
+  if (!(b.coordinates.length >= a.coordinates.length ? planPointsKept(a, b) : planPointsKept(b, a))) return false;
   // Sections differ only in their vertex ranges
   const strip = (r: RoadObject) => canon((r.sections ?? []).map(s => ({ ...s, startNodeIndex: 0, endNodeIndex: 0 })));
   return strip(a) === strip(b);
