@@ -1854,6 +1854,10 @@ Export of the project database (`/workspace/work/vp-wt-edit-e2e/objects.json`, 2
 | reconnect: delete a piece, draw a road across the gap (code before d3a8e4e/7c44360) | 60 (N reduced: ~5.5 s/sample) | 4 "drawing changed other roads": harness rule (below) | 330 s |
 | flyover: draw across a road, change deck elevation (N reduced to 50) | 50 | 0 (surface roads crossed: capacity cut 471 times, plus a junction vertex 36 times, all inside the undo step) | 117 s |
 | random sequences of 20 edits (delete, lanes ×2 scopes, speed, class, one-way, Connect) with undo/redo between | 12 sequences, 240 edits | 0 | 260 s |
+| **Reruns on 7c44360** | | | |
+| delete | 200 | 0 (82 samples with documented height recompute of neighbours, each equal to a fresh load) | 847 s |
+| reshape, Road ends: Connect | 200 | 0 | 206 s |
+| reconnect | 60 | 0 (route uses the new road 54; faster route elsewhere 6; end joined the ground road the snap found 4; deck/underpass end not rejoined at ground 15; gap disconnected the ends 36) | 232 s |
 RESULTS_PENDING
 
 **Reconnect, 4 of 60 flagged: harness rule.** In each, an end of the deleted piece was on a deck or in an underpass (osm_106893857 and osm_813385205 ended at −6.5 m, osm_199252452 at +6.5 m, osm_238567526 at +6.5 m on New Holkar Bridge). The Road tool picks the ground, so the click there snapped to the ground road within the snap radius (Primary_link Road osm_845490675 9.6 m away, Primary Road osm_567739220, Karve Road osm_823696187) or was carried onto the ramp of New Holkar Bridge osm_169701639 at 1.9 m (auto-connect, within the 3 m level), and that road got one vertex at the new road's end, the junction. That is the documented rule (a drawn road splits the road its end lies on at the same level). The harness now accepts exactly one inserted vertex at an end of the new road, at its height, with every other point kept, and no longer expects a ground road to rejoin a deck or underpass end (since 47f93fa it must not join it in mid-air: on the fixture 3 bridge samples failed "end height" from that commit until this harness change, 7c44360). Fixture after: all 10 operations 0 violations (UNIT-TESTED).
