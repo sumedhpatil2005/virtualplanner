@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { EditingEngine } from '../editing/EditingEngine';
+import { SAME_LEVEL_SNAP_M } from '../editing/SnapManager';
 import type { ObjectManager } from '../objects/ObjectManager';
 import { deleteWithHistory, type HistoryManager } from '../history/HistoryManager';
 import { commitRoadFieldEdit, laneEditPreview, laneEditPieces, directionLanes, flyoverFieldUpdates, type LaneEditScope, type LaneField } from '../editing/roadEdits';
@@ -331,11 +332,35 @@ describe(`Build edits change only what they are meant to (${DB ? 'project databa
       const nr = om.getById(added[0]) as RoadObject | undefined;
       if (nr) {
         localIds.add(nr.id);
-        const other = contentChanged(s1, s2).filter(id => id !== nr.id);
+        // A road the new road's end lies on, at the same level, gets one vertex there (the junction): where the
+        // deleted piece's end was on a deck or in an underpass, the ground click joins the ground road the snap finds
+        // there instead (docs/OVERHAUL.md §27.4). Nothing else may change.
+        const endKeys = new Set([vkey(nr.coordinates[0]), vkey(nr.coordinates[nr.coordinates.length - 1])]);
+        const endZ = new Map([[vkey(nr.coordinates[0]), nr.coordinates[0][2] || 0], [vkey(nr.coordinates[nr.coordinates.length - 1]), nr.coordinates[nr.coordinates.length - 1][2] || 0]]);
+        const splitAtEnd = (id: string) => {
+          const b = s1.get(id) as RoadObject, a = s2.get(id) as RoadObject;
+          if (b?.type !== 'road' || a?.type !== 'road' || a.coordinates.length !== b.coordinates.length + 1) return false;
+          if (fieldsChanged(b, a).some(f => f !== 'coordinates' && f !== 'sections')) return false;
+          const old = new Set(b.coordinates.map(q => `${vkey(q)},${(q[2] || 0).toFixed(3)}`));
+          const added = a.coordinates.filter(q => !old.has(`${vkey(q)},${(q[2] || 0).toFixed(3)}`));
+          return added.length === 1 && endKeys.has(vkey(added[0])) && Math.abs((added[0][2] || 0) - endZ.get(vkey(added[0]))!) < 0.01
+            && b.coordinates.every(q => a.coordinates.some(r => vkey(r) === vkey(q) && (r[2] || 0) === (q[2] || 0)));
+        };
+        const changedOthers = contentChanged(s1, s2).filter(id => id !== nr.id);
+        const other = changedOthers.filter(id => !splitAtEnd(id));
+        if (changedOthers.length > other.length) reconnectNotes.endJoinedAnotherRoad = (reconnectNotes.endJoinedAnotherRoad ?? 0) + 1;
         if (other.length) bad('drawing changed other roads', other.slice(0, 5).map(id => `${id} (${stratumOf(s1.get(id) as RoadObject)}): ${fieldsChanged(s1.get(id), s2.get(id))}`).join('; '));
         // Joined at both ends, at the height of the road there
         const after = snap(om);
-        for (const [end, p] of [['start', nr.coordinates[0]], ['end', nr.coordinates[nr.coordinates.length - 1]]] as const) {
+        for (const [end, p, v] of [['start', nr.coordinates[0], a], ['end', nr.coordinates[nr.coordinates.length - 1], b]] as const) {
+          // The Road tool picks the ground: where the deleted piece's end was on a deck or in an underpass (more than
+          // the 2.5 m level-aware snap from the ground, 47f93fa) the new end stays on the ground and must not join the
+          // deck in mid-air; it is not expected to rejoin that end (the Flyover tool does that)
+          if (Math.abs(v[2] || 0) > SAME_LEVEL_SNAP_M) {
+            reconnectNotes.elevatedEndNotRejoined = (reconnectNotes.elevatedEndNotRejoined ?? 0) + 1;
+            if (Math.abs(p[2] || 0) > SAME_LEVEL_SNAP_M) bad('ground road end in mid-air', `${end} ${p[2]}`);
+            continue;
+          }
           const at = [...after.values()].filter((o): o is RoadObject => o.type === 'road' && o.id !== nr.id && localIds.has(o.id)).flatMap(o => o.coordinates.filter(q => vkey(q) === vkey(p)));
           if (!at.length) bad('end not on a road', `${end} ${vkey(p)}`);
           else if (!at.some(q => Math.abs((q[2] || 0) - (p[2] || 0)) < 0.01)) bad('end height', `${end} ${p[2]} vs ${at.map(q => q[2])}`);
