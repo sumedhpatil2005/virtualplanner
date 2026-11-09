@@ -945,12 +945,17 @@ export class TrafficMicroSim {
    * on a 14 m piece clear of the junction behind, stood at the bridge's stop line
    * for the whole run. Here the logical junction (junctionGroups: the grouping the
    * junction editor uses) that carries a mapped signal and covers two or more
-   * simulated junctions runs as one controller, as the editor's default plan
-   * does: one phase per approach entering the box, pieces inside the box never
-   * stopped, a common cycle and offset; Webster retimes it as one junction.
+   * simulated junctions runs as one controller:
+   * one phase per approach entering the box (arms arriving from within
+   * 35 degrees of each other are one approach, as at every simulated signal),
+   * pieces inside the box never stopped, a common cycle and offset; Webster
+   * retimes it as one junction.
    * Applied only when every link entering a covered junction from outside is an
    * approach of the logical junction (else that junction keeps its own control).
-   * A user edit of the same junction overrides this (applyJunctionEdits).
+   * Not applied where two of the covered junctions are each complete junctions
+   * (approaches from three or more directions of their own).
+   * A user edit of the same junction that changes its control overrides this
+   * (applyJunctionEdits); its starting values (asRun) keep the box.
    */
   private applySignalBoxes(signalPoints: readonly (readonly [number, number])[], roads: ReadonlyMap<string, DrivableObject>, edits: readonly JunctionEditSpec[] | undefined) {
     // Candidates: signalised junctions with a short piece to another controlled junction
@@ -961,7 +966,8 @@ export class TrafficMicroSim {
       if (a && b && (a.kind === 'signal' || b.kind === 'signal')) { near.add(l.from); near.add(l.to); }
     }
     if (!near.size) return;
-    const edited = new Set((edits ?? []).flatMap(e => e.nodeKeys));
+    // An edit that keeps the engine's own control (asRun: the editor's starting values) keeps the box: only a changed control overrides it
+    const edited = new Set((edits ?? []).filter(e => !e.asRun).flatMap(e => e.nodeKeys));
     const membersOf = (id: string) => this.junctionMembers.get(id) ?? [id];
     const done = new Set<string>();
     const linkViews = this.links.map(l => ({ index: l.index, id: l.id, from: l.from, to: l.to, roadId: l.roadId, lanes: l.lanes.length }));
@@ -976,13 +982,33 @@ export class TrafficMicroSim {
         if (!j.signalised || done.has(j.id) || j.nodeKeys.some(k => edited.has(k))) continue;
         done.add(j.id);
         const spec = { ...defaultEdit(j), asRun: false };
+        const compiled0 = compileJunctionEdits(this.subnet, [spec]);
+        const setups0 = simJunctionSetups(compiled0, linkViews, membersOf).setups;
+        if (setups0.length < 2 || !spec.signal) continue;
+        // Every link entering a covered junction from outside must be one of the box's approaches
+        const inside = new Set(setups0.map(x => x.simNode));
+        const known = compiled0[0].approachOfEdge, chain = compiled0[0].chainOfEdge;
+        const entering = this.links.filter(l => inside.has(l.to) && !inside.has(l.from));
+        if (entering.some(l => !known.has(l.id) && !chain.has(l.id))) continue;
+        // One crossing: at a mapped box each corner takes one or two approaches from outside. Two covered
+        // junctions that each take approaches from three or more directions are each a complete junction
+        // (crossings a few metres apart along a road, each with its own side roads): they keep their own
+        // control and run coordinated (coordinateCloseSignals).
+        if ([...inside].filter(n => this.approachGroups(entering.filter(l => l.to === n).map(l => l.index)).reps.length >= 3).length >= 2) continue;
+        // Phases as at any signal the simulator runs (approachWisePlan): arms arriving from within 35 degrees
+        // of each other are one approach and share a phase. (The editor's starting plan gives every arm its
+        // own phase; over a box of several crossings each with its own side road that is a dozen phases and a
+        // cycle of minutes, each side road green for one slot of it.)
+        const { reps, groups } = this.approachGroups(entering.map(l => l.index));
+        const phaseOfArm = new Map<string, number>();
+        for (const l of entering) { const arm = known.get(l.id) ?? chain.get(l.id)!; if (!phaseOfArm.has(arm)) phaseOfArm.set(arm, groups.get(l.index)!); }
+        let extra = reps.length;
+        for (const a of j.approaches) if (!phaseOfArm.has(a.id)) phaseOfArm.set(a.id, extra++);
+        const used = [...new Set(phaseOfArm.values())].sort((x, y) => x - y);
+        if (used.length < 2) continue;
+        spec.signal = { ...spec.signal, phases: used.map(g => ({ greenS: spec.signal!.phases[0].greenS, arms: j.approaches.filter(a => phaseOfArm.get(a.id) === g).map(a => a.id) })) };
         const compiled = compileJunctionEdits(this.subnet, [spec]);
         const { setups } = simJunctionSetups(compiled, linkViews, membersOf);
-        if (setups.length < 2 || !spec.signal) continue;
-        // Every link entering a covered junction from outside must be one of the box's approaches
-        const inside = new Set(setups.map(x => x.simNode));
-        const known = compiled[0].approachOfEdge, chain = compiled[0].chainOfEdge;
-        if (this.links.some(l => inside.has(l.to) && !inside.has(l.from) && !known.has(l.id) && !chain.has(l.id))) continue;
         const cycleS = setups[0].cycleS;
         const offset = this.signalOffsetUnit(j.id) * cycleS;
         for (const x of setups) {
@@ -1167,6 +1193,18 @@ export class TrafficMicroSim {
    * Returns null for fewer than three approaches.
    */
   private approachWisePlan(nodeId: string, inLinks: number[]): Control | null {
+    const { reps, groups } = this.approachGroups(inLinks);
+    if (reps.length < 3) return null;
+    const cycleS = reps.length * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
+    return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.signalOffsetUnit(nodeId) * cycleS, busyUntil: 0, busyFrom: -1 };
+  }
+
+  /**
+   * The approaches of a junction for approach-wise phasing: carriageways
+   * arriving from within 35 degrees of each other are one approach (one phase).
+   * reps: each approach's direction; groups: incoming link -> approach.
+   */
+  private approachGroups(inLinks: readonly number[]): { reps: number[]; groups: Map<number, number> } {
     const reps: number[] = [];
     const groups = new Map<number, number>();
     // Collector-class and bigger approaches get phases; a lane or service road joining
@@ -1187,7 +1225,6 @@ export class TrafficMicroSim {
       if (g < 0) { g = reps.length; reps.push(h); }
       groups.set(i, g);
     }
-    if (reps.length < 3) return null;
     for (const i of inLinks) {
       if (groups.has(i)) continue;
       const h = from(i);
@@ -1195,8 +1232,7 @@ export class TrafficMicroSim {
       reps.forEach((r, g) => { if (angleBetweenDeg(r, h) < angleBetweenDeg(reps[best], h)) best = g; });
       groups.set(i, best);
     }
-    const cycleS = reps.length * (SIGNAL_GREEN_S + SIGNAL_AMBER_S + SIGNAL_ALL_RED_S);
-    return { kind: 'signal', groups, phases: reps.length, cycleS, majorRank: null, offset: this.signalOffsetUnit(nodeId) * cycleS, busyUntil: 0, busyFrom: -1 };
+    return { reps, groups };
   }
 
   /** A junction's signal offset (share of its cycle): drawn per junction, so an edit elsewhere does not shift it. */

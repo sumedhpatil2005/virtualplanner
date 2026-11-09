@@ -82,4 +82,34 @@ describe('mapped signal box', () => {
       expect(m.completedTrips).toBeGreaterThan(300);
     }
   }, 120_000);
+
+  it('arms arriving side by side from one direction share a phase (one approach, as at every simulated signal)', () => {
+    // A one-way service road beside the northbound carriageway, entering the same corner from the same side
+    const extra = road('Northbound service', [[H + 6, -400], [H + 6, -60], [H, -H]]);
+    const rs = [...roads, extra];
+    const area = new StudyAreaExplorer().explore(rs, 1, { seedRoadIds: ['Northbound'], rangeMeters: 420, direction: 'both' });
+    const sim = new TrafficMicroSim(area, new Map(rs.map(r => [r.id, r])), { demandLevel: OD_REFERENCE_LEVEL, seed: 1, signalPoints: signals, signalTiming: 'equal' });
+    const s = sim as unknown as { controls: Map<string, { box?: string; phases?: number; groups: Map<number, number> }>; links: { index: number; roadId: string; to: string }[] };
+    const boxed = [...s.controls].filter(([, c]) => c.box);
+    expect(boxed.length).toBe(4);
+    // Four directions, four phases (the editor's starting plan would give the service road a fifth)
+    expect(boxed[0][1].phases).toBe(4);
+    const phaseOf = (roadId: string) => { const l = s.links.find(x => x.roadId === roadId && s.controls.get(x.to)?.box)!; return s.controls.get(l.to)!.groups.get(l.index); };
+    expect(phaseOf('Northbound service')).toBe(phaseOf('Northbound'));
+  });
+
+  it('two complete junctions a few metres apart, each with side roads of its own, are not one box', () => {
+    // A two-way main road crossed by two-way side roads 25 m apart, both signalised: each node takes approaches
+    // from three or more directions; they keep their own control (and run coordinated)
+    const two = (id: string, a: [number, number], b: [number, number]): RoadObject => ({ ...road(id, [a, b]), isOneWay: false, osmProvenance: { osmId: nextOsm++, originalTags: { highway: 'secondary', name: id }, layer: 0, bridge: false, tunnel: false, roundabout: false } });
+    const rs = [two('Main W', [-400, 0], [0, 0]), two('Main mid', [0, 0], [25, 0]), two('Main E', [25, 0], [425, 0]),
+      two('Side N0', [0, 0], [0, 300]), two('Side S0', [0, 0], [0, -300]), two('Side N25', [25, 0], [25, 300]), two('Side S25', [25, 0], [25, -300])];
+    const area = new StudyAreaExplorer().explore(rs, 1, { seedRoadIds: ['Main mid'], rangeMeters: 420, direction: 'both' });
+    const sigs = [[0, 0], [25, 0]].map(([x, y]) => [pt(x, y)[0], pt(x, y)[1]] as [number, number]);
+    const sim = new TrafficMicroSim(area, new Map(rs.map(r => [r.id, r])), { demandLevel: OD_REFERENCE_LEVEL, seed: 1, signalPoints: sigs, signalTiming: 'equal' });
+    const s = sim as unknown as { controls: Map<string, { kind: string; box?: string }> };
+    const signalised = [...s.controls.values()].filter(c => c.kind === 'signal');
+    expect(signalised.length).toBe(2);
+    expect(signalised.every(c => !c.box)).toBe(true);
+  });
 });

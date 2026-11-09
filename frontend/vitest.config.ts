@@ -28,6 +28,12 @@ export default defineConfig({
     include: ['src/engine/testing/**/*.test.ts'],
 
     /**
+     * Local diagnosis harnesses (*.scratch.test.ts) are never committed and
+     * never part of the suite; run one with VP_SCRATCH=1.
+     */
+    exclude: ['**/node_modules/**', ...(process.env.VP_SCRATCH ? [] : ['**/*.scratch.*'])],
+
+    /**
      * Global test setup — mock modules that require browser APIs
      * Cesium can't run in jsdom; stub it at the module level.
      */
