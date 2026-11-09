@@ -341,6 +341,13 @@ const MAX_STEPS_PER_FRAME = 200;
 /** Demand period of a counted peak hour (the counts' AM or PM peak, as the user sets it). */
 export const countPeakPeriod = (peak: 'AM' | 'PM'): 'AM_Peak' | 'PM_Peak' => (peak === 'PM' ? 'PM_Peak' : 'AM_Peak');
 
+/**
+ * Demand an analysis can run on: some trips, or none because the user switched through traffic off where the area's
+ * own buildings make none (a result with every road empty, not an error: docs/OVERHAUL.md §27.7).
+ */
+const runnablePlan = (plan: DemandPlan | null): plan is DemandPlan =>
+  !!plan && (plan.trips.length > 0 || plan.provenance.components?.throughIncluded === false);
+
 export class SimulationMode {
   private state: SimulationModeState = {
     active: false,
@@ -1164,7 +1171,7 @@ export class SimulationMode {
     // (e.g. by the profile arriving during the count load) would only cancel it and repeat it
     if (this.analysisTimer) { clearTimeout(this.analysisTimer); this.analysisTimer = null; }
     const plan = this.studyPlan(area);
-    if (!plan?.trips.length) {
+    if (!runnablePlan(plan)) {
       this.setState({ analysis: { status: 'error', progress: 0, output: null, error: 'No traffic can be estimated for this area: no roads cross its edge and it holds no buildings or zones with activity.', hour: this.state.timeOfDay.hour, demandVph: 0, key: null } });
       if (this.pendingStart) { this.pendingStart = false; this.setTraffic({ status: 'idle', preparing: null, error: 'The live view needs the analysis, which could not run here.' }); }
       return null;
@@ -1481,7 +1488,7 @@ export class SimulationMode {
         if (!this.state.timeline.mixed && this.timelineKey() !== key) this.setState({ timeline: { ...this.state.timeline, mixed: true, outdated: true } });
         const landUsePeriod = p.hour < 12 ? 'AM_Peak' as const : 'PM_Peak' as const;
         const plan = this.studyPlan(area, landUsePeriod);
-        if (!plan?.trips.length) throw new Error('No traffic can be estimated for this area.');
+        if (!runnablePlan(plan)) throw new Error('No traffic can be estimated for this area.');
         const referenceHour = this.referenceHour(p.hour);
         const factor = hourFactor(profile, p.hour, referenceHour, this.state.timeOfDay.day);
         const run = startAnalysisJob(this.analysisJob(plan, area, section, DEFAULT_ANALYSIS.measureS, { hourFactor: factor, seeds }), progress => {
@@ -1594,7 +1601,7 @@ export class SimulationMode {
     this.calibratedPlan = null;
     const plan = this.studyPlan(area);
     this.calibratedPlan = applied;
-    if (plan) return plan;
+    if (plan?.trips.length) return plan;
     const traffic = this.state.traffic;
     const sim = new TrafficMicroSim(area, new Map(this.getRoads().map(r => [r.id, r])), {
       demandLevel: traffic.demandLevel, seed: traffic.seed, watchRoadIds: area.seedRoadIds,

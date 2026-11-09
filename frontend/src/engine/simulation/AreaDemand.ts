@@ -424,7 +424,21 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
     }
   }
   const total = trips.reduce((n, t) => n + t.vehiclesPerHour, 0);
-  if (total <= 0) return null;
+  // Through traffic switched off where the area's own buildings make no trips: the case the user asked for has no
+  // traffic, which is a result (every road empty), not a failure. Null (no demand at all) only when through traffic
+  // would not add any either (docs/OVERHAUL.md §27.7: Sangamwadi deck, 1 km, an error state naming a wrong cause)
+  if (total <= 0 && (options.through !== false || !cordon.length)) return null;
+  if (total <= 0) {
+    return {
+      trips: [],
+      provenance: {
+        source: 'project-estimate',
+        label: 'Estimated peak-hour demand: trips of the area\'s buildings only, through traffic switched off. The project holds no buildings or zones with activity here, so there are no trips: 0 veh/h. Switch through traffic back on to see the traffic crossing the area.',
+        period, vehiclesPerHour: 0, pairCount: 0,
+        components: { ...components, cordonPoints: cordon.length, throughIncluded: false },
+      },
+    };
+  }
   const parts = [`${Math.round(components.internal)} internal`, `${Math.round(components.outbound + components.inbound)} to/from beyond the edge`, `${Math.round(components.through)} through`];
   if ((components.noEdgeRoute ?? 0) >= 1) parts.push(`${Math.round(components.noEdgeRoute!)} left out (no drivable way to the edge)`);
   return {
