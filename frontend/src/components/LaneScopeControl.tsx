@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { RoadObject } from '../engine/objects/types';
-import { DEFAULT_LANE_EDIT_SCOPE, laneEditPreview, type LaneEditScope, type LaneField } from '../engine/editing/roadEdits';
+import { laneEditPreview, type LaneEditScope, type LaneField } from '../engine/editing/roadEdits';
 import { subscribeLaneScope, getLaneEditScope, setLaneEditScope, laneEditAppliedCount } from './laneScopeStore';
 
 /**
@@ -25,7 +25,7 @@ const OPTIONS: { id: LaneEditScope; label: string; title: string }[] = [
  * and the preview under them.
  */
 export const LaneScopeControl: React.FC<{ road: RoadObject; children: React.ReactNode }> = ({ road, children }) => {
-  const current = useSyncExternalStore(subscribeLaneScope, getLaneEditScope);
+  const current = useSyncExternalStore(subscribeLaneScope, () => getLaneEditScope(road.id));
   const applied = useSyncExternalStore(subscribeLaneScope, laneEditAppliedCount);
   const [hover, setHover] = useState(false);
   const [focus, setFocus] = useState(false);
@@ -33,12 +33,8 @@ export const LaneScopeControl: React.FC<{ road: RoadObject; children: React.Reac
   const [suppressed, setSuppressed] = useState(false);
   const [field, setField] = useState<LaneField>('lanesForward');
 
-  // Another road: back to the default scope, nothing highlighted
-  useEffect(() => {
-    setLaneEditScope(DEFAULT_LANE_EDIT_SCOPE);
-    setPinned(false);
-    setField('lanesForward');
-  }, [road.id]);
+  // Another road: the default scope (laneScopeStore keeps a choice per road) and fresh local state (the control is
+  // keyed by road id in PropertiesPanel.LaneEditGroup), nothing highlighted
   // After an edit is applied the highlight stays off until the pointer leaves the controls
   const appliedOnMount = useRef(applied);
   useEffect(() => { if (applied !== appliedOnMount.current) { setPinned(false); setSuppressed(true); } }, [applied]);
@@ -77,7 +73,7 @@ export const LaneScopeControl: React.FC<{ road: RoadObject; children: React.Reac
               aria-checked={current === o.id}
               title={o.title}
               data-testid={`lane-scope-${o.id}`}
-              onClick={() => { setLaneEditScope(o.id); setPinned(true); setSuppressed(false); }}
+              onClick={() => { setLaneEditScope(road.id, o.id); setPinned(true); setSuppressed(false); }}
               className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${current === o.id ? 'bg-indigo-500/30 text-indigo-100 border border-indigo-400/40' : 'text-slate-400 border border-transparent hover:text-slate-200'}`}
             >
               {o.label}

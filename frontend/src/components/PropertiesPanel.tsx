@@ -213,7 +213,7 @@ export const PropertiesPanel: React.FC = () => {
     // selected way only (LaneScopeControl.tsx)
     if (selectedObj.type === 'road') {
       const isLanes = field === 'lanesForward' || field === 'lanesBackward';
-      const scope = getLaneEditScope();
+      const scope = getLaneEditScope(selectedObj.id);
       const done = commitRoadFieldEdit(engineInstance.objects, engineInstance.history, selectedObj as RoadObject, field, value, scope, engineInstance.simMode.roadView);
       setSelectedObj(done.selected);
       if (isLanes) {
@@ -1231,7 +1231,7 @@ const BuildingEditorDraft: React.FC<{
 
 /** The lane controls of a road, with the lane edit scope and its preview; a flyover's are shown as they are. */
 const LaneEditGroup: React.FC<{ r: RoadObject | FlyoverObject; children: React.ReactNode }> = ({ r, children }) =>
-  r.type === 'road' ? <LaneScopeControl road={r as RoadObject}>{children}</LaneScopeControl> : <>{children}</>;
+  r.type === 'road' ? <LaneScopeControl key={r.id} road={r as RoadObject}>{children}</LaneScopeControl> : <>{children}</>;
 
 const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: string, val: any) => void; isFlyover?: boolean }> = ({ r, onUpdate, isFlyover }) => {
   // The ramp connection check reads the city-wide graph
