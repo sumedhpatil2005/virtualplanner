@@ -23,7 +23,12 @@ import { SimulationMode } from '../simulation/SimulationMode';
  *
  * Sangamwadi Bridge is a divided road mapped as one-way ways, each 2 lanes:
  * eastbound osm_661187162 (60 m approach) -> osm_208004768 (368 m deck) ->
- * osm_1151682763 (136 m approach); westbound four other ways. A lane edit in
+ * osm_1151682763 (136 m approach); westbound four other ways. The carriageway a
+ * lane edit reaches is the deck and the east approach: two Old Pune–Mumbai
+ * Highway trunk_link slips join inside the west approach, and a slip takes its
+ * parent's class (a6e30e7), so the §21 run ends before it; westbound likewise
+ * ends where the Mokshagundam Vishweshvarayya Flyover slip leaves the deck
+ * (docs/OVERHAUL.md §27.7). A lane edit in
  * Build goes through the same code as the properties panel (roadFieldUpdates
  * via laneEditPlan), the object store (ObjectManager) and undo (HistoryManager);
  * the simulation sees the roads the way SimulationMode.getRoads gives them.
@@ -31,8 +36,9 @@ import { SimulationMode } from '../simulation/SimulationMode';
 
 const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/sangamwadi.json'), 'utf8')) as { roads: RoadObject[]; signalPoints: [number, number][] };
 const DECK = 'osm_208004768';
-const EAST = ['osm_661187162', DECK, 'osm_1151682763'];
-const WEST = ['osm_1151682762', 'osm_227095239', 'osm_661187159', 'osm_661187161'];
+const EAST = [DECK, 'osm_1151682763'];
+const APPROACH_W = 'osm_661187162';
+const WEST = ['osm_1151682762', 'osm_227095239'];
 const RANGE_M = 700;
 
 const simRoads = (om: ObjectManager): DrivableObject[] =>
@@ -150,9 +156,9 @@ describe('Build lane edits recompute the road analysis', () => {
   it('undoing a deletion restores the original network key and result, although the road comes back at the end of the list', () => {
     const r0 = simRoads(om), a0 = analyse(r0, 1);
     const k0 = networkContentKey(r0, [], fx.signalPoints);
-    const piece = om.getById(EAST[0])!;
+    const piece = om.getById(APPROACH_W)!;
     history.recordDelete(piece, 'Delete');
-    om.delete(EAST[0]);
+    om.delete(APPROACH_W);
     expect(networkContentKey(simRoads(om), [], fx.signalPoints)).not.toBe(k0);
     history.undo();
     const r2 = simRoads(om);
