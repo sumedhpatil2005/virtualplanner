@@ -362,6 +362,8 @@ function chainLinks(network: StudyArea['network'], linkIds: readonly string[]): 
  * the selected road where it has links in this direction, else (the other carriageway of a divided road) on
  * the link nearest it. The direction's own bearing is unchanged.
  */
+/** A piece of the opposite carriageway this close (m) to the seed road runs alongside it (roadSection's ALONGSIDE_M). */
+const ALONGSIDE_SEED_M = 45;
 function carriagewayOnly(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, g: { linkIds: string[] }) {
   const along = (id: string) => !id.endsWith('_bwd');
   const edges = g.linkIds.map(id => area.network.edges.get(id)).filter((e): e is NonNullable<typeof e> => !!e);
@@ -370,8 +372,22 @@ function carriagewayOnly(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
   if (!starts.length) {
     const seedPts = area.seedRoadIds.flatMap(id => roads.get(id)?.coordinates ?? []);
     if (!seedPts.length) return;
+    // The opposite carriageway's piece that runs alongside the seed for the longest distance, then the
+    // nearest. The nearest alone picked a short piece at an end of the seed where the two carriageways meet
+    // (Sangamwadi Bridge westbound: the 107 m ramp osm_661187159, not the 260 m deck osm_227095239), and the
+    // direction then measured that ramp only once the run stopped at the slip road between them (§27.7).
     const near = (e: (typeof edges)[number]) => Math.min(...seedPts.map(p => pointToLineM(p, e.coordinates)));
-    starts = edges.length ? [edges.reduce((a, b) => (near(b) < near(a) ? b : a))] : [];
+    const alongside = (e: (typeof edges)[number]) => {
+      let m = 0;
+      const c = e.coordinates;
+      for (let i = 1; i < c.length; i++) {
+        const mid = [(c[i - 1][0] + c[i][0]) / 2, (c[i - 1][1] + c[i][1]) / 2];
+        if (pointToLineM(mid, seedPts) < ALONGSIDE_SEED_M) m += distM(c[i - 1], c[i]);
+      }
+      return m;
+    };
+    const score = edges.map(e => ({ e, a: alongside(e), d: near(e) }));
+    starts = score.length ? [score.reduce((x, y) => (y.a > x.a + 1 || (Math.abs(y.a - x.a) <= 1 && y.d < x.d) ? y : x)).e] : [];
   }
   const list = [...roads.values()];
   const keep = new Set<string>();

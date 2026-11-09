@@ -22,15 +22,26 @@ import { SimulationMode } from '../simulation/SimulationMode';
  * osm_661187162 (60 m approach) -> osm_208004768 (368 m deck) ->
  * osm_1151682763 (136 m approach), all 2 lanes.
  *
- * "Entire connected carriageway" (the default) edits all three; "Selected
+ * The carriageway is the deck and the east approach. The west approach
+ * osm_661187162 has two trunk_link slip roads of the Old Pune–Mumbai Highway
+ * joining inside it (osm_1355142505 at its vertex 2, osm_208099367 through its
+ * vertex 3); a slip road takes its parent's class (a6e30e7: trunk_link ranks
+ * as highway), and a carriageway run ends before a piece that passes a
+ * junction with a main road of another name (carriagewayRun, §21). Before
+ * a6e30e7 these slips were stored as local and the run reached the west
+ * approach; after it the analysis (corrected classes) stopped at the deck
+ * while the edit (stored classes) still reached it, until both ranked classes
+ * alike (§27.7). The browser on the project database showed the same 2 pieces.
+ *
+ * "Entire connected carriageway" (the default) edits both; "Selected
  * segment only" edits the clicked way alone, and the analysis must then say
- * the 2-lane approaches still set the direction's capacity.
+ * the 2-lane approach still sets the direction's capacity.
  */
 
 const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/sangamwadi.json'), 'utf8')) as { roads: RoadObject[]; signalPoints: [number, number][] };
 const DECK = 'osm_208004768';
 const APPROACH_W = 'osm_661187162', APPROACH_E = 'osm_1151682763';
-const EAST = [APPROACH_W, DECK, APPROACH_E];
+const EAST = [DECK, APPROACH_E];
 const RANGE_M = 700;
 
 const simRoads = (om: ObjectManager): DrivableObject[] =>
@@ -75,10 +86,11 @@ describe('lane edit scope: which ways change', () => {
     expect((om.getById(DECK) as RoadObject).sections![0].carriagewayA.lanes).toBe(3);
   });
 
-  it('"Entire connected carriageway" (the default) changes the three eastbound ways', () => {
+  it('"Entire connected carriageway" (the default) changes the eastbound deck and east approach, not the west approach past the slip roads', () => {
     expect(new Set(buildLaneEdit(DECK, 'lanesForward', 3, 'carriageway'))).toEqual(new Set(EAST));
     // The default scope is the carriageway
     expect(new Set(laneEditPlan(roadsNow(), APPROACH_E, 'lanesForward', 4, r => om.synthesizeDefaultSections(r)).map(p => p.id))).toEqual(new Set(EAST));
+    expect(((om.getById(APPROACH_W) as RoadObject).sections?.[0]?.carriagewayA.lanes ?? 2)).toBe(2);
   });
 
   it('the preview shows the same ways the edit then changes, with their count and total length', () => {
@@ -93,10 +105,10 @@ describe('lane edit scope: which ways change', () => {
     expect(seg.lengthM).toBeLessThan(380);
     expect(seg.label).toMatch(/^1 piece · \d+ m$/);
     const cw = laneEditPreview(roadsNow(), DECK, 'lanesForward', 'carriageway');
-    expect(cw.count).toBe(3);
-    expect(cw.lengthM).toBeGreaterThan(545);
-    expect(cw.lengthM).toBeLessThan(585);
-    expect(cw.label).toMatch(/^3 pieces · \d+ m$/);
+    expect(cw.count).toBe(2);
+    expect(cw.lengthM).toBeGreaterThan(490);
+    expect(cw.lengthM).toBeLessThan(520);
+    expect(cw.label).toMatch(/^2 pieces · \d+ m$/);
   });
 });
 
@@ -125,7 +137,7 @@ describe('lane edit scope: the analysis follows the edited network', () => {
     expect(Math.round(e.binding!.capacityPcu)).toBe(2571);
     expect(e.binding!.lengthM).toBeGreaterThan(120);
     expect(e.binding!.lengthM).toBeLessThan(150);
-    expect(new Set(e.bindingSegments.map(b => b.roadId))).toEqual(new Set([APPROACH_W, APPROACH_E]));
+    expect(new Set(e.bindingSegments.map(b => b.roadId))).toEqual(new Set([APPROACH_E]));
     expect(e.roadIds).toEqual(expect.arrayContaining(EAST));
   }, 60000);
 
@@ -137,6 +149,13 @@ describe('lane edit scope: the analysis follows the edited network', () => {
     expect(e.lanesRange).toEqual([3, 3]);
     expect(e.binding).toMatchObject({ lanes: 3 });
     expect(new Set(e.bindingSegments.map(b => b.roadId))).toEqual(new Set(EAST));
+    // The analysis measures the stretch the edit reached (§21): the same ways
+    expect(new Set(e.roadIds)).toEqual(new Set(EAST));
+  }, 60000);
+
+  it('westbound is measured on the westbound deck and its approach, not the ramp where the carriageways meet', () => {
+    const { ctx, west } = analyse(simRoads(om));
+    expect(new Set(ctx.directions[west].roadIds)).toEqual(new Set(['osm_227095239', 'osm_1151682762']));
   }, 60000);
 });
 

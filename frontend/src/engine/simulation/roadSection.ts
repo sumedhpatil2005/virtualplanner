@@ -1,4 +1,5 @@
 import type { StudyArea, DrivableObject, StudySegment } from './StudyAreaExplorer';
+import { impliedRoadClass } from './networkCorrections';
 
 /**
  * The road section a click means.
@@ -39,6 +40,15 @@ export function roadKeys(road: DrivableObject | undefined): Set<string> {
 }
 
 const RANK: Record<string, number> = { highway: 4, arterial: 3, collector: 2, local: 1 };
+/**
+ * Rank of a road's class as the simulation network sees it: a trunk_link or secondary_link imported as
+ * local ranks as its parent's class (networkCorrections.impliedRoadClass, applied when the simulation network
+ * is built). The Build edit reads the stored roads and the analysis the corrected ones, so both must rank them
+ * alike or "Entire carriageway" reaches a piece the analysis does not measure (docs/OVERHAUL.md §27.7).
+ */
+const classRank = (r: DrivableObject | undefined, nonRoad?: number) =>
+  !r ? 1 : r.type !== 'road' && nonRoad !== undefined ? nonRoad
+    : RANK[(r.type === 'road' ? impliedRoadClass(r) : null) ?? r.roadClass ?? 'local'] ?? 1;
 const M_PER_DEG_LAT = 111320;
 
 const midpoint = (c: readonly (readonly number[])[]) => c[Math.floor(c.length / 2)];
@@ -94,7 +104,7 @@ export function roadSection(area: StudyArea, roads: ReadonlyMap<string, Drivable
   };
   for (const s of segs) for (const n of nodesOf(s)) if (n) (byNode.get(n) ?? byNode.set(n, []).get(n)!).push(s);
   /** A main road of another name meets the section here: a major junction. */
-  const majorJunction = (node: string) => (byNode.get(node) ?? []).some(s => !same(s) && (RANK[roads.get(s.roadId)?.roadClass ?? 'local'] ?? 1) >= 2);
+  const majorJunction = (node: string) => (byNode.get(node) ?? []).some(s => !same(s) && classRank(roads.get(s.roadId)) >= 2);
 
   const chosen = new Map<string, StudySegment>(seedSegs.map(s => [s.key, s]));
   const endNames = new Set<string>();
@@ -209,7 +219,7 @@ export function carriagewayRun(roads: readonly DrivableObject[], roadId: string,
   }
   const same = (r: DrivableObject) => [...roadKeys(r)].some(k => keys.has(k));
   /** A main road (collector or above) of another name passes through this node, at an end of it or not. */
-  const majorAt = (k: string, except: DrivableObject) => (atVertex.get(k) ?? []).some(r => r !== except && !same(r) && (RANK[r.type === 'road' ? r.roadClass : 'arterial'] ?? 1) >= 2);
+  const majorAt = (k: string, except: DrivableObject) => (atVertex.get(k) ?? []).some(r => r !== except && !same(r) && classRank(r, RANK.arterial) >= 2);
   const travelBearing = (p: CarriagewayPiece) => {
     const c = p.road.coordinates, a = p.along ? c[0] : c[c.length - 1], b = p.along ? c[c.length - 1] : c[0];
     return (Math.atan2((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 180 / Math.PI + 360) % 360;
