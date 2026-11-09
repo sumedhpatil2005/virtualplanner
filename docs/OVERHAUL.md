@@ -1940,6 +1940,45 @@ Browser, this head (seeds 42/7/11): trips 4,169 / 4,127 / 4,119, gridlock events
 
 ### 28.6 Summary
 No code change from this section. Of the two remaining Shivajinagar sites, both are merges onto Bajirao Road where the modelled demand exceeds the realistic merge capacity (genuine oversaturation, measured against estimates), and in both the model discharges less than it should (about 4x at site A, 20–30 % at site B) because a side movement's path conflicts with every main-road lane. That geometry is the next root cause to fix; proposed above, not applied, because it changes every junction.
+
+### 28.7 Merge path conflicts (fix attempted, reverted)
+Task: implement §28.4's proposal (side-road movement from the edge of the main carriageway, conflicting only with paths it crosses or merges with). Done, measured, and **reverted**: it changed the conflict set as intended but did not raise the served flow at site A, slightly lowered Sangamwadi trips, and the fixture capacity stayed below the HCM 2010 bound. No engine change committed. Model output throughout; Harders values are ESTIMATES.
+
+**What was tried (one change set, patch kept at /workspace/work/vp-merge-e2e/attempt1_engine.patch, tests at .../MergeConflicts.test.ts, both not committed):** (1) a stop line stands outside the carriageway of every wider road at its junction (half-width + 0.5 m from that road's centre line, at most 50 % of the link); (2) two movements ending in the same lane always conflict (a merge), even where their drawn paths never come within 2.3 m; (3) a turn onto a road with more lanes joins the nearest lanes (left turn: kerb lane), instead of the emptiest lane. Fixture: one-lane side road joining a 3-lane one-way road (turns 70/90/110 deg, last link 18 m or 400 m).
+
+**Geometry findings (UNIT-TESTED in the uncommitted test, reproducible with the patch):**
+- Before: on an 18 m last link the stop line sat 3.98 m from the centre line of a 10.5 m wide road (inside the kerb lane: the 20 % trim cap), and a left turn into the kerb lane conflicted with lanes 2 and 3 through paths. After: stop line 5.75-6.24 m from the centre line; the kerb-lane path conflicts with the kerb lane only, at every angle.
+- Safety hole found (exists on e04c9bb, not fixed now): at a sharp angle (130 deg turn) the side road's path into the kerb lane conflicts with **no** main-road path, because the main road's through path is only 4 m long (2 m trim each side) and the merge happens beyond it; the side road then never gives way to kerb-lane traffic. At 110 deg its path into the far lane misses lane 2's through path for the same reason. Change (2) closes the first case.
+- Site A conflicts (seed 42, refusal step-counts by the claim that blocked the side road): before, kerb lane 4,746 / lane 2 5,191 / lane 3 2,529; after, kerb lane 3,745 and lanes 2-3 only when the kerb lane had no room (about 10 % of grants). Time the side road's front stood at its line held by conflicts: 846 s → 471 s (of 1,500 s).
+
+**Why the served flow did not rise:**
+1. §28.4's "conflicts with all three lanes" over-stated the case: its listing (SD_CONF) included lane pairs no vehicle uses (lane 1 → lane 3 etc.). The real pre-fix conflicts were the kerb lane and lane 2.
+2. With the conflicts fixed the bottleneck moved upstream. Niranjav Madhav Marg's last link is 15.8 m; with its stop line at the carriageway edge (7.9 m from the node instead of 3.2 m) it holds one vehicle, and the next must cross the upstream junction (73.85439, 18.52042) first. Side road front, 1,500 s: before, at the line held 1,015 s, empty 36 s; after, at the line held 566 s, rolling up 570 s, empty 278 s.
+3. The gap model's merge capacity is about the HCM 2010 value, not Indo-HCM: the 3.8 s critical gap is applied as a lag to the main-road vehicle's **stop line** plus waiting until the previous vehicle has cleared the merge point, so the accepted headway is about 5-6 s. Fixture, cars, mean of seeds 42/7, capacity (veh/h) at kerb-lane flow 303 / 591 / 1,207 veh/h:
+
+| Geometry | Before | After | HCM 2010 (tc 6.9, tf 3.3) | Indo-HCM (tc 3.8, own tf) |
+|---|---|---|---|---|
+| 110 deg, 18 m last link | 623 / 333 / 71 | 608 / 378 / 137 | 699 / 455 / 178 | 956 / 792 / 521 |
+| 90 deg, 400 m | 756 / 462 / 141 | 735 / 456 / 153 | 699 / 455 / 179 | 1,212 / 979 / 614 |
+
+Required band (HCM < model < Indo-HCM): after the change met in 2 of 6 cells. Changing the lag to the conflict point (the usual definition) would raise it but breaks the committed `PriorityGaps` rule (lag to the stop line ≥ 3.0 s), so it was not tried.
+
+**Network effect, headless (dump_shiv.json, 1,800 s, seeds 42 / 7 / 11), before → after:**
+| | Before (e04c9bb) | After (patch) |
+|---|---|---|
+| Site A served (veh/h) | 210 / 188 / 226 | 206 / 210 / 254 |
+| Shivajinagar trips | 4,271 / 4,265 / 4,098 | 4,319 / 4,220 / 4,216 |
+| Gridlock events | 73 / 125 / 128 | 98 / 142 / 110 |
+| Gridlocked at end | 28 / 14 / 10 | 21 / 12 / 9 |
+| Sangamwadi trips (headless) | 4,616 / 4,528 / 4,479 | 4,457 / 4,506 / 4,359 |
+| Sangamwadi gridlock events / at end | 1, 5, 6 / 1, 0, 0 | 3, 3, 2 / 2, 0, 2 |
+
+§20 tee table (`PriorityGaps`) with the patch: 871 / 577 / 318 / 195 (was 863 / 574 / 317 / 195). With the patch `PriorityGaps`, `JunctionRealism`, `LongVehicles`, `SignalBox` passed unchanged. Site A served flow +7 % on average (seed-to-seed noise is about ±10 %); events got worse in 2 of 3 seeds; Sangamwadi trips fell in 3 of 3 (−0.5 to −3.4 %). That is no improvement, so it was reverted.
+
+**Site A re-assessed:** after the fix the side road waits on the kerb lane only (about 840 veh/h). The model's 206-254 veh/h is below the HCM 2010 Harders value for that flow (about 310) and far below Indo-HCM (about 830). What limits it now is the gap model's merge rule (point 3) and one-vehicle storage on the 15.8 m link (point 2), not path conflicts. Harness: `/workspace/work/vp-merge-e2e/sd.sh TAG SEED SD_SITE=73.85453,18.52023 SD_LINK=osm_238567531_seg_4_fwd [SD_WHO=<link>] [SD_BINS=<link>]` (scratch ShivajiDiag copy with WHO/BINS added; summaries `summ.py`).
+
+**PROPOSED next (not done):** (a) measure gap acceptance to the conflict point and restate the `PriorityGaps` lag rule with it (needs the owner's agreement, since it changes a committed test definition); (b) apply changes (2) and (3) without (1) as a safety fix for the sharp-angle no-yield hole, with its own before/after; (c) storage on short links between junctions (§20 keep-clear rule) is the next limiter at site A.
+
 ## 30. Integration test status
 
 Code: vp-wt-fix3 on integration head 984a0e4 plus d90711c, 155913a, 01f158b, ccce00c, c3c35b4 (§27.7). Run 2026-11-10, 2 CPUs, one test file per vitest process, sequentially (`/workspace/work/vp-wt-fix3-e2e/fullsuite.sh`; logs in `.../suite/`).
