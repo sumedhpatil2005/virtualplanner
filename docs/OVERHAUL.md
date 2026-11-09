@@ -1881,3 +1881,26 @@ Root causes found in this round and fixed: (7) the lane edit scope's first click
 Repeat: `cd frontend; VP_OBJECTS=<export of /api/objects rows> VP_N=200 VP_OPS=<op> VP_REPORT=<dir> npx vitest run src/engine/testing/NetworkEditIsolation.test.ts` (one op per process: the export is 36 MB and a run takes 0.5–1.2 GB). Ops: delete, lanes-segment, lanes-carriageway, speed, class, oneway, reshape, reconnect, flyover-elevation (capped at 100), sequence (`VP_SEQ_RUNS`). Browser scripts: `/workspace/work/vp-wt-edit2-e2e/br/js/` (s7_scope.js, s5_pick.js + s5a/s5b/s5d), run with the harness in `/workspace/work/vp-final2-e2e/`.
 
 Not covered: drawing a flyover to rejoin a deleted deck piece; random sequences do not include drawing; the junction editor (§23) and signal edits are not part of this harness. Separately noted, not caused by this work: `EditScope.test.ts` has 2 failing tests on this worktree, also with the builder change reverted (it expects osm_661187162 in the Sangamwadi deck carriageway, which is now 2 pieces: osm_208004768, osm_1151682763). Cause not investigated (UNTESTED); §21's carriageway definition is where to look.
+
+## 28. Shivajinagar gridlock: capacity or model
+
+Question: are the gridlock events in the Shivajinagar 2 km area (osm_22841323, 09:00, 3 seeds 7/11/42) caused by demand exceeding capacity, or by the model? Earlier findings (phase 1, re-stated here with their commits) and this round's classification of the remaining sites.
+
+### 28.1 Root causes already found and fixed (phase 1)
+- **Heading bug (network builder).** The builder repeated a shared end node, giving a zero-length last piece whose heading defaulted to due east. Whole-database count: 12,198 of 46,317 directed edges (26.3 %) had it on the last piece, 8,408 on the first piece, 44.5 % on either; 0 after the fix (c83c5a6). Wrong headings gave wrong turn classes, phases and stop lines everywhere. UNIT-TESTED.
+- **Signal box at the §20 worst site** (18.52247, 73.85314; Jayantarao Tilak Bridge × Congress Bhavan Path; OSM signals 12420420706–08 at 16/28/38 m). A mapped signal ran as give-way, and the box ran as three uncoordinated signals with 0 s common green, so a 12 m bus waited 1,542 s and the queue reached 14 links back. Fix: one controller per signal box (c83c5a6), arms within 35° share a phase, two complete junctions close together are not a box, the as-run plan keeps the box (e8a1ec8). UNIT-TESTED; the Tilak box is no longer a gridlock site in the browser (below).
+- **Fictional sample road in a dump.** Headless 76/51/81 events were inflated by the sample road "Pune Central Boulevard" present in the 2026-11-04 dump; without it 51/41/27. Not an app bug for real data; dumps must exclude sample objects.
+- ***_link class import (a6e30e7).** trunk_link (45) and secondary_link (55) roads were imported as local roads (wrong speed and capacity). UNIT-TESTED.
+
+### 28.2 Results so far (model output, 09:00, 3 seeds 7/11/42)
+| Run | Trips | Gridlock events | Gridlocked at end |
+|---|---|---|---|
+| Browser cb19f72, estimated signals | 2,569 / 2,692 / 2,609 | 60 / 31 / 35 | 12 / 5 / 9 |
+| Browser a6e30e7, mapped signals (OSM index) | 2,773 / 2,771 / 2,716 | 37 / 53 / 58 | 18 / 22 / 4 |
+| Sangamwadi 2 km (browser, reference) | 2,660 / 2,692 / 2,623 | 0–1 | – |
+
+Headless table: /workspace/work/vp-int-e2e/hl/. BROWSER-VERIFIED (harness /workspace/work/vp-int-e2e, shiv.js).
+
+Remaining sites on a6e30e7: (A) 73.85099, 18.51860 and 73.85135, 18.51876, Niranjav Madhav Marg into Bajirao Road, wait-for chains end at moving vehicles (spillback?); (B) 73.855xx, 18.521xx, Kakasaheb Gadgil statue loop, "conflict" holds at the unnamed trunk_link node 73.85521, 18.52113.
+
+RESULTS_PENDING
