@@ -231,7 +231,7 @@ const DayRow: React.FC<{ row: TimelineState['rows'][number]; maxVph: number }> =
   );
 };
 
-const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
   const tl = sim.timeline;
   const maxVph = Math.max(1, ...tl.rows.flatMap(r => { const v = dayRowView(r); return v ? [v.demandVph, v.throughputVph] : []; }));
@@ -246,9 +246,13 @@ const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           <Button size="sm" icon={tl.status === 'running' ? Loader2 : Clock} spin={tl.status === 'running'} disabled={tl.status === 'running'} onClick={() => void mode.runTimeline()}>{tl.rows.some(r => r.result) ? 'Run again' : 'Compare times of day'}</Button>
           {tl.status === 'running' && <><span className="text-xs text-slate-400 tabular-nums">{Math.round(tl.progress * 100)}%</span><Button size="sm" variant="ghost" onClick={() => mode.cancelTimeline()}>Stop</Button></>}
         </div>
-        {tl.outdated && tl.status !== 'running' && <p className="text-[11px] text-amber-200 flex items-center gap-1" role="status" data-testid="timeline-outdated"><AlertTriangle size={12} />The network or demand changed since these were computed: they describe the earlier case. Run again.</p>}
+        {tl.outdated && <p className="text-[11px] text-amber-200 flex items-center gap-1" role="status" data-testid="timeline-outdated"><AlertTriangle size={12} />{tl.status === 'running'
+          ? 'The network or demand changed after these runs started: they describe the earlier case. Run again when they finish.'
+          : 'The network or demand changed since these were computed: they describe the earlier case. Run again.'}</p>}
+        {/* Everything read from the rows (rows, day summary, per-run table) is dimmed together when they describe another case (docs/OVERHAUL.md §25) */}
+        <div className={`space-y-2 ${tl.outdated ? 'opacity-60' : ''}`} data-testid="timeline-results" data-outdated={tl.outdated ? 'true' : 'false'}>
         {tl.rows.some(r => r.result) && (
-          <ul className={`space-y-2.5 ${tl.outdated ? 'opacity-60' : ''}`} data-testid="timeline-rows">
+          <ul className="space-y-2.5" data-testid="timeline-rows">
             {tl.rows.map(row => <DayRow key={row.period} row={row} maxVph={maxVph} />)}
           </ul>
         )}
@@ -275,6 +279,7 @@ const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             <p className="text-[10px] text-slate-500">Grey: each run (seeds {seeds.join(', ')}). Demand is the same in every run (the routing is deterministic); only the simulation varies.</p>
           </Disclosure>
         )}
+        </div>
         {tl.rows.some(r => r.result) && <InfoToggle label="How to read this"><p>Each period is computed on its own: the demand for its half of the day times the hour's share of daily traffic (the factor, from the Pune hour profile; measured counts 08:00–19:00, estimated other hours), a fresh routing of the whole area and {seeds.length} fresh simulation runs (seeds {seeds.join(', ')}) from an empty network after a {Math.round(DEFAULT_ANALYSIS.warmupS / 60)}-minute warm-up, counted over {Math.round(DEFAULT_ANALYSIS.measureS / 60)} minutes. Demand is what the routing sends along the road; got through is what the simulation actually moved along it. Where got through is well below demand, traffic is held, by the road or by a queue reaching back from further on. Speed and level of service are for the direction the status comes from (Indo-HCM: travel speed as a share of free-flow speed; F as well when demand exceeds capacity and under 90% of it gets through). Pick a period above to see it in full.</p></InfoToggle>}
       </Card>
     </section>

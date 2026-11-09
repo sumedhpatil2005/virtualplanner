@@ -1116,7 +1116,9 @@ export class SimulationMode {
     return contentKey({ net: this.currentNetworkKey(), study: this.studyKey(), plan: plan ? contentKey({ n: plan.trips.length, v: Math.round(plan.provenance.vehiclesPerHour), src: plan.provenance.source }) : null,
       hour: this.state.timeOfDay.hour, day: this.state.timeOfDay.day, f: this.state.timeOfDay.factor, seeds: this.analysisSeeds, settings: this.state.demandSettings,
       // A result computed without the profile is never taken for one computed with it
-      profile: this.state.timeOfDay.status === 'ready' });
+      profile: this.state.timeOfDay.status === 'ready',
+      // Signal timing (Webster or equal split) is not part of the roads: a run under the other timing is another case (docs/OVERHAUL.md §25)
+      signalTiming: this.signalTiming });
   }
 
   /** Re-runs the road analysis shortly (settings settle first). */
@@ -1485,7 +1487,10 @@ export class SimulationMode {
         this.setState({ timeline: { ...this.state.timeline, rows: [...rows], progress: (i + 1) / DAY_PERIODS.length } });
       }
       this.timelineRun = null;
-      this.setState({ timeline: { ...this.state.timeline, status: 'ready', progress: 1 } });
+      // A change made while the periods ran leaves rows for the case at the start: marked, and kept for an Undo back to it
+      const done: TimelineState = { ...this.state.timeline, status: 'ready', progress: 1, outdated: key !== this.timelineKey() };
+      this.keepTimeline(done);
+      this.setState({ timeline: done });
       return true;
     } catch (err) {
       if (generation !== this.timelineGeneration) return false;
@@ -1500,15 +1505,32 @@ export class SimulationMode {
     const plan = this.studyPlan();
     return contentKey({ net: this.currentNetworkKey(), study: this.studyKey(), plan: plan ? contentKey({ n: plan.trips.length, v: Math.round(plan.provenance.vehiclesPerHour), src: plan.provenance.source }) : null,
       day: this.state.timeOfDay.day, countPeak: this.calibratedPlan ? this.state.timeOfDay.countPeak : null, seeds: this.analysisSeeds, settings: this.state.demandSettings,
-      profile: this.state.timeOfDay.status === 'ready', corrections: this.correctionsEnabled });
+      profile: this.state.timeOfDay.status === 'ready', corrections: this.correctionsEnabled, signalTiming: this.signalTiming });
   }
 
-  /** Marks the rows outdated when what they were computed for has changed (and current again after an undo). */
+  /**
+   * Marks the rows outdated when what they were computed for has changed, also while the periods are still
+   * running (the rows that land after the change describe the case at the start of the run). Rows already
+   * computed for the case now in force (Undo or Redo back to it) come back as current (docs/OVERHAUL.md §25).
+   */
   private refreshTimelineOutdated() {
     const tl = this.state.timeline;
-    if (!tl.key || tl.status === 'running' || !tl.rows.some(r => r.result)) return;
-    const outdated = tl.key !== this.timelineKey();
+    if (!tl.key) return;
+    const key = this.timelineKey();
+    const kept = tl.key !== key && tl.status !== 'running' ? this.keptTimelines.get(key) : undefined;
+    if (kept) { this.setState({ timeline: kept }); return; }
+    if (!tl.rows.some(r => r.result)) return;
+    const outdated = tl.key !== key;
     if (!!tl.outdated !== outdated) this.setState({ timeline: { ...tl, outdated } });
+  }
+
+  /** The last few complete time-of-day runs by key, so Undo/Redo of an edit shows their rows again without a re-run. */
+  private keptTimelines = new Map<string, TimelineState>();
+  private keepTimeline(t: TimelineState) {
+    if (!t.key) return;
+    this.keptTimelines.delete(t.key);
+    this.keptTimelines.set(t.key, { ...t, outdated: false });
+    while (this.keptTimelines.size > 6) this.keptTimelines.delete(this.keptTimelines.keys().next().value!);
   }
 
   /** Stops the time-of-day runs (clear: also forget their rows). */
