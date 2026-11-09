@@ -1696,6 +1696,7 @@ These are not re-run here. Any re-run should be made one at a time, on port 8221
 - Hypotheticals: add `VAL24_HYPO_PCU=trr2021 | VAL24_HYPO_SPEEDCAP=50 | VAL24_HYPO_EDGE=1.8 | VAL24_HYPO_SCALE=1.43`.
 - Analysis: `VAL24_DATA=<dir with *.jsonl> python3 backend/data/observed_validation/analyze_validation.py` writes `sec24_tables.md` and `summary.json`.
 - The run lists are committed in `backend/data/observed_validation/runs/`. The outputs used here (13 counts, 21 speeds, 10 sweeps, 11 + 11 + 3 corridor sweeps, 48 area runs, and 4 × 16 hypothetical runs) are in `/workspace/work/vp-wt-val2/valdata/*.jsonl` and are not committed.
+
 ## 25. Stale "Through the day" rows: browser check, and the Sangam Bridge report
 
 ### 25.1 Browser check of the stale-row fixes (8b17c37), 2026-11-09
