@@ -1979,20 +1979,6 @@ Required band (HCM < model < Indo-HCM): after the change met in 2 of 6 cells. Ch
 
 **PROPOSED next (not done):** (a) measure gap acceptance to the conflict point and restate the `PriorityGaps` lag rule with it (needs the owner's agreement, since it changes a committed test definition); (b) apply changes (2) and (3) without (1) as a safety fix for the sharp-angle no-yield hole, with its own before/after; (c) storage on short links between junctions (§20 keep-clear rule) is the next limiter at site A.
 
-## 30. Integration test status
-
-Code: vp-wt-fix3 on integration head 984a0e4 plus d90711c, 155913a, 01f158b, ccce00c, c3c35b4 (§27.7). Run 2026-11-10, 2 CPUs, one test file per vitest process, sequentially (`/workspace/work/vp-wt-fix3-e2e/fullsuite.sh`; logs in `.../suite/`).
-
-| check | result |
-|---|---|
-| vitest, all 76 files under `src/engine/testing` (scratch harnesses excluded) | 571 passed, 6 skipped (opt-in harnesses: DayInvestigation, JunctionValidation, NetworkValidation, PerformanceBench, WakadRealism, and one in-file), 0 failed |
-| — of which fixed in this round | EditScope 2 failures (bisected to a6e30e7, §27.7); EditRecompute 3 failures that the §27.7 carriageway fix caused by design (expectations updated with the reason, then 14/14) |
-| tsc (`tsconfig.app.json` and `tsconfig.node.json`, `--noEmit`, fresh build info) | 0 errors |
-| oxlint | 0 errors, 5 warnings (unused imports/catch parameters, pre-existing) |
-| vite build | built, 1,919 modules (chunk-size warning only) |
-
-Previous full run (§ Phase 3, e8a1ec8): 557 passed, 6 skipped. Not run here: the whole-database edit harness for every operation (only delete, 60 samples, 0 violations, §27.7) and the opt-in validation harness (VAL24=1).
-
 ## 29. Outstanding browser checks
 
 Code: worktree vp-wt-ux2 at integration head e04c9bb (includes 902e354 and 2d1073b). Backend on 8281 with a fresh copy of the project DB and the local OSM index (`TWINCITY_OSM_INDEX=/workspace/work/vp-int-e2e/db_osm_index.db`, mapped signals); static build on 4421. Harness: `/workspace/work/vp-ux2-e2e/` (copied from `/workspace/work/vp-ux-e2e/`: `harness.py`, `run.sh NAME WIDTH`, `steps_*.json`, `js/`). Run 2026-11-10.
@@ -2071,3 +2057,17 @@ Same run with the backend's local OSM index (source "local", Overpass not called
 - Hover preview for worst-places rows and suggestion buttons (feature, not built).
 - The five wording / metric items in 29.3 and the two-step import undo in 29.4: reported only.
 - Only one junction re-checked for the "without a signal" note; one workflow run (no seed repetition of the browser workflow).
+
+## 30. Integration test status
+
+Code: vp-wt-fix3 on integration head 984a0e4 plus d90711c, 155913a, 01f158b, ccce00c, c3c35b4 (§27.7). Run 2026-11-10, 2 CPUs, one test file per vitest process, sequentially (`/workspace/work/vp-wt-fix3-e2e/fullsuite.sh`; logs in `.../suite/`).
+
+| check | result |
+|---|---|
+| vitest, all 76 files under `src/engine/testing` (scratch harnesses excluded) | 571 passed, 6 skipped (opt-in harnesses: DayInvestigation, JunctionValidation, NetworkValidation, PerformanceBench, WakadRealism, and one in-file), 0 failed |
+| — of which fixed in this round | EditScope 2 failures (bisected to a6e30e7, §27.7); EditRecompute 3 failures that the §27.7 carriageway fix caused by design (expectations updated with the reason, then 14/14) |
+| tsc (`tsconfig.app.json` and `tsconfig.node.json`, `--noEmit`, fresh build info) | 0 errors |
+| oxlint | 0 errors, 5 warnings (unused imports/catch parameters, pre-existing) |
+| vite build | built, 1,919 modules (chunk-size warning only) |
+
+Previous full run (§ Phase 3, e8a1ec8): 557 passed, 6 skipped. Not run here: the whole-database edit harness for every operation (only delete, 60 samples, 0 violations, §27.7) and the opt-in validation harness (VAL24=1).
