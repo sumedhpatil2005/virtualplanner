@@ -163,7 +163,10 @@ export class ObjectManager {
     road.hasDivider = sec.hasMedian;
     road.hasFootpath = leftFootpath > 0 || rightFootpath > 0;
     road.footpathWidth = Math.max(leftFootpath, rightFootpath);
-    road.trafficCapacity = road.laneCount * 1000;
+    // A drawn flyover's ramps take a share of the surface road's capacity (BridgeFeasibilityEngine): kept through every
+    // later edit and reload of the road, not reset by them (docs/OVERHAUL.md §27)
+    const cut = road.flyoverImpact?.capacityReductionPercent ?? 0;
+    road.trafficCapacity = cut > 0 ? Math.round(road.laneCount * 1000 * (1 - cut / 100)) : road.laneCount * 1000;
   }
 
   public synthesizeDefaultSections(road: RoadObject): RoadSectionProfile[] {
@@ -251,6 +254,36 @@ export class ObjectManager {
     return [defaultSection];
   }
 
+  /**
+   * Bridge feasibility checks of a flyover (on its ground-level path, before its elevation profile) against the
+   * surface roads, and the capacity reduction each impacted surface road takes (ramp merge): the flyover with its
+   * `feasibilityResult` and `surfaceRoadIds`, and for each impacted road the fields to update. Nothing is changed.
+   */
+  public flyoverFeasibility(obj: CityObject): { flyover: Partial<CityObject>; roadUpdates: { id: string; updates: Partial<RoadObject> }[] } {
+    const flyover = { ...obj } as any;
+    if (!flyover.groundCoordinates) applyFlyoverElevationProfile(flyover);
+    const groundCoords: [number, number, number][] = flyover.groundCoordinates && flyover.groundCoordinates.length > 1
+      ? flyover.groundCoordinates
+      : flyover.coordinates;
+    const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
+    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads);
+    const roadUpdates: { id: string; updates: Partial<RoadObject> }[] = [];
+    for (const impact of feasibility.surfaceRoadImpacts) {
+      if (!this.objects.has(impact.roadId)) continue;
+      roadUpdates.push({ id: impact.roadId, updates: {
+        trafficCapacity: impact.reducedCapacity,
+        flyoverImpact: {
+          flyoverId: obj.id,
+          flyoverName: obj.name,
+          capacityReductionPercent: impact.capacityReductionPercent,
+          originalCapacity: impact.originalCapacity,
+          reason: impact.reason
+        },
+      } });
+    }
+    return { flyover: { feasibilityResult: feasibility, surfaceRoadIds: roadUpdates.map(u => u.id) } as any, roadUpdates };
+  }
+
   public add(obj: CityObject, skipSync = false) {
     let fresh = {
       ...obj,
@@ -262,53 +295,10 @@ export class ObjectManager {
       this.syncRoadProperties(fresh as RoadObject);
     } else if (fresh.type === 'flyover' || fresh.type === 'metro_flyover') {
       applyFlyoverElevationProfile(fresh);
-
-      // Run bridge feasibility checks using ground-level coordinates (before elevation applied)
-      const flyover = fresh as any;
-      const groundCoords: [number, number, number][] = flyover.groundCoordinates && flyover.groundCoordinates.length > 1
-        ? flyover.groundCoordinates
-        : flyover.coordinates;
-
-      const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
-
-      const engine = new BridgeFeasibilityEngine();
-      const feasibility = engine.run(
-        groundCoords,
-        flyover.elevation ?? 6.0,
-        flyover.laneCount ?? 4,
-        surfaceRoads
-      );
-
-      flyover.feasibilityResult = feasibility;
-
-      // Apply surface road capacity reductions for each impacted road
-      const impactedIds: string[] = [];
-      for (const impact of feasibility.surfaceRoadImpacts) {
-        const road = this.objects.get(impact.roadId) as RoadObject | undefined;
-        if (!road) continue;
-
-        impactedIds.push(impact.roadId);
-
-        const updatedRoad: RoadObject = {
-          ...road,
-          trafficCapacity: impact.reducedCapacity,
-          flyoverImpact: {
-            flyoverId: fresh.id,
-            flyoverName: fresh.name,
-            capacityReductionPercent: impact.capacityReductionPercent,
-            originalCapacity: impact.originalCapacity,
-            reason: impact.reason
-          },
-          updatedAt: new Date().toISOString()
-        };
-
-        this.objects.set(road.id, updatedRoad);
-        // Sync road update to backend without triggering a full onChange cascade here;
-        // the flyover's own notify() call below will handle the rebuild.
-        if (!skipSync) this.syncPost(updatedRoad);
-      }
-
-      flyover.surfaceRoadIds = impactedIds;
+      // The checks are worked out once, when the flyover is drawn (flyoverFeasibility); the capacity it takes from the
+      // surface roads is applied by the drawing as part of the same Undo step (EditingEngine.finalizeDrawing), not here:
+      // changed here, outside the history, Undo left those roads reduced (docs/OVERHAUL.md §27)
+      if (!(fresh as any).feasibilityResult) Object.assign(fresh, this.flyoverFeasibility(fresh).flyover);
     }
 
     this.objects.set(obj.id, fresh);
@@ -355,12 +345,16 @@ export class ObjectManager {
     }
   }
 
-  public update(id: string, updates: Partial<CityObject>, skipSync = false) {
+  /**
+   * Changes an object. `replace` (Undo and Redo) puts back `updates` as the whole object: fields the other version
+   * did not have go too (merged, a field an edit added, such as a flyover's impact on a road, stayed after Undo).
+   */
+  public update(id: string, updates: Partial<CityObject>, skipSync = false, replace = false) {
     const existing = this.objects.get(id);
     if (!existing) return;
 
     let updated = {
-      ...existing,
+      ...(replace ? {} : existing),
       ...updates,
       updatedAt: new Date().toISOString(),
     } as CityObject;

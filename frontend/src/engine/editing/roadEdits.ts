@@ -1,4 +1,5 @@
-import type { RoadObject, RoadSectionProfile } from '../objects/types';
+import type { CityObject, RoadObject, RoadSectionProfile } from '../objects/types';
+import type { HistoryDiff } from '../history/HistoryManager';
 import { carriagewayRun, SECTION_MAX_M, type CarriagewayPiece } from '../simulation/roadSection';
 
 /**
@@ -9,6 +10,11 @@ import { carriagewayRun, SECTION_MAX_M, type CarriagewayPiece } from '../simulat
  * a road that has none.
  */
 export function roadFieldUpdates(r: RoadObject, field: string, value: any, synthesize: (r: RoadObject) => RoadSectionProfile[]): Partial<RoadObject> {
+  // A field that is not part of the cross-section changes only itself. Before, every edit also rebuilt the road's
+  // cross-section from its top-level fields, so changing the speed limit or class of a one-way road added a
+  // footpath on its right and widened it by 1.5 m (docs/OVERHAUL.md §27)
+  if (field === 'speedLimit' || field === 'trafficCapacity') return { [field]: Number(value) };
+  if (field === 'roadClass' || field === 'name') return { [field]: value };
   const rUpdates: Partial<RoadObject> = {};
 
   let sections = r.sections ? JSON.parse(JSON.stringify(r.sections)) : synthesize(r);
@@ -231,4 +237,93 @@ export function laneEditPreview(roads: readonly RoadObject[], roadId: string, fi
  */
 export function laneEditPlan(roads: readonly RoadObject[], roadId: string, field: LaneField, value: number, synthesize: (r: RoadObject) => RoadSectionProfile[], scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE, view?: RoadView): { id: string; updates: Partial<RoadObject> }[] {
   return laneEditPieces(roads, roadId, field, scope, view).map(p => ({ id: p.road.id, updates: roadFieldUpdates(p.road, p.field, value, synthesize) }));
+}
+
+/** What a Build road edit needs of the object store and the undo history (ObjectManager, HistoryManager). */
+export interface RoadEditStore {
+  getAll(): CityObject[];
+  getById(id: string): CityObject | undefined;
+  update(id: string, updates: Partial<CityObject>): void;
+  synthesizeDefaultSections(r: RoadObject): RoadSectionProfile[];
+}
+export interface RoadEditHistory {
+  pushDiff(diff: HistoryDiff): void;
+  recordUpdate(before: CityObject, after: CityObject, description?: string, coalesceKey?: string): void;
+}
+
+/**
+ * Applies one Build properties edit of a road and records it for Undo, exactly as the properties panel does
+ * (moved here from PropertiesPanel.tsx so the whole-network edit tests run the same code, docs/OVERHAUL.md §27):
+ * a lane edit covers the chosen scope (laneEditPlan) as one batch step when it reaches more than one piece;
+ * every other edit, and a lane edit of one piece, is a single update coalesced per road and field. `selected`
+ * is the road as the panel holds it. Returns the road ids changed and the selected road as edited.
+ */
+export function commitRoadFieldEdit(objects: RoadEditStore, history: RoadEditHistory, selected: RoadObject, field: string, value: unknown,
+  scope: LaneEditScope = DEFAULT_LANE_EDIT_SCOPE, view?: RoadView): { ids: string[]; selected: RoadObject } {
+  const synthesize = (r: RoadObject) => objects.synthesizeDefaultSections(r);
+  if (field === 'lanesForward' || field === 'lanesBackward') {
+    const roads = objects.getAll().filter((o): o is RoadObject => o.type === 'road');
+    const plan = laneEditPlan(roads, selected.id, field, Number(value), synthesize, scope, view);
+    if (plan.length > 1) {
+      const before = plan.map(p => objects.getById(p.id)!);
+      history.pushDiff({ type: 'batch', description: `Update ${selected.name || selected.id} lanes (${plan.length} pieces)`,
+        diffs: plan.map((p, i) => ({ type: 'update' as const, id: p.id, before: before[i], after: { ...before[i], ...p.updates } as CityObject })) });
+      for (const p of plan) objects.update(p.id, p.updates);
+      return { ids: plan.map(p => p.id), selected: { ...selected, ...plan[0].updates } as RoadObject };
+    }
+  }
+  const updates = roadFieldUpdates(selected, field, value, synthesize);
+  const merged = { ...selected, ...updates } as RoadObject;
+  // Coalesce per object+field so typing or dragging a slider is one Undo step
+  history.recordUpdate(selected, merged, `Update ${selected.name || selected.id} ${field}`, `${selected.id}:${field}`);
+  objects.update(selected.id, updates);
+  return { ids: [selected.id], selected: merged };
+}
+
+/** The changes a Build properties edit of one field makes to a drawn flyover (moved from PropertiesPanel.tsx unchanged). */
+export function flyoverFieldUpdates(obj: CityObject, field: string, value: any): Partial<CityObject> {
+  const f = obj as any;
+  const fUpdates: any = {};
+  let laneCount = f.laneCount;
+  let laneWidth = f.laneWidth || 3.5;
+  let hasDivider = f.hasDivider;
+  let dividerWidth = f.dividerWidth || 2.0;
+  let hasFootpath = f.hasFootpath;
+  let footpathWidth = f.footpathWidth || 1.5;
+
+  if (field === 'laneCount') laneCount = Number(value);
+  else if (field === 'lanesForward') {
+    const bwdLanes = f.isOneWay ? 0 : Math.floor(f.laneCount / 2);
+    laneCount = Number(value) + bwdLanes;
+  } else if (field === 'lanesBackward') {
+    const fwdLanes = Math.ceil(f.laneCount / (f.isOneWay ? 1 : 2));
+    laneCount = fwdLanes + Number(value);
+  }
+  else if (field === 'laneWidth') laneWidth = Number(value);
+  else if (field === 'hasDivider') hasDivider = Boolean(value);
+  else if (field === 'dividerWidth') dividerWidth = Number(value);
+  else if (field === 'hasFootpath') hasFootpath = Boolean(value);
+  else if (field === 'footpathWidth') footpathWidth = Number(value);
+  else if (field === 'elevation' || field === 'pierSpacing') {
+    (fUpdates as any)[field] = Number(value);
+  }
+
+  fUpdates.laneCount = laneCount;
+  fUpdates.laneWidth = laneWidth;
+  fUpdates.hasDivider = hasDivider;
+  fUpdates.dividerWidth = dividerWidth;
+  fUpdates.hasFootpath = hasFootpath;
+  fUpdates.footpathWidth = footpathWidth;
+
+  const asphaltWidth = (laneCount * laneWidth) + (hasDivider ? dividerWidth : 0);
+  fUpdates.width = asphaltWidth + (hasFootpath ? footpathWidth * 2 : 0);
+
+  if (field === 'speedLimit') {
+    fUpdates.speedLimit = Number(value);
+  } else if (field === 'isOneWay') {
+    fUpdates.isOneWay = Boolean(value);
+  } else if (field === 'roadClass' || field === 'name') {
+    (fUpdates as any)[field] = value;
+  }
+  return fUpdates;
 }

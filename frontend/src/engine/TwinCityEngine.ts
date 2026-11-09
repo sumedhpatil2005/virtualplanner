@@ -47,7 +47,7 @@ import { isUserBuilt } from './objects/builtBy';
 export type AppMode = 'view' | 'build' | 'simulate';
 import { findRoadEndGaps, type RoadEndGap } from './editing/roadGaps';
 import type { NonDrivableRoad } from './editing/osmDrivability';
-import { HistoryManager } from './history/HistoryManager';
+import { HistoryManager, deleteWithHistory } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet } from '../lib/api';
@@ -1113,10 +1113,7 @@ export class TwinCityEngine {
 
   /** Deletes an object and records it for Undo. Shared by the panel button and the Delete key. */
   public deleteObjectWithHistory(id: string): boolean {
-    const obj = this.objects.getById(id);
-    if (!obj) return false;
-    this.history.recordDelete(obj, `Delete ${obj.name || obj.type}`);
-    this.objects.delete(id);
+    if (!deleteWithHistory(this.objects, this.history, id)) return false;
     this.selection.clearSelection();
     return true;
   }

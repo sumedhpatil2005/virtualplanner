@@ -149,24 +149,40 @@ const boxesMeet = (a: Box, b: Box) => a.minX <= b.maxX && a.maxX >= b.minX && a.
  */
 export function deckCrossings(objects: Iterable<CityObject>): DeckCrossing[] {
   const roads = [...objects].filter((o): o is RoadObject => o.type === 'road' && o.coordinates.length >= 2);
-  return structureCrossings(roads, roads.filter(r => elevatedLayer(r) > 0), (deck, other) =>
-    elevatedLayer(other) < elevatedLayer(deck) && depressedLevel(other) === 0);
+  const up = new Map(roads.map(r => [r, elevatedLayer(r)])), down = new Map(roads.map(r => [r, depressedLevel(r)]));
+  return structureCrossings(roads, roads.filter(r => up.get(r)! > 0), (deck, other) =>
+    up.get(other)! < up.get(deck)! && down.get(other) === 0);
 }
 
 /** Places where a road passes over an OSM road in a cut or tunnel without a shared node. */
 export function cutCrossings(objects: Iterable<CityObject>): DeckCrossing[] {
   const roads = [...objects].filter((o): o is RoadObject => o.type === 'road' && o.coordinates.length >= 2);
-  return structureCrossings(roads, roads.filter(r => depressedLevel(r) > 0), (cut, other) => depressedLevel(other) < depressedLevel(cut));
+  const down = new Map(roads.map(r => [r, depressedLevel(r)]));
+  return structureCrossings(roads, roads.filter(r => down.get(r)! > 0), (cut, other) => down.get(other)! < down.get(cut)!);
 }
+
+/** Grid cell size for finding the roads whose boxes may meet a structure's (degrees, about 1 km). */
+const CELL_DEG = 0.01;
 
 function structureCrossings(roads: readonly RoadObject[], structures: readonly RoadObject[], crosses: (s: RoadObject, other: RoadObject) => boolean): DeckCrossing[] {
   if (structures.length === 0) return [];
   const boxes = new Map(roads.map(r => [r, boxOf(r.coordinates)]));
+  // Roads by grid cell of their box, so each structure is tested against nearby roads only (the result is the
+  // same as testing every road, in the same order: candidates are visited in road order)
+  const order = new Map(roads.map((r, i) => [r, i]));
+  const cells = new Map<string, RoadObject[]>();
+  const cellsOf = (b: Box, f: (k: string) => void) => {
+    for (let x = Math.floor(b.minX / CELL_DEG); x <= Math.floor(b.maxX / CELL_DEG); x++)
+      for (let y = Math.floor(b.minY / CELL_DEG); y <= Math.floor(b.maxY / CELL_DEG); y++) f(`${x},${y}`);
+  };
+  for (const r of roads) cellsOf(boxes.get(r)!, k => { const l = cells.get(k); if (l) l.push(r); else cells.set(k, [r]); });
   const out: DeckCrossing[] = [];
   for (const deck of structures) {
     const db = boxes.get(deck)!;
     const deckKeys = new Set(deck.coordinates.map(key));
-    for (const under of roads) {
+    const near = new Set<RoadObject>();
+    cellsOf(db, k => { for (const r of cells.get(k) ?? []) near.add(r); });
+    for (const under of [...near].sort((a, b) => order.get(a)! - order.get(b)!)) {
       if (under === deck || !crosses(deck, under)) continue;
       if (!boxesMeet(db, boxes.get(under)!)) continue;
       const dc = deck.coordinates, uc = under.coordinates;
@@ -199,8 +215,10 @@ export function bridgeGeometry(objects: Iterable<CityObject>): Map<RoadObject, B
   const structures = roads.filter(r => level(r) !== 0);
   const ground = roads.filter(r => level(r) === 0);
   const liftable = ground.filter(isLiftableGround);
+  let sharedCache: Set<string> | null = null;
+  const shared = () => (sharedCache ??= sharedPoints(roads));
   if (structures.length === 0) {
-    lowerStale(changed, liftable);
+    lowerStale(changed, liftable, shared);
     return changed;
   }
 
@@ -291,8 +309,8 @@ export function bridgeGeometry(objects: Iterable<CityObject>): Map<RoadObject, B
     const size = (x: BridgeGeometry) => Math.max(...x.coordinates.map(p => Math.abs(p[2])));
     if (size(g) > size(prev)) merged.set(r, g);
   });
-  merged.forEach((g, r) => record(changed, r, g, level(r) === 0));
-  lowerStale(changed, liftable.filter(r => !merged.has(r)));
+  merged.forEach((g, r) => record(changed, r, g, level(r) === 0, shared));
+  lowerStale(changed, liftable.filter(r => !merged.has(r)), shared);
   return changed;
 }
 
@@ -377,13 +395,43 @@ function approachRoads(structures: readonly RoadObject[], groundOfKey: Map<strin
 }
 
 /** Ground roads that are no longer approaches but were raised before (e.g. the deck was deleted) go back down. */
-function lowerStale(changed: Map<RoadObject, BridgeGeometry>, notApproaches: readonly RoadObject[]) {
+function lowerStale(changed: Map<RoadObject, BridgeGeometry>, notApproaches: readonly RoadObject[], shared: () => Set<string>) {
   for (const r of notApproaches) {
     if (changed.has(r)) continue;
     if (r.coordinates.some(p => Math.abs(p[2] || 0) > 1e-9)) {
-      record(changed, r, identity(r.coordinates.map(p => [p[0], p[1], 0] as [number, number, number])));
+      record(changed, r, flattened(r, shared()));
     }
   }
+}
+
+/**
+ * A ground road back on the ground: every point at height 0, and the points densify added to raise it taken out
+ * again (those not among its source coordinates and not shared with another road), so it has the points it had
+ * before it was raised. Kept, they made Undo of a deletion that had raised a neighbour come back with that
+ * neighbour's points multiplied, flat (a different network key from before the deletion: docs/OVERHAUL.md §27).
+ */
+function flattened(r: RoadObject, shared: Set<string>): BridgeGeometry {
+  const source = r.sourceCoordinates ? new Set(r.sourceCoordinates.map(key)) : null;
+  const last = r.coordinates.length - 1;
+  const keep = r.coordinates.map((p, i) => i === 0 || i === last || !source || source.has(key(p)) || shared.has(key(p)));
+  const coordinates: [number, number, number][] = [];
+  const kept: number[] = [];
+  r.coordinates.forEach((p, i) => { if (keep[i]) { kept.push(i); coordinates.push([p[0], p[1], 0]); } });
+  // A point taken out maps to the next point kept (section boundaries are never on densified points)
+  const originalIndices: number[] = [];
+  let k = 0;
+  for (let i = 0; i <= last; i++) { while (kept[k] < i) k++; originalIndices.push(Math.min(k, coordinates.length - 1)); }
+  return { coordinates, originalIndices };
+}
+
+/** Points two or more roads share (by plan position). */
+function sharedPoints(roads: readonly RoadObject[]): Set<string> {
+  const seen = new Set<string>(), shared = new Set<string>();
+  for (const r of roads) {
+    const own = new Set(r.coordinates.map(key));
+    for (const k of own) { if (seen.has(k)) shared.add(k); else seen.add(k); }
+  }
+  return shared;
 }
 
 /**
@@ -391,10 +439,10 @@ function lowerStale(changed: Map<RoadObject, BridgeGeometry>, notApproaches: rea
  * approach that stays flat keeps its points as they are (no densified
  * vertices are added to roads that do not rise).
  */
-function record(changed: Map<RoadObject, BridgeGeometry>, r: RoadObject, g: BridgeGeometry, groundApproach = false) {
+function record(changed: Map<RoadObject, BridgeGeometry>, r: RoadObject, g: BridgeGeometry, groundApproach = false, shared?: () => Set<string>) {
   if (groundApproach && g.coordinates.every(p => Math.abs(p[2]) < 1e-6)) {
     if (r.coordinates.every(p => Math.abs(p[2] || 0) < 1e-9)) return;
-    g = identity(r.coordinates.map(p => [p[0], p[1], 0] as [number, number, number]));
+    g = shared ? flattened(r, shared()) : identity(r.coordinates.map(p => [p[0], p[1], 0] as [number, number, number]));
   }
   const same = g.coordinates.length === r.coordinates.length && g.coordinates.every((p, i) => {
     const q = r.coordinates[i];

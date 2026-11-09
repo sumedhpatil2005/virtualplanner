@@ -13,7 +13,7 @@ type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
-import { roadFieldUpdates, laneEditPlan } from '../engine/editing/roadEdits';
+import { commitRoadFieldEdit, flyoverFieldUpdates } from '../engine/editing/roadEdits';
 import { LaneScopeControl } from './LaneScopeControl';
 import { JunctionOffer } from './JunctionPanel';
 import { getLaneEditScope, laneEditApplied } from './laneScopeStore';
@@ -144,52 +144,9 @@ export const PropertiesPanel: React.FC = () => {
       bUpdates.electricityDemand = bUpdates.population * elecFactor;
       bUpdates.parkingSpaces = Math.max(1, Math.round(floors * (usage === 'commercial' ? 8 : 2)));
     } else if (selectedObj.type === 'road') {
-      Object.assign(updates, roadFieldUpdates(selectedObj as RoadObject, field, value, r => engineInstance.objects.synthesizeDefaultSections(r)));
+      // Applied below (commitRoadFieldEdit)
     } else if (selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') {
-      const f = selectedObj as any;
-      const fUpdates = updates as any;
-
-      let laneCount = f.laneCount;
-      let laneWidth = f.laneWidth || 3.5;
-      let hasDivider = f.hasDivider;
-      let dividerWidth = f.dividerWidth || 2.0;
-      let hasFootpath = f.hasFootpath;
-      let footpathWidth = f.footpathWidth || 1.5;
-
-      if (field === 'laneCount') laneCount = Number(value);
-      else if (field === 'lanesForward') {
-        const bwdLanes = f.isOneWay ? 0 : Math.floor(f.laneCount / 2);
-        laneCount = Number(value) + bwdLanes;
-      } else if (field === 'lanesBackward') {
-        const fwdLanes = Math.ceil(f.laneCount / (f.isOneWay ? 1 : 2));
-        laneCount = fwdLanes + Number(value);
-      }
-      else if (field === 'laneWidth') laneWidth = Number(value);
-      else if (field === 'hasDivider') hasDivider = Boolean(value);
-      else if (field === 'dividerWidth') dividerWidth = Number(value);
-      else if (field === 'hasFootpath') hasFootpath = Boolean(value);
-      else if (field === 'footpathWidth') footpathWidth = Number(value);
-      else if (field === 'elevation' || field === 'pierSpacing') {
-        (fUpdates as any)[field] = Number(value);
-      }
-
-      fUpdates.laneCount = laneCount;
-      fUpdates.laneWidth = laneWidth;
-      fUpdates.hasDivider = hasDivider;
-      fUpdates.dividerWidth = dividerWidth;
-      fUpdates.hasFootpath = hasFootpath;
-      fUpdates.footpathWidth = footpathWidth;
-
-      const asphaltWidth = (laneCount * laneWidth) + (hasDivider ? dividerWidth : 0);
-      fUpdates.width = asphaltWidth + (hasFootpath ? footpathWidth * 2 : 0);
-
-      if (field === 'speedLimit') {
-        fUpdates.speedLimit = Number(value);
-      } else if (field === 'isOneWay') {
-        fUpdates.isOneWay = Boolean(value);
-      } else if (field === 'roadClass' || field === 'name') {
-        (fUpdates as any)[field] = value;
-      }
+      Object.assign(updates, flyoverFieldUpdates(selectedObj, field, value));
     } else if (selectedObj.type === 'metro_line') {
       const mUpdates = updates as Partial<MetroLineObject>;
       if (field === 'trackCount' || field === 'trackGauge' || field === 'deckWidth' || field === 'elevation' || field === 'pierSpacing') {
@@ -251,22 +208,20 @@ export const PropertiesPanel: React.FC = () => {
       }
     }
 
-    // A lane edit covers the scope chosen under the lane controls: by default the whole carriageway (the other OSM pieces of
-    // the same road running the same way), or the selected way only (engine/editing/roadEdits.ts, LaneScopeControl.tsx)
-    if (selectedObj.type === 'road' && (field === 'lanesForward' || field === 'lanesBackward')) {
-      const roads = engineInstance.objects.getAll().filter((o): o is RoadObject => o.type === 'road');
-      const plan = laneEditPlan(roads, selectedObj.id, field, Number(value), r => engineInstance.objects.synthesizeDefaultSections(r), getLaneEditScope(), engineInstance.simMode.roadView);
-      laneEditApplied();
-      if (plan.length > 1) {
-        const before = plan.map(p => engineInstance.objects.getById(p.id)!);
-        engineInstance.history.pushDiff({ type: 'batch', description: `Update ${selectedObj.name || selectedObj.id} lanes (${plan.length} pieces)`,
-          diffs: plan.map((p, i) => ({ type: 'update' as const, id: p.id, before: before[i], after: { ...before[i], ...p.updates } as CityObject })) });
-        setSelectedObj({ ...selectedObj, ...plan[0].updates } as CityObject);
-        for (const p of plan) engineInstance.objects.update(p.id, p.updates);
-        (window as any).showToast?.(`Lanes changed on ${plan.length} pieces of ${selectedObj.name || 'this road'} running this way.`, 'info');
-        return;
+    // A road edit (engine/editing/roadEdits.ts commitRoadFieldEdit): a lane change covers the scope chosen under the lane
+    // controls, by default the whole carriageway (the other OSM pieces of the same road running the same way), or the
+    // selected way only (LaneScopeControl.tsx)
+    if (selectedObj.type === 'road') {
+      const isLanes = field === 'lanesForward' || field === 'lanesBackward';
+      const scope = getLaneEditScope();
+      const done = commitRoadFieldEdit(engineInstance.objects, engineInstance.history, selectedObj as RoadObject, field, value, scope, engineInstance.simMode.roadView);
+      setSelectedObj(done.selected);
+      if (isLanes) {
+        laneEditApplied();
+        if (done.ids.length > 1) (window as any).showToast?.(`Lanes changed on ${done.ids.length} pieces of ${selectedObj.name || 'this road'} running this way.`, 'info');
+        else if (scope === 'segment') (window as any).showToast?.('Lanes changed on the selected segment only.', 'info');
       }
-      if (getLaneEditScope() === 'segment') (window as any).showToast?.('Lanes changed on the selected segment only.', 'info');
+      return;
     }
 
     // Apply & trigger updates

@@ -24,6 +24,11 @@ const STUDY_AREA_HIGHWAYS = 'motorway|motorway_link|trunk|trunk_link|primary|pri
 /** Roads fetched from OpenStreetMap per request when filling in missing ones. */
 const OSM_FETCH_BATCH = 400;
 
+/** An end this close to a road lies on it (m): joinedToNetwork puts a joined end exactly on the road. */
+const ON_ROAD_M = 0.5;
+/** Roads further apart vertically pass over each other (autoConnect, the network builder). */
+const SAME_LEVEL_M = 3;
+
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover';
 
 export class EditingEngine {
@@ -241,14 +246,19 @@ export class EditingEngine {
         );
         if (isVertex) continue;
 
-        // Check each segment
+        // Only a road the end lies on, at its level: the end was already carried onto the road it joins
+        // (joinedToNetwork). Before, any road passing within about 13 m got a vertex at the end point: the other
+        // carriageway of a dual road, a slip road or the deck of a flyover overhead was pulled onto the new road's
+        // end, and a deck dropped to the ground there (docs/OVERHAUL.md §27)
+        const kx = 111320 * Math.cos(pt[1] * Math.PI / 180);
         for (let s = 0; s < road.coordinates.length - 1; s++) {
           const p1 = road.coordinates[s];
           const p2 = road.coordinates[s + 1];
-          const { distance, t } = this.pointToSegmentDist(pt[0], pt[1], p1[0], p1[1], p2[0], p2[1]);
-          if (distance < 0.00012 && t > 0.02 && t < 0.98) {
+          const { distance, t } = this.pointToSegmentDist(pt[0] * kx, pt[1] * 111320, p1[0] * kx, p1[1] * 111320, p2[0] * kx, p2[1] * 111320);
+          const z = (p1[2] || 0) + t * ((p2[2] || 0) - (p1[2] || 0));
+          if (distance < ON_ROAD_M && t > 0.02 && t < 0.98 && Math.abs(z - (pt[2] || 0)) <= SAME_LEVEL_M) {
             // Keeps section vertex ranges in step, or the road's last stretch stops rendering
-            const { coordinates, sections } = insertRoadVertex(road, s + 1, [pt[0], pt[1], pt[2] || p1[2] || 0]);
+            const { coordinates, sections } = insertRoadVertex(road, s + 1, [pt[0], pt[1], z]);
             this.objectManager.update(road.id, sections ? { coordinates, sections } : { coordinates });
             const after = this.objectManager.getById(road.id);
             if (after) {
@@ -650,6 +660,17 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       } as any;
+    }
+
+    if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
+      // The capacity the flyover's ramps take from the surface roads is part of this Undo step (docs/OVERHAUL.md §27)
+      const { flyover, roadUpdates } = this.objectManager.flyoverFeasibility(newObj);
+      newObj = { ...newObj, ...flyover } as CityObject;
+      for (const u of roadUpdates) {
+        const before = this.objectManager.getById(u.id)!;
+        this.objectManager.update(u.id, u.updates);
+        splitDiffs.push({ type: 'update', id: u.id, before, after: this.objectManager.getById(u.id)!, description: `Ramp merge on ${before.name || before.id}` });
+      }
     }
 
     if (newObj) {

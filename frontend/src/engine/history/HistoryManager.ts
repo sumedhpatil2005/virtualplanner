@@ -1,4 +1,4 @@
-import type { CityObject } from '../objects/types';
+import type { CityObject, RoadObject } from '../objects/types';
 import type { ObjectManager } from '../objects/ObjectManager';
 
 export type HistoryDiff =
@@ -181,16 +181,19 @@ export class HistoryManager {
     const om = this.objectManager!;
     const undo = direction === 'undo';
     switch (diff.type) {
+      // Objects put back are copies, so the store never shares arrays with the history (a later change in place
+      // would alter what the next Undo or Redo puts back)
       case 'add':
         // Undoing an add (an import, a new road) puts things back as they were: not a deletion to remember
         if (undo) om.deleteMultiple(diff.objects, false, false);
-        else om.addMultiple(diff.objects);
+        else om.addMultiple(this.clone(diff.objects));
         break;
       case 'update':
-        om.update(diff.id, undo ? diff.before : diff.after);
+        // The whole object as it was, not merged into the current one (docs/OVERHAUL.md §27)
+        om.update(diff.id, this.clone(undo ? diff.before : diff.after), false, true);
         break;
       case 'delete':
-        if (undo) om.addMultiple(diff.objects);
+        if (undo) om.addMultiple(this.clone(diff.objects));
         else om.deleteMultiple(diff.objects);
         break;
       case 'snapshot':
@@ -300,4 +303,27 @@ export class HistoryManager {
     this.lastCoalesceKey = null;
     this.notify();
   }
+}
+
+/**
+ * Deletes an object and records it for Undo: the Build panel's Delete button and the Delete key
+ * (TwinCityEngine.deleteObjectWithHistory), here so the whole-network edit tests run the same code.
+ */
+export function deleteWithHistory(objects: ObjectManager, history: HistoryManager, id: string): CityObject | null {
+  const obj = objects.getById(id);
+  if (!obj) return null;
+  // A drawn flyover gives back the capacity its ramps took from the surface roads, in the same Undo step
+  const impacted = (obj.type === 'flyover' || obj.type === 'metro_flyover')
+    ? objects.getAll().filter((o): o is RoadObject => o.type === 'road' && o.flyoverImpact?.flyoverId === id) : [];
+  if (impacted.length) {
+    const diffs: HistoryDiff[] = impacted.map(before => {
+      const { flyoverImpact: _gone, ...after } = before;
+      void _gone;
+      return { type: 'update', id: before.id, before, after: after as CityObject, description: `Ramp merge removed from ${before.name || before.id}` };
+    });
+    history.pushDiff({ type: 'batch', description: `Delete ${obj.name || obj.type}`, diffs: [...diffs, { type: 'delete', objects: [obj] }] });
+    for (const d of diffs) if (d.type === 'update') objects.update(d.id, d.after, false, true);
+  } else history.recordDelete(obj, `Delete ${obj.name || obj.type}`);
+  objects.delete(id);
+  return obj;
 }
