@@ -54,6 +54,9 @@ export function causeLine(r: RoadAnalysisResult): { text: string; tone: Tone; ag
     case 'volume': return { text: 'Close to capacity: slow in dense traffic', tone: 'alert' };
     case 'mixed': return { text: 'Spread over several causes', tone: 'neutral' };
     case 'insufficient': {
+      if (r.status === 'no_traffic' && r.evidence.demand && r.evidence.demand.vehiclesPerHour <= 0) {
+        return { text: r.evidence.demand.components?.throughIncluded === false ? 'No trips in the area: through traffic is switched off' : 'No trips in the area', tone: 'info' };
+      }
       if (r.status === 'no_traffic') return { text: 'Routes avoid it, or it is poorly connected', tone: 'warn' };
       // Which kind of "not enough evidence": the same split the analysis used (RoadAnalysis.combineAnalysis)
       const d = explainedDirection(r)?.d.delay;

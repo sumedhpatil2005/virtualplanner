@@ -864,7 +864,14 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
   let headline: string;
   let cause: RoadAnalysisResult['cause'] = { kind: 'none', text: '', chain: null };
   const fmtS = (s: number) => `${Math.round(s)} s`;
-  if (status === 'no_traffic' || !worst) {
+  if ((status === 'no_traffic' || !worst) && demand && demand.vehiclesPerHour <= 0) {
+    // No trips in the whole area (through traffic switched off where the project has no buildings, §27.7): the road is
+    // empty because nothing travels, not because routes avoid it
+    headline = 'No traffic in the area: there are no trips to route.';
+    cause = { kind: 'insufficient', text: demand.components?.throughIncluded === false
+      ? 'Through traffic is switched off and the area\'s own buildings make no trips. Switch it back on under Details.'
+      : 'The area has no trips to route.', chain: null };
+  } else if (status === 'no_traffic' || !worst) {
     headline = 'Almost no simulated traffic uses this road.';
     cause = { kind: 'insufficient', text: 'Routes through the area avoid it, or it is poorly connected. Check its connections under Advanced.', chain: null };
   } else {

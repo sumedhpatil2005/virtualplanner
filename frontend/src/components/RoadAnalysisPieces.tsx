@@ -50,7 +50,7 @@ export const StatusHeader: React.FC<{ r: RoadAnalysisResult; when: string; badge
         <span className="text-xs text-slate-400">{when}</span>
       </div>
       <p className="text-sm text-slate-200 leading-snug" title={r.headline} data-testid="status-line">
-        {r.status === 'no_traffic' || !d ? 'Almost no simulated traffic uses this road.' : (
+        {r.status === 'no_traffic' || !d ? r.headline : (
           <>
             <span className="inline-block h-2 w-2 rounded-full mr-1.5 align-middle" style={{ background: directionColor(w!.index) }} />
             {dirName(d)}: <strong className="text-white tabular-nums">{d.meanSpeedKmh === null ? 'no speed' : `${Math.round(d.meanSpeedKmh)} km/h`}</strong>

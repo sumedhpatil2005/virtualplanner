@@ -5,6 +5,7 @@ import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode } from '../simulation/SimulationMode';
+import { causeLine } from '../../components/roadAnalysisView';
 
 /**
  * Simulate, Details: "Include traffic passing through the area" switched off (docs/OVERHAUL.md §27.7). Reported on the
@@ -47,6 +48,10 @@ describe('through traffic switched off where the area has no buildings', () => {
     expect(r.status).toBe('no_traffic');
     expect(r.directions.every(d => d.vph === 0)).toBe(true);
     expect(JSON.stringify(r)).toMatch(/Through traffic is switched off/);
+    // The road is empty because nothing travels, not because routes avoid it
+    expect(r.headline).toBe('No traffic in the area: there are no trips to route.');
+    expect(r.cause.text).toMatch(/Through traffic is switched off/);
+    expect(causeLine(r).text).toBe('No trips in the area: through traffic is switched off');
 
     mode.setDemandSettings({ through: true });
     await mode.runAnalysis();
