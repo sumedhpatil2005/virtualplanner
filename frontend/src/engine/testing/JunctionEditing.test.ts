@@ -18,8 +18,8 @@ import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
 import { TrafficNetworkBuilder } from '../simulation/TrafficNetworkBuilder';
 import { StudyAreaExplorer, type StudyArea, type DrivableObject } from '../simulation/StudyAreaExplorer';
-import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroDemandTrip, type VehicleKind } from '../simulation/TrafficMicroSim';
-import { groupJunctions, nodeKey, INTERNAL_MAX_M, ENCLOSED_CHAIN_M, MAX_SPAN_M, type LogicalJunction } from '../simulation/junctionGroups';
+import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, JOIN_JUNCTION_M, type MicroDemandTrip, type VehicleKind } from '../simulation/TrafficMicroSim';
+import { groupJunctions, nodeKey, INTERNAL_MAX_M, ENCLOSED_CHAIN_M, MAX_SPAN_M, SIM_FOLD_M, type LogicalJunction } from '../simulation/junctionGroups';
 import { defaultEdit, validateEdit, cycleOf, splitJunctionObjects, compileJunctionEdits, simJunctionSetups, type JunctionEditSpec } from '../simulation/junctionControl';
 import { runSignalStructure } from '../simulation/RoadAnalysis';
 import { buildAssignmentNetwork, assignTraffic } from '../simulation/staticAssignment';
@@ -519,18 +519,20 @@ describe('grouping on the backend DB roads (the reported junction, no signals lo
     expect(dM(q.coordinates, NAME_CHANGE)).toBeLessThan(1);
     // A plain node: Veer Santaji Ghorpade Road in, Veer Santaji Ghorpade Marg out, nothing else; 2 m from the junction centre
     expect(stretches(q.id)).toBe(2);
-    expect(dM(q.coordinates, j.centre)).toBeLessThan(5);
+    expect(dM(q.coordinates, j.centre)).toBeLessThan(8);
     expect(j.nodeIds).toContain(q.id);
     // The 39.5 m piece into it (from where the slip lane leaves) and the 7.9 m Marg piece are internal
     const marg = [...dbNet.edges.values()].find(e => e.roadId === 'osm_1146886465')!;
     expect(marg.length).toBeCloseTo(7.9, 0);
     expect(j.internalEdgeIds).toContain(marg.id);
     expect(j.internalRoadIds).toContain('osm_218681353');
-    expect(j.approaches.map(a => a.label)).toEqual(['Unnamed road from the north', 'Babasaheb Ambedkar Marg from the south-east', 'Veer Santaji Ghorpade Road from the south-west', 'Arjunrao Pawar Path from the north-west']);
-    expect(j.exits.map(a => a.label)).toEqual(['Underpass to the north', 'Babasaheb Ambedkar Marg to the south-east', 'Veer Santaji Ghorpade Road to the south-west']);
+    // (§26: the residential lane 8 m past the south-west slip lane end is in it: the simulator folds that T into the same simulated junction)
+    expect(j.approaches.map(a => a.label)).toEqual(['Unnamed road from the north', 'Babasaheb Ambedkar Marg from the south-east', 'Unnamed road from the south-west', 'Veer Santaji Ghorpade Road from the south-west', 'Arjunrao Pawar Path from the north-west']);
+    expect(j.exits.map(a => a.label)).toEqual(['Underpass to the north', 'Babasaheb Ambedkar Marg to the south-east', 'Unnamed road to the south-west', 'Veer Santaji Ghorpade Road to the south-west']);
     expect([...j.approaches, ...j.exits].some(a => a.name === 'Veer Santaji Ghorpade Marg')).toBe(false);
-    expect(j.nodeIds).toHaveLength(13);
-    expect(j.internalEdgeIds).toHaveLength(18);
+    expect(j.nodeIds).toHaveLength(14);
+    expect(j.internalEdgeIds).toHaveLength(19);
+    expect(j.id).toBe('jx_cdfebe2b');
     expect(j.radiusM).toBeLessThan(55);
     // Same junction (id, nodes, arms) as on the Sangamwadi roads with the mapped signals loaded
     const withSignals = junctionWithNode(fxJunctions, ...AMBEDKAR);
@@ -540,16 +542,18 @@ describe('grouping on the backend DB roads (the reported junction, no signals lo
     expect(j.exits.map(a => a.id)).toEqual(withSignals.exits.map(a => a.id));
   });
 
-  it('the neighbouring junctions stay separate: the residential T 8 m past the south-west slip lane end (56 m out) and the one 16 m past the south-east end (68 m out)', () => {
+  it('the residential T 8 m past the south-west slip lane end is in the junction, as the simulator folds it (§26); the one 16 m past the south-east end (68 m out) stays separate', () => {
     const swT = dbNodeAt(73.86288, 18.52756), seT = dbNodeAt(73.86377, 18.52745);
-    for (const n of [swT, seT]) {
-      expect(stretches(n.id)).toBe(3);
-      expect(j.nodeIds).not.toContain(n.id);
-      expect(dbJunctions.find(x => x.nodeIds.includes(n.id))!.id).not.toBe(j.id);
-    }
-    expect(dM(swT.coordinates, j.centre)).toBeGreaterThan(MAX_SPAN_M);
+    for (const n of [swT, seT]) expect(stretches(n.id)).toBe(3);
+    // The slip lane's south-west end and the T are 8.4 m apart: shorter than the simulator's JOIN_JUNCTION_M, so one simulated junction with one control
+    const slipEnd = j.nodeIds.map(id => dbNet.nodes.get(id)!).sort((a, b) => dM(a.coordinates, swT.coordinates) - dM(b.coordinates, swT.coordinates))[0];
+    expect(dM(slipEnd.coordinates, swT.coordinates)).toBeLessThan(JOIN_JUNCTION_M);
+    expect(SIM_FOLD_M).toBe(JOIN_JUNCTION_M);
+    expect(j.nodeIds).toContain(swT.id);
+    expect(j.nodeIds).not.toContain(seT.id);
+    expect(dbJunctions.find(x => x.nodeIds.includes(seT.id))!.id).not.toBe(j.id);
     expect(dM(seT.coordinates, j.centre)).toBeGreaterThan(MAX_SPAN_M);
-    // Every member node is a junction node of this junction's roads or a slip lane end: no side road meets any of them
+    // Every member node is a junction node of this junction's roads or a slip lane end: no road meets a member without being one of its arms or internal pieces
     const own = new Set([...j.internalRoadIds, ...j.approaches.flatMap(a => a.roadIds), ...j.exits.flatMap(a => a.roadIds)]);
     for (const id of j.nodeIds) {
       const n = dbNet.nodes.get(id)!;

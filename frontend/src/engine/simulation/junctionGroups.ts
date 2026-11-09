@@ -39,6 +39,11 @@ export const MAX_SPAN_M = 50;
 export const SLIP_MAX_M = 120;
 export const SLIP_RADIUS_M = 70;
 export const SIGNAL_NODE_M = 12;
+/** The simulator's junction fold (TrafficMicroSim JOIN_JUNCTION_M, and its 30 m limit across): nodes it folds into one simulated junction are one logical junction (§26). */
+export const SIM_FOLD_M = 16;
+const SIM_FOLD_SPAN_M = 30;
+/** A roundabout ring at most this long (m) is one junction whatever its span (§26). */
+export const ROUNDABOUT_MAX_M = 130;
 /** A road leaving a junction and coming back into it through plain nodes within this length (m) is inside it. */
 export const ENCLOSED_CHAIN_M = 60;
 /** An approach's direction is taken from a point this far back along it (m). */
@@ -55,9 +60,18 @@ const segKey = (edgeId: string) => edgeId.replace(/_(fwd|bwd)$/, '');
 /** An OSM node's identity: its position to 7 decimals, as OSM stores it (nodes shared by two ways have the same key in both). */
 export const nodeKey = (c: readonly number[]) => `${c[0].toFixed(7)},${c[1].toFixed(7)}`;
 /** Identity of a stretch entering the junction: its road and the node it ends at. */
-export const inKey = (net: TrafficNetwork, e: TrafficEdge) => `${e.roadId}>${nodeKey(net.nodes.get(e.toNodeId)!.coordinates)}`;
+export const inKey = (net: TrafficNetwork, e: TrafficEdge) => `${legacyInKey(net, e)}~${nodeKey(e.coordinates[Math.max(0, e.coordinates.length - 2)])}`;
+/**
+ * Before §26 a stretch key was the road and the node only. A two-way road that runs on through a junction
+ * node enters it from both sides with the same road and node, so its two approaches (and its two exits)
+ * had one key, and an edit compiled one of them as the other (1,051 of 10,895 junctions of the database
+ * network). The key now also holds the vertex next to the node (where the stretch comes from, or goes
+ * to), which tells the two sides apart and is the same in any network built from the same roads.
+ */
+export const legacyInKey = (net: TrafficNetwork, e: TrafficEdge) => `${e.roadId}>${nodeKey(net.nodes.get(e.toNodeId)!.coordinates)}`;
 /** Identity of a stretch leaving the junction: its road and the node it starts at. */
-export const outKey = (net: TrafficNetwork, e: TrafficEdge) => `${e.roadId}<${nodeKey(net.nodes.get(e.fromNodeId)!.coordinates)}`;
+export const outKey = (net: TrafficNetwork, e: TrafficEdge) => `${legacyOutKey(net, e)}~${nodeKey(e.coordinates[Math.min(1, e.coordinates.length - 1)])}`;
+export const legacyOutKey = (net: TrafficNetwork, e: TrafficEdge) => `${e.roadId}<${nodeKey(net.nodes.get(e.fromNodeId)!.coordinates)}`;
 
 export function hashText(text: string): string {
   let hash = 2166136261;
@@ -175,46 +189,159 @@ export function groupJunctions(net: TrafficNetwork, roads: ReadonlyMap<string, D
     for (const m of all) groupOf.set(m, ga);
   };
 
-  // 1-3: short stretches between junction nodes, shortest first, within the span limit
-  const core = [...segLen.values()].filter(s => s.a !== s.b && s.len <= INTERNAL_MAX_M && isJunctionNode(s.a) && isJunctionNode(s.b) && (inScope(s.a) || inScope(s.b)))
-    .sort((x, y) => x.len - y.len || (x.a < y.a ? -1 : 1));
+  const adj = new Map<string, { other: string; len: number; seg: string }[]>();
+  for (const [k, sg] of segLen) {
+    if (sg.a === sg.b) continue;
+    (adj.get(sg.a) ?? adj.set(sg.a, []).get(sg.a)!).push({ other: sg.b, len: sg.len, seg: k });
+    (adj.get(sg.b) ?? adj.set(sg.b, []).get(sg.b)!).push({ other: sg.a, len: sg.len, seg: k });
+  }
+  const isPlain = (id: string) => (arms.get(id)?.size ?? 0) === 2 && !isJunctionNode(id);
+  // 1-3: short stretches between junction nodes, shortest first, within the span limit. A stretch may run
+  // through plain (two-stretch) nodes, which OSM leaves where two ways of one road meet (a name, lane or
+  // tag change): the chain counts as one stretch of its total length and its plain nodes join with its
+  // ends (§26: two junction nodes 7-15 m apart with a plain node between were two junctions, while the
+  // simulator folds them into one, so an edit of either set the other's control too).
+  const core: { a: string; b: string; len: number; via: string[] }[] = [];
+  const seenChain = new Set<string>();
+  for (const a of arms.keys()) {
+    if (!isJunctionNode(a) || !inScope(a)) continue;
+    for (const first of adj.get(a) ?? []) {
+      let prev = a, cur = first.other, len = first.len;
+      const via: string[] = [];
+      while (isPlain(cur) && len <= INTERNAL_MAX_M && via.length < 8) {
+        via.push(cur);
+        const step = (adj.get(cur) ?? []).find(x => x.other !== prev);
+        if (!step) break;
+        prev = cur; cur = step.other; len += step.len;
+      }
+      if (cur === a || len > INTERNAL_MAX_M || !isJunctionNode(cur)) continue;
+      const key = a < cur ? `${a}|${cur}|${via.join(',')}` : `${cur}|${a}|${[...via].reverse().join(',')}`;
+      if (seenChain.has(key)) continue;
+      seenChain.add(key);
+      core.push({ a: a < cur ? a : cur, b: a < cur ? cur : a, len, via: a < cur ? via : [...via].reverse() });
+    }
+  }
+  core.sort((x, y) => x.len - y.len || (x.a < y.a ? -1 : x.a > y.a ? 1 : x.b < y.b ? -1 : x.b > y.b ? 1 : x.via.join(',') < y.via.join(',') ? -1 : 1));
   for (const s of core) {
     const ga = find(s.a), gb = find(s.b);
-    if (ga === gb) continue;
-    if (span([...membersOf(ga), ...membersOf(gb)]) > MAX_SPAN_M) continue;
+    if (ga === gb && s.via.every(v => find(v) === ga)) continue;
+    if (span([...new Set([...membersOf(ga), ...membersOf(gb), ...s.via])]) > MAX_SPAN_M) continue;
     merge(s.a, s.b);
+    for (const v of s.via) if (find(v) === v && !members.has(v)) merge(s.a, v);
   }
-  // Slip lanes: both ends near one group's centre; each end brings at most its own small group
+  // Roundabouts (§26): the junction nodes of one roundabout ring (`junction=roundabout|circular`) of at most
+  // ROUNDABOUT_MAX_M round are one junction, whatever the span (the span limit cut a 75 m ring in two).
+  const isRing = (roadId: string) => {
+    const r = roads.get(roadId);
+    const j = r?.type === 'road' ? r.osmProvenance?.originalTags?.junction : undefined;
+    return j === 'roundabout' || j === 'circular';
+  };
+  const ringOf = new Map<string, string>();
+  const ringFind = (x: string): string => { let r = x; while (ringOf.has(r) && ringOf.get(r) !== r) r = ringOf.get(r)!; return r; };
+  for (const sg of segLen.values()) if (sg.a !== sg.b && isRing(sg.roadId)) {
+    const ra = ringFind(sg.a), rb = ringFind(sg.b);
+    if (!ringOf.has(ra)) ringOf.set(ra, ra);
+    if (!ringOf.has(rb)) ringOf.set(rb, rb);
+    if (ra !== rb) ringOf.set(rb, ra);
+  }
+  const rings = new Map<string, { nodes: string[]; len: number }>();
+  for (const id of ringOf.keys()) { const r = ringFind(id); (rings.get(r) ?? rings.set(r, { nodes: [], len: 0 }).get(r)!).nodes.push(id); }
+  for (const sg of segLen.values()) if (sg.a !== sg.b && isRing(sg.roadId)) rings.get(ringFind(sg.a))!.len += sg.len;
+  for (const ring of [...rings.values()].sort((x, y) => (x.nodes[0] < y.nodes[0] ? -1 : 1))) {
+    const js = ring.nodes.filter(id => isJunctionNode(id) && (inScope(id) || ring.nodes.some(inScope))).sort();
+    if (ring.len > ROUNDABOUT_MAX_M || js.length < 2) continue;
+    for (const id of js.slice(1)) merge(js[0], id);
+  }
+  // Slip lanes (§26): a short at-grade `*_link` stretch between an approach road and an exit road of one
+  // junction. Targets are the groups formed above (two or more nodes), fixed before any slip is taken,
+  // so a group grown from slip-lane ends alone never becomes a junction of its own and the result does
+  // not depend on the order slips are visited. A slip is taken when
+  //  - both ends lie within SLIP_RADIUS_M of the target's centre (the largest such group, then the nearest),
+  //  - it is at grade (not a bridge, tunnel or other layer: a ramp onto a flyover deck is not a slip lane),
+  //  - each end leads into the target along other roads (not the slip) within SLIP_RADIUS_M, through
+  //    nodes within SLIP_RADIUS_M of its centre: the approach before the slip leaves it and the exit
+  //    after it rejoins. An end whose roads lead elsewhere is a junction on a service or link road;
+  //  - neither end belongs to a group at least as large as the target, nor was pulled into another one.
+  // Each end comes alone: a side road meeting the slip lane's end at another node stays its own junction.
   const isLink = (roadId: string) => {
     const r = roads.get(roadId);
     return r?.type === 'road' && /_link$/.test(r.osmProvenance?.originalTags?.highway ?? '');
   };
+  const isGraded = (roadId: string) => {
+    const r = roads.get(roadId);
+    const t = r?.type === 'road' ? r.osmProvenance?.originalTags ?? {} : {};
+    return (t.bridge !== undefined && t.bridge !== 'no') || (t.tunnel !== undefined && t.tunnel !== 'no') || (t.layer !== undefined && t.layer !== '0');
+  };
+  const coreTargets = [...members.keys()].filter(g => membersOf(g).length >= 2).map(g => ({ g, ids: new Set(membersOf(g)), c: centreOf(membersOf(g)) }));
+  const coreOf = new Map<string, string>();
+  for (const t of coreTargets) for (const id of t.ids) coreOf.set(id, t.g);
+  /** Other roads at `end` (not the slip) reach a node of the target within SLIP_RADIUS_M, staying near it. */
+  const leadsInto = (end: string, slipSeg: string, target: { ids: Set<string>; c: number[] }) => {
+    const best = new Map<string, number>([[end, 0]]);
+    const q: [string, number][] = [[end, 0]];
+    while (q.length) {
+      const [n, d] = q.shift()!;
+      if (d > (best.get(n) ?? Infinity)) continue;
+      for (const x of adj.get(n) ?? []) {
+        if (x.seg === slipSeg) continue;
+        const nd = d + x.len;
+        if (nd > SLIP_RADIUS_M || distM(coord(x.other), target.c) > SLIP_RADIUS_M) continue;
+        if (target.ids.has(x.other)) return true;
+        if (nd < (best.get(x.other) ?? Infinity)) { best.set(x.other, nd); q.push([x.other, nd]); }
+      }
+    }
+    return false;
+  };
   const slipRoads = new Map<string, Set<string>>();
-  const slips = [...segLen.values()].filter(s => s.a !== s.b && s.len <= SLIP_MAX_M && isLink(s.roadId) && isJunctionNode(s.a) && isJunctionNode(s.b) && (inScope(s.a) || inScope(s.b)))
-    .sort((x, y) => x.len - y.len || (x.a < y.a ? -1 : 1));
-  for (const s of slips) {
-    // The group it serves: the biggest group of two or more nodes within reach of both ends
-    const candidates = [...members.keys()].filter(g => {
-      const c = centreOf(membersOf(g));
-      return membersOf(g).length >= 2 && distM(c, coord(s.a)) <= SLIP_RADIUS_M && distM(c, coord(s.b)) <= SLIP_RADIUS_M;
-    }).sort((x, y) => membersOf(y).length - membersOf(x).length || distM(centreOf(membersOf(x)), coord(s.a)) - distM(centreOf(membersOf(y)), coord(s.a)) || (x < y ? -1 : 1));
-    const target = candidates[0];
+  const pulled = new Map<string, string>();
+  const slips = [...segLen.entries()].filter(([, s]) => s.a !== s.b && s.len <= SLIP_MAX_M && isLink(s.roadId) && !isGraded(s.roadId) && isJunctionNode(s.a) && isJunctionNode(s.b) && (inScope(s.a) || inScope(s.b)))
+    .sort(([, x], [, y]) => x.len - y.len || (x.a < y.a ? -1 : 1));
+  for (const [k, s] of slips) {
+    const target = coreTargets.filter(t => distM(t.c, coord(s.a)) <= SLIP_RADIUS_M && distM(t.c, coord(s.b)) <= SLIP_RADIUS_M)
+      .sort((x, y) => y.ids.size - x.ids.size || distM(x.c, coord(s.a)) - distM(y.c, coord(s.a)) || (x.g < y.g ? -1 : 1))[0];
     if (!target) continue;
-    // Each end comes alone: a side road meeting the slip lane's end stays a junction of its own
-    for (const end of [s.a, s.b]) if (find(end) !== target) { detach(end); merge(target, end); }
-    (slipRoads.get(find(target)) ?? slipRoads.set(find(target), new Set()).get(find(target))!).add(s.roadId);
+    const ok = [s.a, s.b].every(end => {
+      if (target.ids.has(end) || pulled.get(end) === target.g) return true;
+      if (pulled.has(end)) return false;
+      const own = coreOf.get(end);
+      if (own !== undefined && coreTargets.find(t => t.g === own)!.ids.size >= target.ids.size) return false;
+      return leadsInto(end, k, target);
+    });
+    if (!ok) continue;
+    for (const end of [s.a, s.b]) if (find(end) !== find(target.g)) { detach(end); merge(target.g, end); pulled.set(end, target.g); }
+    (slipRoads.get(target.g) ?? slipRoads.set(target.g, new Set()).get(target.g)!).add(s.roadId);
+  }
+  // The simulator's own junctions (§26): TrafficMicroSim folds nodes joined by stretches shorter than
+  // JOIN_JUNCTION_M (16 m) into one simulated junction (shortest first, at most 30 m across) with one
+  // control. Junction nodes it folds together are one logical junction here too, whatever the span:
+  // otherwise an edit of one set the control of its neighbour's approaches as well (a side road 8 m past
+  // a slip lane's end, a T 10 m from a square's corner).
+  {
+    const foldOf = new Map<string, string>(), foldMembers = new Map<string, string[]>();
+    const fFind = (x: string) => foldOf.get(x) ?? x;
+    const bbox = (ids: string[]) => {
+      const cs = ids.map(coord), lats = cs.map(c => c[1]), lngs = cs.map(c => c[0]);
+      return Math.hypot((Math.max(...lngs) - Math.min(...lngs)) * M_PER_DEG_LAT * Math.cos(lats[0] * Math.PI / 180), (Math.max(...lats) - Math.min(...lats)) * M_PER_DEG_LAT);
+    };
+    const shortEdges = [...net.edges.values()].filter(e => e.length < SIM_FOLD_M).sort((x, y) => x.length - y.length);
+    for (const e of shortEdges) {
+      const a = fFind(e.fromNodeId), b = fFind(e.toNodeId);
+      if (a === b) continue;
+      const all = [...(foldMembers.get(a) ?? [a]), ...(foldMembers.get(b) ?? [b])];
+      if (bbox(all) > SIM_FOLD_SPAN_M) continue;
+      foldMembers.set(a, all); foldMembers.delete(b);
+      for (const m of all) foldOf.set(m, a);
+    }
+    for (const ids of [...foldMembers.values()].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+      const js = ids.filter(id => isJunctionNode(id) || members.has(find(id))).sort();
+      if (js.length < 2 || !js.some(inScope)) continue;
+      for (const id of js.slice(1)) merge(js[0], id);
+    }
   }
   // Enclosed plain nodes: a road leaving a group and coming back into it through plain (two-stretch) nodes
   // only, short and near the centre, is inside the junction (OSM splits a carriageway where its name
   // changes or a signal stands; with no signal loaded such a node is plain and would cut one approach
   // into a false exit and a false approach)
-  const adj = new Map<string, { other: string; len: number }[]>();
-  for (const sg of segLen.values()) {
-    if (sg.a === sg.b) continue;
-    (adj.get(sg.a) ?? adj.set(sg.a, []).get(sg.a)!).push({ other: sg.b, len: sg.len });
-    (adj.get(sg.b) ?? adj.set(sg.b, []).get(sg.b)!).push({ other: sg.a, len: sg.len });
-  }
-  const isPlain = (id: string) => (arms.get(id)?.size ?? 0) === 2 && !isJunctionNode(id);
   for (const g of [...members.keys()]) {
     if (!members.has(g)) continue;
     const ids = membersOf(g), inGroup = new Set(ids), c = centreOf(ids);
@@ -242,7 +369,7 @@ export function groupJunctions(net: TrafficNetwork, roads: ReadonlyMap<string, D
   }
   const out: LogicalJunction[] = [];
   for (const [g, ids] of groups) {
-    const j = describe(net, roads, ids, signals, [...(slipRoads.get(g) ?? [])]);
+    const j = describe(net, roads, ids, signals, [...new Set([...slipRoads].filter(([t]) => find(t) === g).flatMap(([, r]) => [...r]))]);
     if (j) out.push(j);
   }
   return out.sort((a, b) => (a.id < b.id ? -1 : 1));

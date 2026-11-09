@@ -1,7 +1,7 @@
 import type { TrafficNetwork } from '../objects/trafficTypes';
 import type { JunctionObject } from '../objects/types';
 import type { LogicalJunction, JunctionArm } from './junctionGroups';
-import { nodeKey, inKey, outKey } from './junctionGroups';
+import { nodeKey, inKey, outKey, legacyInKey, legacyOutKey } from './junctionGroups';
 
 /**
  * Edits to an imported (OpenStreetMap) junction as a whole (docs/OVERHAUL.md §23):
@@ -157,10 +157,11 @@ export function compileJunctionEdits(net: TrafficNetwork, edits: readonly Juncti
     for (const e of net.edges.values()) {
       const fi = nodeIds.has(e.fromNodeId), ti = nodeIds.has(e.toNodeId);
       if (fi && ti) { internalEdges.add(e.id); continue; }
-      if (ti) { const a = armByKey.get(inKey(net, e)); if (a) approachOfEdge.set(e.id, a); }
-      else if (fi) { const a = armByKey.get(outKey(net, e)); if (a) exitOfEdge.set(e.id, a); }
+      // An edit saved before §26 holds keys without the side ("~"): they are matched as they were
+      if (ti) { const a = armByKey.get(inKey(net, e)) ?? armByKey.get(legacyInKey(net, e)); if (a) approachOfEdge.set(e.id, a); }
+      else if (fi) { const a = armByKey.get(outKey(net, e)) ?? armByKey.get(legacyOutKey(net, e)); if (a) exitOfEdge.set(e.id, a); }
       else {
-        const a = chainByKey.get(inKey(net, e)) ?? chainByKey.get(outKey(net, e));
+        const a = chainByKey.get(inKey(net, e)) ?? chainByKey.get(outKey(net, e)) ?? chainByKey.get(legacyInKey(net, e)) ?? chainByKey.get(legacyOutKey(net, e));
         if (a) chainOfEdge.set(e.id, a);
       }
     }
