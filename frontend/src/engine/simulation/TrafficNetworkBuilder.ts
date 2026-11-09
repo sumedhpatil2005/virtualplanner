@@ -401,17 +401,22 @@ export class TrafficNetworkBuilder {
       const exactKey = vertexKey(coord);
       const coordKey = osm ? exactKey : '';
       const osmNode = sharedOsmKeys.has(exactKey);
-      // Earliest-created matching node wins, as with a linear scan in creation order
+      // Earliest-created matching node wins, as with a linear scan in creation order; a node at exactly this point
+      // (same level) wins over any node merely within the tolerance (docs/OVERHAUL.md §27: a road end the user
+      // carried onto another road's vertex with Road ends: Connect, an edited way no longer matched as OSM, joined
+      // an older node of a third road up to 6 m away instead, and stayed apart from the road it was connected to)
       let match = -1;
+      let exact = -1;
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           const cell = nodeCells.get(cellKeyOf(cx + dx, cy + dy));
           if (!cell) continue;
           for (const idx of cell) {
-            if (match !== -1 && idx >= match) continue;
             const n = activeNodes[idx];
-            const dist = Math.sqrt((n.coords[0] - coord[0])**2 + (n.coords[1] - coord[1])**2);
             const zDist = Math.abs((n.coords[2] || 0) - (coord[2] || 0));
+            if ((exact === -1 || idx < exact) && vertexKey(n.coords) === exactKey && (osmNode || zDist < GRADE_SEPARATION_M)) exact = idx;
+            if (match !== -1 && idx >= match) continue;
+            const dist = Math.sqrt((n.coords[0] - coord[0])**2 + (n.coords[1] - coord[1])**2);
             // Ends of OSM ways only merge with each other at the same OSM node; a road
             // the user built still joins whatever lies within the tolerance
             if (osm && n.osm && vertexKey(n.coords) !== coordKey) continue;
@@ -421,6 +426,7 @@ export class TrafficNetworkBuilder {
           }
         }
       }
+      if (exact !== -1) match = exact;
       if (match !== -1) {
         return activeNodes[match].id;
       }

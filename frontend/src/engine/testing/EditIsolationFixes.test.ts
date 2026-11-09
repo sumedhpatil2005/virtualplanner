@@ -181,3 +181,20 @@ describe('a drawn road snaps only to points at its own level', () => {
     expect(editing.findSnap(pt(100, 10)).point[2]).toBeGreaterThan(SAME_LEVEL_SNAP_M);
   });
 });
+
+describe('a road end carried exactly onto another road joins that road in the traffic network', () => {
+  it('Road ends: Connect onto a vertex: the end joins that vertex, not an older node of a third road 4.5 m away', async () => {
+    const { TrafficNetworkBuilder } = await import('../simulation/TrafficNetworkBuilder');
+    const osm = { osmProvenance: { osmId: 1 } as any };
+    // X: an OSM way ending 4.5 m from T's first point (they do not meet in OSM); T: the OSM way connected to;
+    // R: the way whose end was carried onto T's first point (an edited way joins by geometry, as a drawn road)
+    const X = road('X', [pt(-60, 40), pt(0, 4.5)], osm);
+    const T = road('T', [pt(0, 0), pt(100, 0)], osm);
+    const R = road('R', [pt(-80, -10), pt(0, 0)]);
+    const { network } = new TrafficNetworkBuilder().build([X, T, R]);
+    const nodesOf = (id: string) => new Set([...network.edges.values()].filter(e => e.roadId === id).flatMap(e => [e.fromNodeId, e.toNodeId]));
+    const shared = (a: string, b: string) => [...nodesOf(a)].some(n => nodesOf(b).has(n));
+    expect(shared('R', 'T')).toBe(true);
+    expect(shared('R', 'X')).toBe(false);
+  });
+});
