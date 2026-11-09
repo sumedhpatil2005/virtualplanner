@@ -23,7 +23,7 @@ import { groupJunctions, nodeKey, INTERNAL_MAX_M, ENCLOSED_CHAIN_M, MAX_SPAN_M, 
 import { defaultEdit, validateEdit, cycleOf, splitJunctionObjects, compileJunctionEdits, simJunctionSetups, type JunctionEditSpec } from '../simulation/junctionControl';
 import { runSignalStructure } from '../simulation/RoadAnalysis';
 import { buildAssignmentNetwork, assignTraffic } from '../simulation/staticAssignment';
-import { junctionsAround, junctionOfRoad, applyJunctionEdit, junctionEditObject, junctionFrame, FRAME_RANGE_PER_RADIUS } from '../editing/junctionEdits';
+import { junctionsAround, junctionOfRoad, applyJunctionEdit, junctionEditObject, junctionFrame, FRAME_RANGE_PER_RADIUS, boundsCover, LOCAL_SIGNAL_MARGIN_M } from '../editing/junctionEdits';
 import { networkContentKey } from '../simulation/StudyDemand';
 import { SimulationMode } from '../simulation/SimulationMode';
 import { junctionApproachDeltas } from '../simulation/junctionCompare';
@@ -762,4 +762,26 @@ describe('with mapped signals loaded, a junction the run did not simulate starts
     expect(inRun).toBeGreaterThan(10);
     expect(outMapped).toBeGreaterThanOrEqual(3);
   }, 120000);
+});
+
+describe('signals for opening a junction (§26)', () => {
+  // The study area's signals cover its own bounds only. Grouping a junction near its edge with them left out the
+  // junction's own signal: Ganeshkhind Road at the 1 km Veer Santaji Ghorpade Road area opened unsignalised, as Priority,
+  // and under another id (jx_95d4042c instead of jx_cef99c54)
+  const b = { minLng: 73.85, maxLng: 73.87, minLat: 18.52, maxLat: 18.54 };
+  it('the area\'s signals are used only when the junction\'s whole local radius lies inside the area', () => {
+    expect(boundsCover(b, [73.86, 18.53], LOCAL_SIGNAL_MARGIN_M)).toBe(true);
+    expect(boundsCover(b, [73.8505, 18.53], LOCAL_SIGNAL_MARGIN_M)).toBe(false);
+    expect(boundsCover(b, [73.86, 18.5395], LOCAL_SIGNAL_MARGIN_M)).toBe(false);
+    expect(boundsCover(b, [73.84, 18.53], LOCAL_SIGNAL_MARGIN_M)).toBe(false);
+  });
+  it('a junction grouped with signals cut off at an area edge changes: signalised and id differ from the grouping with the signals round it', () => {
+    // Ambedkar junction's own signal nodes fall outside a box ending 20 m short of them
+    const near = fx.signalPoints;
+    const cut = near.filter(([x]) => x < AMBEDKAR[0] - 0.0004);
+    const full = junctionsAround(fx.roads, AMBEDKAR, near).junctions.find(j => j.signalised && j.nodeIds.length > 3)!;
+    const part = junctionsAround(fx.roads, AMBEDKAR, cut).junctions.find(j => j.nodeIds.includes(full.nodeIds[0]));
+    expect(full.signalised).toBe(true);
+    expect(part?.signalised ?? false).toBe(false);
+  });
 });

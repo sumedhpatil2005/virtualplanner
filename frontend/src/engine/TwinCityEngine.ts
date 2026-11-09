@@ -54,7 +54,7 @@ import { apiGet } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
 import { RoadHighlight, type RoadHighlightKind } from './rendering/renderers/RoadHighlight';
 import { JunctionHighlight, cutPath, ARM_DRAW_M } from './rendering/renderers/JunctionHighlight';
-import { junctionAt, junctionOfRoad, applyJunctionEdit, removeJunctionEdit, junctionEditOf, junctionFrame, type LocalJunctions } from './editing/junctionEdits';
+import { junctionAt, junctionOfRoad, applyJunctionEdit, removeJunctionEdit, junctionEditOf, junctionFrame, boundsCover, LOCAL_SIGNAL_MARGIN_M, type LocalJunctions } from './editing/junctionEdits';
 import type { LogicalJunction } from './simulation/junctionGroups';
 import type { JunctionEditSpec } from './simulation/junctionControl';
 import { normalizeHeading, resolveStationHeading } from './objects/stationAlignment';
@@ -909,9 +909,11 @@ export class TwinCityEngine {
 
   /** Mapped signals for grouping: those the simulation loaded, else from the signal source near the point (null if unavailable in time). */
   private async signalsNear(at: readonly number[]): Promise<[number, number][] | undefined> {
-    const loaded = this.simMode.mappedSignalPoints();
-    if (loaded?.length) return loaded as [number, number][];
-    if (!this.signalSource) return undefined;
+    // The study area's signals cover only its own bounds: a junction near or past its edge took no
+    // signal there, so it grouped as unsignalised, under another id, and opened as Priority (§26)
+    const loaded = this.simMode.mappedSignalPoints(), b = this.simMode.getState().area?.bounds;
+    if (loaded?.length && b && boundsCover(b, at, LOCAL_SIGNAL_MARGIN_M)) return loaded as [number, number][];
+    if (!this.signalSource) return loaded?.length ? loaded as [number, number][] : undefined;
     const d = 0.004;
     try {
       const pts = await Promise.race([
@@ -919,7 +921,7 @@ export class TwinCityEngine {
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
       ]);
       return pts as [number, number][];
-    } catch { return undefined; }
+    } catch { return loaded?.length ? loaded as [number, number][] : undefined; }
   }
 
   private buildObjects() {

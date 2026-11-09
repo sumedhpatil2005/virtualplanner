@@ -17,6 +17,14 @@ import type { TrafficNetwork } from '../objects/trafficTypes';
 const M_PER_DEG_LAT = 111320;
 /** Roads within this distance of the point are compiled to find the junction (m). */
 const LOCAL_RADIUS_M = 350;
+/** Signals loaded for a study area serve a junction's local grouping only when its whole radius lies inside the area (§26). */
+export const LOCAL_SIGNAL_MARGIN_M = LOCAL_RADIUS_M + 50;
+
+/** Whether the bounds hold every point within marginM of `at`. */
+export function boundsCover(b: { minLng: number; maxLng: number; minLat: number; maxLat: number }, at: readonly number[], marginM: number): boolean {
+  const kx = M_PER_DEG_LAT * Math.cos(at[1] * Math.PI / 180);
+  return (at[0] - b.minLng) * kx >= marginM && (b.maxLng - at[0]) * kx >= marginM && (at[1] - b.minLat) * M_PER_DEG_LAT >= marginM && (b.maxLat - at[1]) * M_PER_DEG_LAT >= marginM;
+}
 
 export interface LocalJunctions {
   network: TrafficNetwork;
