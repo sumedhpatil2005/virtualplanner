@@ -6,6 +6,7 @@ import {
   StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, type AnalysisActions,
 } from '../../components/RoadAnalysisPieces';
 import { explainedDirection, causeLine } from '../../components/roadAnalysisView';
+import { improvementsFor } from '../simulation/improvements';
 import { Disclosure } from '../../components/ui/viz';
 
 /** A Sangamwadi-like result: two directions, some delay eastbound, overloaded neighbourhood. */
@@ -146,6 +147,16 @@ describe('road analysis panel pieces', () => {
     expect(html).toContain('91%');
     expect(html).toContain('Test it');
     expect(html).toContain('Select the road in Build');
+  });
+  it('"Give its approach more green time" opens the junction at the end of the direction its signal limits (browser workflow 2026-11-09: it had no Build action)', () => {
+    const limited = dir({ label: 'towards the south-west', vc: 1.7, capacityBasis: 'signal', stopLinePcu: 1500, capacityPcu: 1500, paths: [[[73.86, 18.53, 0], [73.861, 18.531, 0]], [[73.861, 18.531, 0], [73.862, 18.532, 0]]] });
+    const r = result({ directions: [limited, dir({})], status: 'severe', cause: { kind: 'insufficient', text: 't', chain: null } });
+    const s = improvementsFor(r, ['osm_1', 'osm_2'], null).find(x => x.title === 'Give its approach more green time');
+    expect(s?.action).toEqual({ label: 'Open the junction in Build', roadIds: ['osm_1', 'osm_2'], at: [73.862, 18.532, 0], junction: true });
+    // Without geometry there is nowhere to open: no action rather than a wrong place
+    const none = improvementsFor(result({ directions: [{ ...limited, paths: [] }, dir({})], status: 'severe', cause: { kind: 'insufficient', text: 't', chain: null } }), ['osm_1'], null).find(x => x.title === 'Give its approach more green time');
+    expect(none).toBeDefined();
+    expect(none?.action).toBeUndefined();
   });
   it('disclosures are closed by default; per-run detail lists every seed', () => {
     expect(renderToStaticMarkup(createElement(Disclosure, { title: 'How this is calculated' }, 'x'))).not.toMatch(/<details[^>]*open/);

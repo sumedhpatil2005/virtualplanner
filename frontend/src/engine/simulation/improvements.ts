@@ -63,7 +63,9 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
     out.push({ kind: 'signal', title: 'Give its approach more green time',
       evidence: `${capital(signalCap.label)} the traffic routed along it is ${Math.round(100 * signalCap.vc)}% of what the signal at its end passes (${signalCap.capacityPcu.toLocaleString()} PCU/h).`,
       figure: { value: `${Math.round(100 * signalCap.vc)}%`, label: `of what the signal passes, ${signalCap.label}` },
-      why: 'More green here means less for the crossing road: compare the junction as a whole.' });
+      why: 'More green here means less for the crossing road: compare the junction as a whole.',
+      // The signal at the direction's downstream end: its stop line is the last point of the direction's geometry
+      action: (() => { const end = signalCap.paths.at(-1)?.at(-1); return end ? { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [end[0], end[1], 0] as [number, number, number], junction: true } : undefined; })() });
   }
   if (congested && r.composition.throughShare > 0.6) {
     const spare = r.nearby.filter(n => (n.vc ?? 1) < 0.6 && n.roadClass !== 'local' && n.vph > 0).sort((a, b) => (a.vc ?? 1) - (b.vc ?? 1))[0];
