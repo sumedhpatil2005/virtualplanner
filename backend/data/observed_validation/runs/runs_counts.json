@@ -1,0 +1,187 @@
+[
+ {
+  "id": "c_shivaji_18",
+  "seedRoadIds": [
+   "osm_22841323"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_shivaji": [
+    22841323
+   ]
+  }
+ },
+ {
+  "id": "c_mhatre_18",
+  "seedRoadIds": [
+   "osm_206412007"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_mhatre": [
+    206412007,
+    61717182
+   ]
+  }
+ },
+ {
+  "id": "c_shinde_18",
+  "seedRoadIds": [
+   "osm_216506273"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_shinde": [
+    216506273,
+    23028078
+   ]
+  }
+ },
+ {
+  "id": "c_tilak_10",
+  "seedRoadIds": [
+   "osm_53759316"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_tilak": [
+    53759316,
+    238567511
+   ]
+  }
+ },
+ {
+  "id": "c_zbridge_10",
+  "seedRoadIds": [
+   "osm_53759031"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_zbridge": [
+    53759030
+   ]
+  },
+  "note": "bridge way 53759030 is not in the DB; seed is the adjoining DB road, the bridge comes from the local OSM index"
+ },
+ {
+  "id": "c_smjoshi_11",
+  "seedRoadIds": [
+   "osm_23016237"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_smjoshi": [
+    23016237
+   ]
+  }
+ },
+ {
+  "id": "c_sambhaji_11",
+  "seedRoadIds": [
+   "osm_207872405"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_sambhaji": [
+    207872405,
+    53088328
+   ]
+  }
+ },
+ {
+  "id": "c_rajaram_10",
+  "seedRoadIds": [
+   "osm_858493453"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_rajaram": [
+    61717166,
+    227095238
+   ]
+  },
+  "note": "bridge ways 61717166/227095238 are not in the DB; seed is the nearest DB arterial, the bridge comes from the local OSM index"
+ },
+ {
+  "id": "c_sangam_19",
+  "seedRoadIds": [
+   "osm_23028035"
+  ],
+  "hour": 19,
+  "ways": {
+   "cmp08_sangam_old": [
+    23028035
+   ],
+   "cmp08_sangam_new": [
+    206994688,
+    206994689,
+    23028040
+   ]
+  }
+ },
+ {
+  "id": "c_yerwada_18",
+  "seedRoadIds": [
+   "osm_207164105"
+  ],
+  "hour": 18,
+  "ways": {
+   "bund_garden_br": [
+    207164105,
+    239984385,
+    862965707
+   ],
+   "ambedkar_br": [
+    207164102
+   ],
+   "tarkeswar_br": [
+    207164104,
+    126349346
+   ]
+  }
+ },
+ {
+  "id": "c_wadia_11",
+  "seedRoadIds": [
+   "osm_215804384"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_wadia_rob": [
+    215804384,
+    53013523
+   ]
+  }
+ },
+ {
+  "id": "c_rangehill_16",
+  "seedRoadIds": [
+   "osm_817465659"
+  ],
+  "hour": 16,
+  "ways": {
+   "cmp08_rangehill_rub": [
+    817465659
+   ]
+  }
+ },
+ {
+  "id": "c_sancheti_19",
+  "seedRoadIds": [
+   "osm_229970355"
+  ],
+  "hour": 19,
+  "ways": {
+   "firodia": [
+    229970355,
+    661187165
+   ],
+   "flyover": [
+    380347398
+   ],
+   "madgulkar_underpass": [
+    215075303
+   ]
+  }
+ }
+]

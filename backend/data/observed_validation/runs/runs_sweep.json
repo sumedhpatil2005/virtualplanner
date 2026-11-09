@@ -1,0 +1,192 @@
+[
+ {
+  "id": "a_central",
+  "seedRoadIds": [
+   "osm_22841323"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_deccan",
+  "seedRoadIds": [
+   "osm_246580199"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_kothrud",
+  "seedRoadIds": [
+   "osm_211087065"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_university",
+  "seedRoadIds": [
+   "osm_1531362755"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_baner",
+  "seedRoadIds": [
+   "osm_198565127"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_wakad",
+  "seedRoadIds": [
+   "osm_567724270"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_yerawada",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_swargate",
+  "seedRoadIds": [
+   "osm_22841269"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_sinhagad",
+  "seedRoadIds": [
+   "osm_1157871403"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ },
+ {
+  "id": "a_hinjawadi",
+  "seedRoadIds": [
+   "osm_60975324"
+  ],
+  "hour": 9,
+  "skipSim": true,
+  "hours": [
+   3,
+   7,
+   9,
+   11,
+   14,
+   17,
+   19,
+   21,
+   23
+  ]
+ }
+]

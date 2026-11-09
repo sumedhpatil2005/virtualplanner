@@ -1,0 +1,300 @@
+[
+ {
+  "id": "h_shivaji_18",
+  "seedRoadIds": [
+   "osm_22841323"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_shivaji": [
+    22841323
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   18
+  ]
+ },
+ {
+  "id": "h_mhatre_18",
+  "seedRoadIds": [
+   "osm_206412007"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_mhatre": [
+    206412007,
+    61717182
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   18
+  ]
+ },
+ {
+  "id": "h_shinde_18",
+  "seedRoadIds": [
+   "osm_216506273"
+  ],
+  "hour": 18,
+  "ways": {
+   "cmp08_shinde": [
+    216506273,
+    23028078
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   18
+  ]
+ },
+ {
+  "id": "h_tilak_10",
+  "seedRoadIds": [
+   "osm_53759316"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_tilak": [
+    53759316,
+    238567511
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   10
+  ]
+ },
+ {
+  "id": "h_zbridge_10",
+  "seedRoadIds": [
+   "osm_53759031"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_zbridge": [
+    53759030
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   10
+  ]
+ },
+ {
+  "id": "h_smjoshi_11",
+  "seedRoadIds": [
+   "osm_23016237"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_smjoshi": [
+    23016237
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   11
+  ]
+ },
+ {
+  "id": "h_sambhaji_11",
+  "seedRoadIds": [
+   "osm_207872405"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_sambhaji": [
+    207872405,
+    53088328
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   11
+  ]
+ },
+ {
+  "id": "h_rajaram_10",
+  "seedRoadIds": [
+   "osm_858493453"
+  ],
+  "hour": 10,
+  "ways": {
+   "cmp08_rajaram": [
+    61717166,
+    227095238
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   10
+  ]
+ },
+ {
+  "id": "h_sangam_19",
+  "seedRoadIds": [
+   "osm_23028035"
+  ],
+  "hour": 19,
+  "ways": {
+   "cmp08_sangam_old": [
+    23028035
+   ],
+   "cmp08_sangam_new": [
+    206994688,
+    206994689,
+    23028040
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   19
+  ]
+ },
+ {
+  "id": "h_yerwada_18",
+  "seedRoadIds": [
+   "osm_207164105"
+  ],
+  "hour": 18,
+  "ways": {
+   "bund_garden_br": [
+    207164105,
+    239984385,
+    862965707
+   ],
+   "ambedkar_br": [
+    207164102
+   ],
+   "tarkeswar_br": [
+    207164104,
+    126349346
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   18
+  ]
+ },
+ {
+  "id": "h_wadia_11",
+  "seedRoadIds": [
+   "osm_215804384"
+  ],
+  "hour": 11,
+  "ways": {
+   "cmp08_wadia_rob": [
+    215804384,
+    53013523
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   11
+  ]
+ },
+ {
+  "id": "h_rangehill_16",
+  "seedRoadIds": [
+   "osm_817465659"
+  ],
+  "hour": 16,
+  "ways": {
+   "cmp08_rangehill_rub": [
+    817465659
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   16
+  ]
+ },
+ {
+  "id": "h_sancheti_19",
+  "seedRoadIds": [
+   "osm_229970355"
+  ],
+  "hour": 19,
+  "ways": {
+   "firodia": [
+    229970355,
+    661187165
+   ],
+   "flyover": [
+    380347398
+   ],
+   "madgulkar_underpass": [
+    215075303
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   19
+  ]
+ },
+ {
+  "id": "h_nagar_09",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 9,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   9
+  ]
+ },
+ {
+  "id": "h_nagar_14",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 14,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   14
+  ]
+ },
+ {
+  "id": "h_nagar_19",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 19,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  },
+  "skipSim": true,
+  "hours": [
+   19
+  ]
+ }
+]

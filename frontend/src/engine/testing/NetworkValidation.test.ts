@@ -13,7 +13,9 @@ import { isSampleObject } from '../objects/sampleObjects';
 import { isDrivable, type DrivableObject } from '../simulation/StudyAreaExplorer';
 import { screenlineChecks, type ScreenlineFile } from '../calibration/screenlines';
 import { snapDemandPlan } from '../simulation/StudyDemand';
-import { assignTraffic } from '../simulation/staticAssignment';
+import { assignTraffic, PCU as ASSIGN_PCU } from '../simulation/staticAssignment';
+import { cordonOf, EDGE_FLOW_PER_LANE_VPH } from '../simulation/AreaDemand';
+import { VEHICLE_TYPES } from '../simulation/TrafficMicroSim';
 import { hourFactor, COUNT_HOURS } from '../simulation/timeOfDay';
 import type { TimePeriod } from '../objects/demandTypes';
 
@@ -36,6 +38,13 @@ import type { TimePeriod } from '../objects/demandTypes';
  * copy of the inputs, never a default, and every output row records them under `hypothetical`:
  *   VAL24_HYPO_SCALE     the app's own hypothetical demand multiplier (Details -> demand settings), e.g. 1.8
  *   VAL24_HYPO_SPEEDCAP  cap every OSM-tagged maxspeed at this km/h (the urban ceiling now applies to untagged roads only)
+ *   VAL24_HYPO_PCU       'trr2021': PCU per vehicle at the mid-points of the dynamic PCU ranges measured at Indian signals by
+ *                        Patel & Dhamaniya, TRR 2675(11), 2021, doi:10.1177/03611981211018694 (two-wheeler 0.22, three-wheeler 0.62,
+ *                        bus/truck 5.0, car 1.0), swapped into this process's assignment and simulator tables (all links, not signals only)
+ *   VAL24_HYPO_EDGE      multiply the edge (cordon) flow per lane of every road class by this factor (AreaDemand EDGE_FLOW_PER_LANE_VPH)
+ *
+ * Runs with `hours` (assignment-only sweep) also report, per hour, the section's assigned speed and, with `ways`, the assigned
+ * volume of each way group and its distance to the nearest cordon point (where edge demand enters), plus the plan's components.
  */
 // The test setup replaces fetch with a 404 stub; this harness talks to its own backend (VAL24_API, e.g. http://127.0.0.1:8141)
 if (process.env.VAL24 && process.env.VAL24_API) {
@@ -89,6 +98,15 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       }
     };
     if (process.env.VAL24_HYPO_SPEEDCAP) hypo.speedCapKmh = Number(process.env.VAL24_HYPO_SPEEDCAP);
+    if (process.env.VAL24_HYPO_PCU === 'trr2021') {
+      const trr: Record<string, number> = { two_wheeler: 0.22, auto: 0.62, car: 1.0, bus: 5.0, truck: 5.0, bus_auto: 0.62 };
+      for (const t of VEHICLE_TYPES) if (trr[t.kind] !== undefined) { t.pcu = trr[t.kind]; ASSIGN_PCU[t.kind] = trr[t.kind]; }
+      hypo.pcuTrr2021 = 1;
+    }
+    if (process.env.VAL24_HYPO_EDGE) {
+      hypo.edgeFlowFactor = Number(process.env.VAL24_HYPO_EDGE);
+      for (const k of Object.keys(EDGE_FLOW_PER_LANE_VPH)) EDGE_FLOW_PER_LANE_VPH[k] *= hypo.edgeFlowFactor;
+    }
     const history = new HistoryManager(om);
     const localOsm = new LocalOsmIndex();
     const editing = new EditingEngine(om, history, () => null, localOsm);
@@ -159,11 +177,36 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
             c.km += km; c.vkm += v * km; c.vh += v * a.timeS[i] / 3600; c.vh0 += v * l.t0 / 3600;
             vkm += v * km; vh += v * a.timeS[i] / 3600; vh0 += v * l.t0 / 3600;
           });
-          sweep.push({ hour: h, factor: +f.toFixed(4), demandVph: Math.round(trips.reduce((n, t) => n + t.vehiclesPerHour, 0)), unroutedVph: Math.round(a.unroutedVeh), gap: +a.relativeGap.toFixed(4),
+          // Section speed (both carriageways, length-weighted harmonic) and way-group volumes from this assignment
+          const secKeys = new Set(st.section?.segmentKeys ?? []);
+          const secDir: Record<string, { km: number; h: number; h0: number; vol: number }> = {};
+          const linkVph = new Map<string, number>();
+          a.links.forEach((l, i) => {
+            linkVph.set(l.id, a.volVeh[i]);
+            if (!secKeys.has(l.segmentKey)) return;
+            const d = l.id.endsWith('_bwd') ? 'bwd' : 'fwd', km = l.lengthM / 1000;
+            const c = (secDir[d] ??= { km: 0, h: 0, h0: 0, vol: 0 });
+            c.km += km; c.h += km / Math.max(1e-6, km / (a.timeS[i] / 3600)); c.h0 += l.t0 / 3600; c.vol = Math.max(c.vol, a.volVeh[i]);
+          });
+          const waysOut = run.ways ? Object.fromEntries(Object.entries(run.ways).map(([k, ws]) => [k, wayVolume(linkVph, ws)])) : undefined;
+          sweep.push({ hour: h, section: Object.fromEntries(Object.entries(secDir).map(([d, c]) => [d, { speed: c.h ? +(c.km / c.h).toFixed(2) : null, free: c.h0 ? +(c.km / c.h0).toFixed(2) : null, maxVph: Math.round(c.vol) }])),
+            ways: waysOut, components: plan.provenance.components, planVph: Math.round(plan.provenance.vehiclesPerHour), factor: +f.toFixed(4), demandVph: Math.round(trips.reduce((n, t) => n + t.vehiclesPerHour, 0)), unroutedVph: Math.round(a.unroutedVeh), gap: +a.relativeGap.toFixed(4),
             speedKmh: vh ? +(vkm / vh).toFixed(2) : null, freeSpeedKmh: vh0 ? +(vkm / vh0).toFixed(2) : null, vkm: Math.round(vkm),
             byClass: Object.fromEntries(Object.entries(byClass).map(([k, c]) => [k, { km: +c.km.toFixed(1), vkm: Math.round(c.vkm), speed: c.vh ? +(c.vkm / c.vh).toFixed(2) : null, free: c.vh0 ? +(c.vkm / c.vh0).toFixed(2) : null }])) });
         }
         row.sweep = sweep;
+        // Where the area's edge demand enters: cordon points, and each way group's distance to the nearest one
+        const cordon = cordonOf(area, roadsMap);
+        row.cordon = { points: cordon.length, inVph: Math.round(cordon.reduce((n, c) => n + c.inVph, 0)), outVph: Math.round(cordon.reduce((n, c) => n + c.outVph, 0)),
+          bounds: area.bounds, byClass: cordon.reduce((m, c) => { m[c.roadClass] = (m[c.roadClass] ?? 0) + c.inVph; return m; }, {} as Record<string, number>) };
+        if (run.ways) {
+          const dist = (p: readonly number[], q: readonly number[]) => Math.hypot((p[0] - q[0]) * 111320 * Math.cos(p[1] * Math.PI / 180), (p[1] - q[1]) * 111320);
+          row.wayCordonM = Object.fromEntries(Object.entries(run.ways).map(([k, ws]) => {
+            let best = Infinity;
+            for (const w of ws) { const r = roadsMap.get(`osm_${w}`) as { coordinates?: number[][] } | undefined; for (const p of r?.coordinates ?? []) for (const c of cordon) best = Math.min(best, dist(p, c.coordinates)); }
+            return [k, Number.isFinite(best) ? Math.round(best) : null];
+          }));
+        }
       }
       if (!run.skipSim) {
         const out = await mode.runAnalysis();

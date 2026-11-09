@@ -1,0 +1,610 @@
+{
+ "schema": "twincity.validation_observations/v1",
+ "id": "pune_network_validation_v1",
+ "created": "2026-11-09",
+ "purpose": "Independent real-world observations for Pune used to validate (not calibrate) model demand, throughput, speed and LOS (docs/OVERHAUL.md \u00a724). Nothing is fitted to them.",
+ "quality_grades": {
+  "A": "recent (2023 or later) direct measurement, unambiguous location",
+  "B": "direct measurement but older (pre-2020) or secondary-quoted, location clear",
+  "C": "old and/or location or extent inferred (mapping uncertain), or aggregate"
+ },
+ "sources": [
+  {
+   "id": "cmp2008",
+   "citation": "Comprehensive Mobility Plan for Pune City, Pune Municipal Corporation (2008). Table 4.1 (12 h screen-line counts), Table 4.10 (speed and delay survey, peak hour, 19 corridors), annexure Tables 6 and 8 (mid-block CVC peak hour, screen lines 1 and 2).",
+   "url": "https://data.opencity.in/dataset/bb6b3dc4-6ff5-42bf-b41f-3d823a4e8ef8/resource/e883b43e-aaa8-4411-bfa8-860f05154f5d/download/9d5dca7b-5ddb-4c91-b9f8-cae4acbef71c.pdf",
+   "date": "2008 (survey year)",
+   "method": "Manual classified volume counts, 12 h (some 24 h), both directions; speed and delay by test car over the peak period (journey and running speed)."
+  },
+  {
+   "id": "gunjan2017",
+   "citation": "Thakur K.B., Lunkad S.P., Shinde C.R., Ram N.C., Purohit V.I. (2017). Congestion of Traffic at Gunjan Chowk Junction, Pune. IJETT 47(2):91-97 (hourly tables as transcribed in backend/observed/diurnal/build_profile.py).",
+   "url": "http://www.ijettjournal.org/assets/year/2017/volume-47/number-2/IJETT-V47P215.pdf",
+   "date": "2017 (Jan and Mar survey)",
+   "method": "Hourly classified counts 08:00-20:00, both directions of Nagar Road (towards Pune Station / towards Nagar Road)."
+  },
+  {
+   "id": "trafficure2026",
+   "citation": "TraffiCure (Lepton Software) 'Best time to leave - Pune': hour-by-hour average speeds, citywide and per corridor, 'measured from real road data' in partnership with Pune City Traffic Police, powered by Google Maps data; 116 measured corridors, data updated 2026-08-19.",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune",
+   "date": "2026-08-19 (data update)",
+   "method": "Probe (Google Maps) travel speeds averaged by hour of day over the route; corridor geometry not published (only end-point names)."
+  },
+  {
+   "id": "tomtom2025",
+   "citation": "TomTom Traffic Index 2025, Pune (city): average travel time for 10 km 33 min 20 s; morning rush 38 min 13 s; evening rush 41 min 40 s; average speed during rush hour 15.1 km/h; congestion level 71.1%.",
+   "url": "https://www.tomtom.com/traffic-index/city/pune/",
+   "date": "2025 (annual), published 2026-01-22",
+   "method": "Floating-car (GPS) data over the whole city road network; congestion = extra travel time over free flow."
+  },
+  {
+   "id": "khandekar2025",
+   "citation": "Khandekar, Bagwan, Karande & Pilaka (2025), NICMAR / Journal Press India ch. 129 (doi:10.17492/jpi/nicmar/2507129), as transcribed in backend/data/observed_counts/pune_west_2026.json",
+   "url": "https://doi.org/10.17492/jpi/nicmar/2507129",
+   "date": "2025",
+   "method": "Peak-hour classified turning counts at six west-Pune junctions; AM or PM not stated."
+  },
+  {
+   "id": "tag_m3_1",
+   "citation": "UK DfT TAG unit M3.1 Highway Assignment Modelling (May 2026), Tables 2 and 3: GEH<5 for >85% of individual flows; flows within 100 veh/h (<700), 15% (700-2,700) or 400 veh/h (>2,700) for >85%; modelled journey times within 15% (or 1 minute if higher) of observed for >85% of routes.",
+   "url": "https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf",
+   "date": "2026-05",
+   "method": "Acceptance criteria (standard practice), not an observation."
+  }
+ ],
+ "counts": [
+  {
+   "id": "cmp08_shivaji",
+   "source": "cmp2008",
+   "name": "Shivaji Bridge",
+   "osmWays": [
+    22841323
+   ],
+   "hour": 18,
+   "veh": 7470,
+   "pcu": 8131,
+   "grade": "B",
+   "mapping": "name match, same bridge"
+  },
+  {
+   "id": "cmp08_mhatre",
+   "source": "cmp2008",
+   "name": "Mathre (Mhatre) Bridge",
+   "osmWays": [
+    206412007,
+    61717182
+   ],
+   "hour": 18,
+   "veh": 10262,
+   "pcu": 8807,
+   "grade": "B",
+   "mapping": "name 'Raveendra Mhatre Bridge', two carriageways crossing the river at 73.8365E"
+  },
+  {
+   "id": "cmp08_shinde",
+   "source": "cmp2008",
+   "name": "Shinde Bridge",
+   "osmWays": [
+    216506273,
+    23028078
+   ],
+   "hour": 18,
+   "veh": 4986,
+   "pcu": 4484,
+   "grade": "B",
+   "mapping": "as backend/data/observed_screenlines"
+  },
+  {
+   "id": "cmp08_tilak",
+   "source": "cmp2008",
+   "name": "Tilak Bridge",
+   "osmWays": [
+    53759316,
+    238567511
+   ],
+   "hour": 10,
+   "veh": 2213,
+   "pcu": 2162,
+   "grade": "B",
+   "mapping": "as backend/data/observed_screenlines"
+  },
+  {
+   "id": "cmp08_zbridge",
+   "source": "cmp2008",
+   "name": "Z-Bridge (Kakasaheb Gadgil Bridge)",
+   "osmWays": [
+    53759030
+   ],
+   "hour": 10,
+   "veh": 3928,
+   "pcu": 3503,
+   "grade": "B",
+   "mapping": "OSM name 'Kakasaheb Gadgil Bridge'"
+  },
+  {
+   "id": "cmp08_smjoshi",
+   "source": "cmp2008",
+   "name": "S. M. Joshi Bridge",
+   "osmWays": [
+    23016237
+   ],
+   "hour": 11,
+   "veh": 4302,
+   "pcu": 3491,
+   "grade": "B",
+   "mapping": "name match"
+  },
+  {
+   "id": "cmp08_sambhaji",
+   "source": "cmp2008",
+   "name": "Sambhaji Bridge (Lakdi Pul)",
+   "osmWays": [
+    207872405,
+    53088328
+   ],
+   "hour": 11,
+   "veh": 5042,
+   "pcu": 7743,
+   "grade": "B",
+   "mapping": "as backend/data/observed_screenlines; two-wheelers banned (count has none); the model does not apply the ban"
+  },
+  {
+   "id": "cmp08_rajaram",
+   "source": "cmp2008",
+   "name": "Raja Ram Bridge",
+   "osmWays": [
+    61717166,
+    227095238
+   ],
+   "hour": 10,
+   "veh": 7830,
+   "pcu": 6155,
+   "grade": "B",
+   "mapping": "OSM name 'Chhatrapati Rajaram Maharaj Bridge', two carriageways"
+  },
+  {
+   "id": "cmp08_sangam",
+   "source": "cmp2008",
+   "name": "Sangam Bridge",
+   "osmWays": [
+    23028035,
+    206994688,
+    206994689,
+    23028040
+   ],
+   "hour": 19,
+   "veh": 16012,
+   "pcu": 16888,
+   "grade": "C",
+   "mapping": "OSM 'Sangam Bridge' plus parallel 'New Sangam Bridge' pieces summed; whether the 2008 count covered both structures is not stated"
+  },
+  {
+   "id": "cmp08_yerwada_ambedkar",
+   "source": "cmp2008",
+   "name": "Yerwada Bridge (14,240 veh, 18-19 h) + Ambedkar Bridge (6,000 veh, 19-20 h)",
+   "osmWays": [
+    207164105,
+    239984385,
+    862965707,
+    207164102,
+    207164104,
+    126349346
+   ],
+   "hour": 18,
+   "veh": 20240,
+   "pcu": 21745,
+   "grade": "C",
+   "mapping": "group: OSM 'Bund Garden Bridge', 'Babasaheb Ambedkar Bridge' and 'Tarkeswar Bridge' at 73.884E 18.544N; which 2008 name is which OSM structure is not known, so the group is compared with the sum of the two counts (their peak hours differ by one hour)"
+  },
+  {
+   "id": "cmp08_wadia_rob",
+   "source": "cmp2008",
+   "name": "ROB at Wadia College",
+   "osmWays": [
+    215804384,
+    53013523
+   ],
+   "hour": 11,
+   "veh": 4634,
+   "pcu": 5995,
+   "grade": "B",
+   "mapping": "OSM 'Wadia College Flyover', crosses the railway at 73.8791E 18.5305N"
+  },
+  {
+   "id": "cmp08_rangehill_rub",
+   "source": "cmp2008",
+   "name": "RUB at Range Hill Road",
+   "osmWays": [
+    817465659
+   ],
+   "hour": 16,
+   "veh": 1693,
+   "pcu": 1683,
+   "grade": "B",
+   "mapping": "OSM 'Rangehills Marg Railway Underpass', crosses the railway at 73.8474E 18.5468N"
+  },
+  {
+   "id": "cmp08_sancheti_rob",
+   "source": "cmp2008",
+   "name": "ROB near Sancheti Hospital",
+   "osmWays": [
+    229970355,
+    661187165,
+    380347398,
+    215075303
+   ],
+   "hour": 19,
+   "veh": 6600,
+   "pcu": 6964,
+   "grade": "C",
+   "mapping": "group of today's rail crossings at Shivajinagar: 'H. K. Firodia Bridge' (2 ways), 'Mokshagundam Vishweshvarayya Flyover' and 'G. D. Madgulkar Bhuyari Marg' underpass; the flyover and underpass did not exist in 2008 (inferred), so traffic now split over them is summed"
+  },
+  {
+   "id": "gunjan17_09",
+   "source": "gunjan2017",
+   "name": "Nagar Road at Gunjan Chowk",
+   "osmWays": [
+    147823414,
+    279435323
+   ],
+   "hour": 9,
+   "veh": 10034,
+   "grade": "B",
+   "mapping": "Nagar Road carriageways west of the 'Gunjan Corner' bus stop (73.8893E 18.5458N); count is both directions through the junction (inferred to be the Nagar Road through movement)"
+  },
+  {
+   "id": "gunjan17_14",
+   "source": "gunjan2017",
+   "name": "Nagar Road at Gunjan Chowk",
+   "osmWays": [
+    147823414,
+    279435323
+   ],
+   "hour": 14,
+   "veh": 6581,
+   "grade": "B",
+   "mapping": "as above"
+  },
+  {
+   "id": "gunjan17_19",
+   "source": "gunjan2017",
+   "name": "Nagar Road at Gunjan Chowk",
+   "osmWays": [
+    147823414,
+    279435323
+   ],
+   "hour": 19,
+   "veh": 9460,
+   "grade": "B",
+   "mapping": "as above"
+  }
+ ],
+ "speeds_corridor": [
+  {
+   "id": "cmp08_karve",
+   "source": "cmp2008",
+   "corridor": "Karve Road, Deccan - Karve Nagar (3.2 km)",
+   "measure": "peak-hour journey speed, both directions",
+   "kmh": 18,
+   "dirs": [
+    18,
+    18
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_ganeshkhind",
+   "source": "cmp2008",
+   "corridor": "Ganeshkhind Road, Sancheti Hospital - University Chowk (2.8 km)",
+   "kmh": 22,
+   "dirs": [
+    22,
+    22
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_shivajird",
+   "source": "cmp2008",
+   "corridor": "Shivaji Road, Sancheti Hospital - Swami Vivekananda Statue (6.2 km)",
+   "kmh": 18,
+   "dirs": [
+    17,
+    18
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_jm",
+   "source": "cmp2008",
+   "corridor": "Jangli Maharaj Road, Deccan - Sancheti Hospital (2.2 km)",
+   "kmh": 15,
+   "dirs": [
+    15,
+    16
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_deccancollege",
+   "source": "cmp2008",
+   "corridor": "Deccan College Road, Mula Road - Sangamwadi (2.1 km)",
+   "kmh": 42,
+   "dirs": [
+    41,
+    43
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_koregaon",
+   "source": "cmp2008",
+   "corridor": "Koregaon Road, Commissioner office - Yerwada (3.0 km)",
+   "kmh": 16,
+   "dirs": [
+    18,
+    14
+   ],
+   "grade": "C",
+   "mapping": "OSM 'Koregaon Road' used; the surveyed stretch is inferred"
+  },
+  {
+   "id": "cmp08_nagar",
+   "source": "cmp2008",
+   "corridor": "Nagar Road, Bund Garden - Ramwadi (4.47 km)",
+   "kmh": 17,
+   "dirs": [
+    16,
+    18
+   ],
+   "grade": "B"
+  },
+  {
+   "id": "cmp08_sinhagad",
+   "source": "cmp2008",
+   "corridor": "Sinhagad Road, Sarasbaug - Mutha River junction (3.3 km)",
+   "kmh": 26,
+   "dirs": [
+    32,
+    19
+   ],
+   "grade": "B"
+  }
+ ],
+ "speeds_hourly": [
+  {
+   "id": "tc_karve",
+   "source": "trafficure2026",
+   "corridor": "Khandoji Baba Chowk -> Warje Junction (Karve Road, inferred)",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune/khandoji-baba-chowk-to-warje-junction",
+   "kmh_by_hour": [
+    35.8,
+    38.5,
+    40.4,
+    41.3,
+    41.0,
+    39.3,
+    35.7,
+    30.2,
+    25.2,
+    21.1,
+    20.1,
+    19.2,
+    18.5,
+    19.8,
+    20.8,
+    20.7,
+    18.9,
+    17.0,
+    14.9,
+    14.0,
+    15.7,
+    20.0,
+    25.2,
+    31.8
+   ],
+   "grade": "A-/C mapping",
+   "mapping": "end points only; Karve Road from Deccan to Warje inferred"
+  },
+  {
+   "id": "tc_tilak",
+   "source": "trafficure2026",
+   "corridor": "Alka Talkies Chowk -> Jedhe Chowk (Tilak Road, inferred)",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune/alka-talkies-chowk-to-jedhe-chowk",
+   "kmh_by_hour": [
+    31.6,
+    35.5,
+    37.4,
+    38.1,
+    37.4,
+    35.1,
+    31.1,
+    24.4,
+    21.4,
+    17.4,
+    15.2,
+    13.5,
+    11.9,
+    12.0,
+    12.3,
+    12.4,
+    12.6,
+    11.5,
+    10.7,
+    10.6,
+    11.9,
+    14.7,
+    18.3,
+    25.6
+   ],
+   "grade": "A-/C mapping"
+  },
+  {
+   "id": "tc_sinhagad",
+   "source": "trafficure2026",
+   "corridor": "Jedhe Chowk -> Nanded City (Sinhagad Road, inferred)",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune/jedhe-chowk-to-nanded-city",
+   "kmh_by_hour": [
+    38.0,
+    40.2,
+    41.3,
+    41.8,
+    41.7,
+    40.8,
+    39.1,
+    35.1,
+    31.9,
+    28.5,
+    27.1,
+    26.7,
+    25.6,
+    25.4,
+    25.8,
+    25.4,
+    23.4,
+    22.1,
+    19.1,
+    17.3,
+    19.9,
+    24.8,
+    28.9,
+    33.8
+   ],
+   "grade": "A-/C mapping"
+  },
+  {
+   "id": "tc_lawcollege",
+   "source": "trafficure2026",
+   "corridor": "SB Junction - Symbiosis College - Law College Road -> Nal Stop (OSM 'Vishnushastri Chiplunkar Path')",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune/sb-junction-symbiosis-collage-law-collage-road-to-nal-stop",
+   "kmh_by_hour": [
+    33.8,
+    34.7,
+    35.2,
+    35.7,
+    36.7,
+    37.4,
+    34.8,
+    28.9,
+    24.6,
+    20.2,
+    19.0,
+    19.0,
+    18.2,
+    18.3,
+    18.7,
+    19.0,
+    17.3,
+    15.9,
+    14.1,
+    14.4,
+    18.2,
+    21.9,
+    25.3,
+    30.8
+   ],
+   "grade": "A-/B mapping"
+  },
+  {
+   "id": "tc_baner",
+   "source": "trafficure2026",
+   "corridor": "Pune Vidhyapeeth Chowk -> Hotel Radha Chowk (Baner Road, OSM 'Gopal Hari Deshmukh Marg', inferred)",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune/pune-vidhyapeeth-chowk-to-hotel-radha-chowk",
+   "kmh_by_hour": [
+    31.2,
+    32.9,
+    33.9,
+    34.9,
+    35.3,
+    35.6,
+    36.0,
+    31.8,
+    26.3,
+    20.9,
+    19.8,
+    20.9,
+    20.6,
+    20.9,
+    21.2,
+    21.0,
+    20.6,
+    19.1,
+    16.5,
+    15.7,
+    18.6,
+    23.2,
+    26.0,
+    29.3
+   ],
+   "grade": "A-/C mapping"
+  },
+  {
+   "id": "tc_citywide",
+   "source": "trafficure2026",
+   "corridor": "Pune citywide average",
+   "url": "https://trafficure.com/tools/best-time-to-leave-pune",
+   "kmh_by_hour": [
+    28.2,
+    30,
+    31,
+    31.4,
+    31.2,
+    30.7,
+    29.5,
+    26.5,
+    24,
+    21.3,
+    20.2,
+    19.5,
+    18.9,
+    19.2,
+    19.6,
+    19.7,
+    19.2,
+    18.2,
+    17.1,
+    16.6,
+    18.1,
+    20.5,
+    22.7,
+    25.5
+   ],
+   "grade": "A- (aggregate)"
+  }
+ ],
+ "speeds_city": [
+  {
+   "id": "tomtom25_allday",
+   "source": "tomtom2025",
+   "measure": "city average over the day",
+   "kmh": 18.0,
+   "derivation": "10 km / 33 min 20 s"
+  },
+  {
+   "id": "tomtom25_am",
+   "source": "tomtom2025",
+   "measure": "morning rush hour",
+   "kmh": 15.7,
+   "derivation": "10 km / 38 min 13 s"
+  },
+  {
+   "id": "tomtom25_pm",
+   "source": "tomtom2025",
+   "measure": "evening rush hour",
+   "kmh": 14.4,
+   "derivation": "10 km / 41 min 40 s"
+  },
+  {
+   "id": "tomtom25_rush",
+   "source": "tomtom2025",
+   "measure": "average speed during rush hour",
+   "kmh": 15.1
+  }
+ ],
+ "not_used": [
+  "CMP 2008 screen-line 1 sites RUB near Harris Bridge, RUB at Aundh Road, RUB at Joshi Road, RUB near Railway Station, ROB near Alankar Theatre, ROB near Koregaon Park, level crossing at Ghorpadi Road: no unambiguous OSM crossing in the database network (14 database roads cross the railway; the unnamed underpasses at 73.8446E and 73.8633E and 'Secondary Road' at 73.8759E could not be tied to a 2008 site name).",
+  "CMP 2008 Dengale Bridge (now a one-way pair), Godzil Bridge (two-wheelers only), Warje Bridge (24 h count, edge of the database), Kalyani and Kharadi bridges (outside the database network), Near Sanjeevani Hospital (location not identified).",
+  "Mendeley Pune CCTV 2023 (Alankar, Jehangir, RTO Chowk): camera-to-approach mapping and direction are not published with the counts; already used to build the hour-of-day profile, so not independent.",
+  "PMRDA CMP 2018 junction counts (Wakad, Bhumkar, Kaspate Chowk; PCU, 16 h): used in backend/data/diurnal for the peak-hour share; not mapped to model junctions in this round."
+ ]
+}

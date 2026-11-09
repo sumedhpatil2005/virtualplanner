@@ -1,0 +1,374 @@
+{
+"206994688": {
+"name": "New Sangam Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"206994689": {
+"name": "New Sangam Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"239984385": {
+"name": "Bund Garden Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"380347398": {
+"name": "Mokshagundam Vishweshvarayya Flyover",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"198565127": {
+"name": "Gopal Hari Deshmukh Marg",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"1146956047": {
+"name": "Koregaon Road",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": "2",
+"maxspeed": "30",
+"oneway": "yes",
+"speedLimit": 30
+},
+"53013523": {
+"name": "Wadia College Flyover",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"207872405": {
+"name": "Sambhaji Bridge",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"117373974": {
+"name": "Deccan College Road",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"701885341": {
+"name": "Nagar Road",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"216506273": {
+"name": "Maharshi Vitthal Ramji Shinde Bridge",
+"roadClass": "collector",
+"highway": "tertiary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 50
+},
+"126349346": {
+"name": "Tarkeswar Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"1157871403": {
+"name": "Sinhagad Road",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"23016237": {
+"name": "S. M. Joshi Bridge",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": null,
+"maxspeed": null,
+"oneway": null,
+"speedLimit": 60
+},
+"61717166": null,
+"229970355": {
+"name": "H. K. Firodia Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"53759030": null,
+"147823414": {
+"name": "Nagar Road",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"279435323": {
+"name": "Nagar Road",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"817465659": {
+"name": "Rangehills Marg Railway Underpass",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": "1",
+"maxspeed": null,
+"oneway": null,
+"speedLimit": 60
+},
+"217431357": {
+"name": "Jangli Maharaj Path",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "4",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"61717182": {
+"name": "Raveendra Mhatre Bridge",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"23028035": {
+"name": "Sangam Bridge",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"1531362755": {
+"name": "Ganeshkhind Road",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"227095238": null,
+"207164102": {
+"name": "Babasaheb Ambedkar Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "4",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"53088328": {
+"name": "Sambhaji Bridge",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"23028040": {
+"name": "New Sangam Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"207164105": {
+"name": "Bund Garden Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"862965707": {
+"name": "Bund Garden Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"207164104": {
+"name": "Tarkeswar Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": "60",
+"oneway": "yes",
+"speedLimit": 60
+},
+"290528074": {
+"name": "Lokmanya Tilak Marg",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "no",
+"speedLimit": 60
+},
+"53759316": {
+"name": "Jayantarao Tilak Bridge",
+"roadClass": "collector",
+"highway": "tertiary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 50
+},
+"1546919766": {
+"name": "Nagar Road",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "3",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"238567511": {
+"name": "Jayantarao Tilak Bridge",
+"roadClass": "collector",
+"highway": "tertiary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 50
+},
+"661187165": {
+"name": "H. K. Firodia Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "1",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+},
+"215804384": {
+"name": "Wadia College Flyover",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"243952354": {
+"name": "Vishnushastri Chiplunkar Path",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"206412007": {
+"name": "Raveendra Mhatre Bridge",
+"roadClass": "arterial",
+"highway": "secondary",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 60
+},
+"215075303": {
+"name": "G. D. Madgulkar Bhuyari Marg",
+"roadClass": "collector",
+"highway": "tertiary",
+"lanes": null,
+"maxspeed": null,
+"oneway": null,
+"speedLimit": 50
+},
+"22841323": {
+"name": "Shivaji Bridge",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": null,
+"maxspeed": null,
+"oneway": null,
+"speedLimit": 100
+},
+"246580203": {
+"name": "Karve Road",
+"roadClass": "arterial",
+"highway": "primary",
+"lanes": "2",
+"maxspeed": "65",
+"oneway": "yes",
+"speedLimit": 65
+},
+"23028078": {
+"name": "Maharshi Vitthal Ramji Shinde Bridge",
+"roadClass": "collector",
+"highway": "tertiary",
+"lanes": null,
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 50
+},
+"1550544371": {
+"name": "Shivaji Road",
+"roadClass": "highway",
+"highway": "trunk",
+"lanes": "2",
+"maxspeed": null,
+"oneway": "yes",
+"speedLimit": 100
+}
+}

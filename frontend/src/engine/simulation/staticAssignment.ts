@@ -58,7 +58,8 @@ export { RESTRICTED_ACCESS, RESTRICTED_ENTRY_S, isAccessRestricted } from './acc
 const SIGNAL_MATCH_M = 35;
 const LANE_WIDTH_M = 3.5;
 
-const PCU: Record<string, number> = Object.fromEntries(VEHICLE_TYPES.map(t => [t.kind, t.pcu]));
+/** PCU per vehicle kind in the assignment (exported read-only use; the validation harness's hypothetical PCU option swaps values in its own process). */
+export const PCU: Record<string, number> = Object.fromEntries(VEHICLE_TYPES.map(t => [t.kind, t.pcu]));
 
 export interface AssignLink {
   index: number;

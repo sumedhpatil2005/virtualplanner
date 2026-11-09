@@ -76,6 +76,8 @@ backend/data/*
 !backend/data/network_corrections/
 # Screen-line (bridge) counts from the PMC CMP 2008: curated, cited source data
 !backend/data/observed_screenlines/
+# Observations used to validate (not calibrate) the model, docs/OVERHAUL.md §24: curated, cited source data
+!backend/data/observed_validation/
 
 # local diagnosis harnesses
 *.scratch.*

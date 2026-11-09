@@ -1,0 +1,179 @@
+[
+ {
+  "id": "s_karve_03",
+  "seedRoadIds": [
+   "osm_246580203"
+  ],
+  "hour": 3
+ },
+ {
+  "id": "s_karve_09",
+  "seedRoadIds": [
+   "osm_246580203"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_karve_19",
+  "seedRoadIds": [
+   "osm_246580203"
+  ],
+  "hour": 19
+ },
+ {
+  "id": "s_tilak_03",
+  "seedRoadIds": [
+   "osm_290528074"
+  ],
+  "hour": 3
+ },
+ {
+  "id": "s_tilak_09",
+  "seedRoadIds": [
+   "osm_290528074"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_tilak_19",
+  "seedRoadIds": [
+   "osm_290528074"
+  ],
+  "hour": 19
+ },
+ {
+  "id": "s_sinhagad_03",
+  "seedRoadIds": [
+   "osm_1157871403"
+  ],
+  "hour": 3
+ },
+ {
+  "id": "s_sinhagad_09",
+  "seedRoadIds": [
+   "osm_1157871403"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_sinhagad_19",
+  "seedRoadIds": [
+   "osm_1157871403"
+  ],
+  "hour": 19
+ },
+ {
+  "id": "s_nagar_09",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 9,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  }
+ },
+ {
+  "id": "s_nagar_14",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 14,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  }
+ },
+ {
+  "id": "s_nagar_19",
+  "seedRoadIds": [
+   "osm_147823414"
+  ],
+  "hour": 19,
+  "ways": {
+   "gunjan_w": [
+    147823414,
+    279435323
+   ],
+   "gunjan_e": [
+    701885341,
+    1546919766
+   ]
+  }
+ },
+ {
+  "id": "s_lawcollege_03",
+  "seedRoadIds": [
+   "osm_243952354"
+  ],
+  "hour": 3
+ },
+ {
+  "id": "s_lawcollege_19",
+  "seedRoadIds": [
+   "osm_243952354"
+  ],
+  "hour": 19
+ },
+ {
+  "id": "s_baner_03",
+  "seedRoadIds": [
+   "osm_198565127"
+  ],
+  "hour": 3
+ },
+ {
+  "id": "s_baner_19",
+  "seedRoadIds": [
+   "osm_198565127"
+  ],
+  "hour": 19
+ },
+ {
+  "id": "s_ganeshkhind_09",
+  "seedRoadIds": [
+   "osm_1531362755"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_shivajird_09",
+  "seedRoadIds": [
+   "osm_1550544371"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_jm_09",
+  "seedRoadIds": [
+   "osm_217431357"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_deccancollege_09",
+  "seedRoadIds": [
+   "osm_117373974"
+  ],
+  "hour": 9
+ },
+ {
+  "id": "s_koregaon_09",
+  "seedRoadIds": [
+   "osm_1146956047"
+  ],
+  "hour": 9
+ }
+]
