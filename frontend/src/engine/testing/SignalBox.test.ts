@@ -15,6 +15,10 @@ import { describe, it, expect } from 'vitest';
 import type { RoadObject } from '../objects/types';
 import { StudyAreaExplorer, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroDemandTrip, type VehicleKind } from '../simulation/TrafficMicroSim';
+import { runSignalStructure } from '../simulation/RoadAnalysis';
+import { groupJunctions } from '../simulation/junctionGroups';
+import { startingDraft } from '../editing/junctionDraft';
+import { cycleOf } from '../simulation/junctionControl';
 
 const LAT0 = 18.52;
 const M_LAT = 1 / 111320;
@@ -112,4 +116,21 @@ describe('mapped signal box', () => {
     expect(signalised.length).toBe(2);
     expect(signalised.every(c => !c.box)).toBe(true);
   });
+
+  it('the junction editor starts from the box as one signal: its phases once, its cycle (not each member\'s phases one after another)', () => {
+    const sim = make(42);
+    for (let i = 0; i < 300 / STEP_S; i++) sim.step();
+    sim.startAnalysis();
+    for (let i = 0; i < 300 / STEP_S; i++) sim.step();
+    const st = runSignalStructure(sim);
+    const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['Northbound'], rangeMeters: 420, direction: 'both' });
+    const j = groupJunctions(area.network, new Map(roads.map(r => [r.id, r])), { signalPoints: signals }).find(x => x.nodeIds.length === 4)!;
+    const start = startingDraft(j, null, { ...st, linkVph: new Map(sim.analysisCounts()!.links.map(l => [l.id, 1])) } as never, area.network);
+    expect(start.source).toBe('last-run');
+    expect(start.run!.signals).toHaveLength(1);
+    const plan = sim.signalPlans()[0];
+    expect(start.draft.signal!.phases).toHaveLength(plan.greensS.length);
+    expect(Math.abs(cycleOf(start.draft.signal!) - plan.cycleS)).toBeLessThanOrEqual(plan.greensS.length);
+    expect(start.run!.alwaysGreen).toEqual([]);
+  }, 60_000);
 });

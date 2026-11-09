@@ -515,14 +515,19 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
  */
 export function runSignalStructure(sim: TrafficMicroSim, links: readonly { id: string; to: string }[] = sim.analysisCounts()?.links ?? []): { signalCycles: Map<string, number>; signalGreens: Map<string, number[]>; signalLinks: Map<string, { node: string; phase: number }> } {
   const plans = sim.signalPlans();
-  const signalCycles = new Map(plans.map(p => [p.nodeId, p.cycleS]));
-  const signalGreens = new Map(plans.map(p => [p.nodeId, [...p.greensS]]));
-  const signalLinks = new Map<string, { node: string; phase: number }>();
   const controls = sim['controls'];
+  // The members of a mapped signal box (applySignalBoxes) are one controller: one phase list, cycle and
+  // greens shared by all. They are recorded once, under the box (each member listed as a signal of its
+  // own made the editor's plan the box's phases once per member: 215 s instead of 150 s at the
+  // Babasaheb Ambedkar Marg / Veer Santaji Ghorpade box, docs/OVERHAUL.md §26)
+  const keyOf = (node: string) => { const b = controls?.get(node)?.box; return b ? `box:${b}` : node; };
+  const signalCycles = new Map(plans.map(p => [keyOf(p.nodeId), p.cycleS]));
+  const signalGreens = new Map(plans.map(p => [keyOf(p.nodeId), [...p.greensS]]));
+  const signalLinks = new Map<string, { node: string; phase: number }>();
   controls?.forEach((c, node) => {
     if (c.kind !== 'signal') return;
     // Links are listed in simulator order: the index of a link is its position
-    c.groups.forEach((phase, index) => { const l = links[index]; if (l && l.to === node) signalLinks.set(l.id, { node, phase }); });
+    c.groups.forEach((phase, index) => { const l = links[index]; if (l && l.to === node) signalLinks.set(l.id, { node: keyOf(node), phase }); });
   });
   return { signalCycles, signalGreens, signalLinks };
 }
