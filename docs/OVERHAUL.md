@@ -1746,3 +1746,43 @@ User's rows (as reported): 09:00 1,112 veh/h 3 km/h Severe; 14:00 1,152 Severe (
 **What would settle it:** the user's commit (`git rev-parse HEAD`), area size, and from the browser console after the rows are shown: `JSON.stringify({key: engineInstance.simMode.getState().timeline.key, signals: engineInstance.simMode.getState().signals?.status, range: engineInstance.simMode.getState().area?.rangeMeters, rows: engineInstance.simMode.getState().timeline.rows.map(r => [r.period, r.hourFactor, r.demandVph, r.result?.totalVph, r.result?.network?.signals])})`; or a copy of their `backend/twincity.db` and whether `backend/data/osm` exists on their machine.
 
 Label: BROWSER-VERIFIED reproduction runs (old commits, one seed each, 7 runs); cause statement rests on 2 of 2 signal settings agreeing at 2 km.
+
+## 26. Junction grouping and editing across the network
+
+§23 grouped and edited one reported junction. This section checks the grouping on **every** junction of the project database network (18,273 roads, copy of `backend/twincity.db`), fixes the faults found (`c5e1be4`, cherry-picked as `dbfecdc`), and re-checks editing in the browser with mapped signals loaded.
+
+### 26.1 Network-wide counts (whole DB network, headless node probe of `findJunctionGroups`)
+Before = code before `c5e1be4`; after = with it. "No signals" = no OSM signal positions; "signals" = the 552-point local OSM index.
+
+| | Before (no signals) | After (no signals) | After (signals) |
+|---|---|---|---|
+| Logical junctions | 11,002 | 10,895 | 10,889 |
+| Multi-node junctions | 3,841 | 3,889 | 3,886 |
+| Junctions with slip lanes | 164 | 151 | 151 |
+| Largest span (m) | 111.8 | 112.8 (roundabout rings) | 112.8 |
+| Span > 50 m (flag) | 53 | 36 | 39 |
+| More than 6 approaches | 11 | 9 | 9 |
+| Slip lane nearer another junction | 6 | 2 | 2 |
+| Junctions with a signalised node | – | – | 153 |
+| **Simulated junctions holding nodes of two logical junctions** | **108** | **0** | 0 |
+| **Junctions where two approaches shared one arm key** | **1,051** | **0** | 0 |
+
+Size distribution after (no signals): 1 node 7,006; 2 nodes 2,266; 3–4 1,263; 5–8 325; 9–12 34; 13+ 1. Approaches: 2 → 2,058; 3 → 5,972; 4 → 2,250; 5 → 452; 6+ → 88.
+
+Flags kept as review hints, not faults (after, no signals): service road inside a junction 1,054; exit that returns into the junction 83; graded (bridge/layer) piece inside 30; deck and ground members mixed 26; another junction within 30 m 1,158.
+
+### 26.2 Rules fixed (`simulation/junctionGroups.ts`, `junctionControl.ts`)
+1. **Slip lanes only at grade.** A `*_link` taken as a slip lane must not change level (no ramp to a flyover or underpass; Wakad's ramp to the bypass at layer −1 had been pulled into the ground junction).
+2. **Slips join groups formed before any slip is taken**, and only from ends that lead back into that junction; a junction is never grown from slip-lane ends alone (University Road / Baner Road: two slip pairs 45 m apart had formed a junction of nothing but slip ends). Result is order-independent.
+3. **Short stretches through plain nodes** join junction nodes (§23's enclosed-chain rule, network-wide).
+4. **Roundabout rings up to `ROUNDABOUT_MAX_M` = 130 m are one junction** (Rajgopalachari Chowk: the 50 m span cut the 75 m ring in two).
+5. **One simulated junction ⇒ one logical junction.** Nodes the simulator folds together (`SIM_FOLD_M` = 16 m, 30 m span) are merged into one logical junction: 108 simulated junctions held nodes of two logical junctions, so editing one changed the other's control.
+6. **Arm keys hold the side of the node.** A two-way road running on through a node gave its two approaches one key at 1,051 junctions, so an edit compiled one approach as the other. Old keys still match where unambiguous.
+
+Junction id of the §23 junction (Babasaheb Ambedkar Marg / Veer Santaji Ghorpade) changed `jx_961a3746` → `jx_cdfebe2b` (members changed); an edit saved under the old id no longer opens with it.
+
+### 26.3 Hand inspection (geometry plots, `vp-overhaul-shots/v3-junc-01…14.png`)
+14 junctions plotted with members, internal pieces, slips, approaches, exits and neighbouring junctions: Ambedkar / Veer Santaji Ghorpade; Karve Road / Paud Road; Satara Road / Shivaji Road / Shankarsheth Road; Sangamwadi Bridge; COEP Road flyover; Shankarshet underpass / Jedhe; University Road (before/after); Wakad flyover (before/after); Ambedkar flyover / JN Marg; Jangli Maharaj / Sambhaji Bridge; Bajirao Road / Central Boulevard; Rajgopalachari roundabout; a close pair of primary junctions; a staggered junction. Verdict counts: **8 correct, 3 fixed by the rules above (University Road, Wakad, Rajgopalachari), 3 questionable** (judgement calls on how far a large junction reaches; left as is). The per-junction verdicts of the 3 questionable ones were not recorded by the earlier agent.
+
+### 26.4 Tests — UNIT-TESTED
+`engine/testing/JunctionNetwork.test.ts` (12 tests, pass on `a59bc9a`, 2026-11-09): DB-roads fixture (`fixtures/junction_cases_db.json`) for Wakad, University Road, Rajgopalachari Chowk; every slip at grade; no node in two junctions and order independence; no simulated junction across two logical junctions; and editing invariants on **100 junctions drawn at random** from the Sangamwadi roads (no-op edit leaves every assigned link and every simulated control identical; an edit changes only its own junction's links and controls; every arm has its own keys; old keys compile; a banned turn is never routed by either router).
