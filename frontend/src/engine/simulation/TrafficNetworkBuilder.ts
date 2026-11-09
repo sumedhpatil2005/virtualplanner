@@ -69,6 +69,9 @@ function pointToSegmentDistance(
 /** OSM coordinates carry 7 decimals, so a node shared by two ways has the same key in both. */
 const vertexKey = (pt: readonly number[]) => `${pt[0].toFixed(7)},${pt[1].toFixed(7)}`;
 
+/** The same place on the ground (within about a millimetre), whatever the heights. */
+const samePlace = (a: readonly number[], b: readonly number[]) => Math.abs(a[0] - b[0]) < 1e-8 && Math.abs(a[1] - b[1]) < 1e-8;
+
 function sharedVertices(a: readonly (readonly number[])[], b: readonly (readonly number[])[]): Set<string> {
   const keysA = new Set(a.map(vertexKey));
   const shared = new Set<string>();
@@ -468,12 +471,16 @@ export class TrafficNetworkBuilder {
           });
 
           segSplits.forEach(pt => {
-            currentSegment.push(pt);
+            // A split at a shared vertex is the segment's own start point (joinAtSharedNodes
+            // records it at index s), already the last point here: pushing it again gave the
+            // edge ending there a zero-length last piece, and its end heading came out as
+            // atan2(0, 0) = due east whatever the road's direction (docs/OVERHAUL.md §28)
+            if (!samePlace(currentSegment[currentSegment.length - 1], pt)) currentSegment.push(pt);
             coordSegments.push(currentSegment);
             currentSegment = [pt];
           });
         }
-        currentSegment.push(p2);
+        if (!samePlace(currentSegment[currentSegment.length - 1], p2)) currentSegment.push(p2);
       }
       coordSegments.push(currentSegment);
 

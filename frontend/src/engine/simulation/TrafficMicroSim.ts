@@ -8,7 +8,8 @@ import { isAccessRestricted, RESTRICTED_ENTRY_S } from './accessRestriction';
 import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneConnector, type LanePose } from './LaneConnector';
 import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
 import type { Cardinal } from '../calibration/observedCounts';
-import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, type JunctionEditSpec, type TurnBans } from './junctionControl';
+import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, defaultEdit, type JunctionEditSpec, type TurnBans } from './junctionControl';
+import { groupJunctions } from './junctionGroups';
 
 /**
  * Microscopic traffic simulation on a study area.
@@ -241,6 +242,8 @@ export const OD_REFERENCE_LEVEL = 0.12;
 const SIGNAL_KERB_M = 1.2;
 /** A mapped signal this close to a junction controls it (m). */
 const SIGNAL_MATCH_M = 35;
+/** A piece this short (m) between a signalised junction and another controlled one may lie inside one mapped signal box (applySignalBoxes; junctionGroups joins pieces up to 30 m). */
+const BOX_PIECE_M = 30;
 
 /** Assumed saturation flow per lane by road class (veh/h), used to estimate demand at the area edge. */
 export const LANE_CAPACITY_VPH: Record<string, number> = { highway: 1800, arterial: 1400, collector: 1000, local: 600 };
@@ -588,6 +591,12 @@ interface Control {
   allRedS?: number;
   /** An edited priority junction: the incoming links with priority (else by road class, majorRank). */
   majorLinks?: Set<number>;
+  /**
+   * One controller over several simulated junctions (a mapped signal box, see
+   * applySignalBoxes): the logical junction's id. Members share cycle, greens and
+   * offset; pieces inside the box are never stopped (group -1).
+   */
+  box?: string;
 }
 
 interface Source {
@@ -835,6 +844,7 @@ export class TrafficMicroSim {
 
     this.buildControls(options.signalPoints ?? null);
     this.applyPlacedControls(options.junctions ?? []);
+    if (options.signalPoints?.length) this.applySignalBoxes(options.signalPoints, roads, options.junctionEdits);
     this.applyJunctionEdits(net, options.junctionEdits, cost);
     this.signalLinks = this.links.filter(l => this.controls.get(l.to)?.kind === 'signal').map(l => l.index);
     this.buildSourcesAndSinks(net, included, roads);
@@ -920,6 +930,67 @@ export class TrafficMicroSim {
         majorRank: null, offset: 0, busyUntil: 0, busyFrom: -1,
         cycleS: Math.max(MIN_SIGNAL_CYCLE_S, Number.isFinite(junction.signalTiming) ? junction.signalTiming : SIGNAL_CYCLE_S),
         fixed: Number.isFinite(junction.signalTiming) });
+    }
+  }
+
+  /**
+   * Mapped signal boxes run from one controller (docs/OVERHAUL.md §28). OSM maps
+   * a signalised crossing of two divided or one-way pairs as a box of nodes 10-15 m
+   * apart with a traffic_signals node at several of its stop lines. Joined only
+   * up to MAX_JUNCTION_SPAN_M, such a box became several simulated junctions,
+   * each with its own phases, linked by 13-14 m pieces: a movement through the
+   * box met a red at an internal stop line (at the Jayantarao Tilak Bridge /
+   * Congress Bhavan Path box the bridge's northbound green never overlapped the
+   * green of the piece after it, 0 s a cycle), and a 12 m bus, which cannot wait
+   * on a 14 m piece clear of the junction behind, stood at the bridge's stop line
+   * for the whole run. Here the logical junction (junctionGroups: the grouping the
+   * junction editor uses) that carries a mapped signal and covers two or more
+   * simulated junctions runs as one controller, as the editor's default plan
+   * does: one phase per approach entering the box, pieces inside the box never
+   * stopped, a common cycle and offset; Webster retimes it as one junction.
+   * Applied only when every link entering a covered junction from outside is an
+   * approach of the logical junction (else that junction keeps its own control).
+   * A user edit of the same junction overrides this (applyJunctionEdits).
+   */
+  private applySignalBoxes(signalPoints: readonly (readonly [number, number])[], roads: ReadonlyMap<string, DrivableObject>, edits: readonly JunctionEditSpec[] | undefined) {
+    // Candidates: signalised junctions with a short piece to another controlled junction
+    const near = new Set<string>();
+    for (const l of this.links) {
+      if (l.length > BOX_PIECE_M || l.from === l.to) continue;
+      const a = this.controls.get(l.from), b = this.controls.get(l.to);
+      if (a && b && (a.kind === 'signal' || b.kind === 'signal')) { near.add(l.from); near.add(l.to); }
+    }
+    if (!near.size) return;
+    const edited = new Set((edits ?? []).flatMap(e => e.nodeKeys));
+    const membersOf = (id: string) => this.junctionMembers.get(id) ?? [id];
+    const done = new Set<string>();
+    const linkViews = this.links.map(l => ({ index: l.index, id: l.id, from: l.from, to: l.to, roadId: l.roadId, lanes: l.lanes.length }));
+    // The whole area's grouping, as the junction editor sees it (a grouping limited to a small
+    // radius round one node is partial: it can split a box)
+    const byNode = new Map<string, ReturnType<typeof groupJunctions>[number]>();
+    for (const j of groupJunctions(this.subnet, roads, { signalPoints })) for (const n of j.nodeIds) byNode.set(this.junction(n), j);
+    for (const node of [...near].sort()) {
+      if (done.has(node)) continue;
+      const found = byNode.get(node);
+      for (const j of found ? [found] : []) {
+        if (!j.signalised || done.has(j.id) || j.nodeKeys.some(k => edited.has(k))) continue;
+        done.add(j.id);
+        const spec = { ...defaultEdit(j), asRun: false };
+        const compiled = compileJunctionEdits(this.subnet, [spec]);
+        const { setups } = simJunctionSetups(compiled, linkViews, membersOf);
+        if (setups.length < 2 || !spec.signal) continue;
+        // Every link entering a covered junction from outside must be one of the box's approaches
+        const inside = new Set(setups.map(x => x.simNode));
+        const known = compiled[0].approachOfEdge, chain = compiled[0].chainOfEdge;
+        if (this.links.some(l => inside.has(l.to) && !inside.has(l.from) && !known.has(l.id) && !chain.has(l.id))) continue;
+        const cycleS = setups[0].cycleS;
+        const offset = this.signalOffsetUnit(j.id) * cycleS;
+        for (const x of setups) {
+          done.add(x.simNode);
+          this.controls.set(x.simNode, { kind: 'signal', groups: x.phaseOfLink, phases: x.greensS.length, cycleS, greens: [...x.greensS],
+            majorRank: null, offset, busyUntil: 0, busyFrom: -1, box: j.id });
+        }
+      }
     }
   }
 
@@ -1583,14 +1654,22 @@ export class TrafficMicroSim {
   }
 
   private websterRetime(assigned: Float64Array) {
-    this.controls.forEach(c => {
+    // A signal box's members (applySignalBoxes) are one controller: their approaches are timed together
+    const units = new Map<string, Control[]>();
+    this.controls.forEach((c, node) => {
       if (c.kind !== 'signal' || c.fixed) return;
-      const phases = c.phases ?? 2;
+      const key = c.box ?? node;
+      (units.get(key) ?? units.set(key, []).get(key)!).push(c);
+    });
+    units.forEach(cs => {
+      const c0 = cs[0];
+      const phases = c0.phases ?? 2;
       const flow = new Array(phases).fill(0);
       const ratio = new Array(phases).fill(0);
-      // Approaches of a phase: inbound links grouped into it; carriageways of one approach add up
+      // Approaches of a phase: inbound links grouped into it (pieces inside a box, group -1, are never stopped);
+      // carriageways of one approach add up
       const byPhase = new Map<number, number[]>();
-      c.groups.forEach((g, i) => { if (!byPhase.has(g)) byPhase.set(g, []); byPhase.get(g)!.push(i); });
+      for (const c of cs) c.groups.forEach((g, i) => { if (g < 0) return; if (!byPhase.has(g)) byPhase.set(g, []); byPhase.get(g)!.push(i); });
       byPhase.forEach((links, g) => {
         if (g >= phases) return;
         // Approaches within the phase: carriageways arriving from within 35 degrees of each other
@@ -1607,12 +1686,18 @@ export class TrafficMicroSim {
           if (wa[a] > 0) ratio[g] = Math.max(ratio[g], q / indoHcmSaturationFlow(wa[a]));
         });
       });
-      if (!flow.some(q => q > 0)) { delete c.greens; delete c.design; return; }
+      if (!flow.some(q => q > 0)) {
+        // A box keeps its plan's own greens; a plain signal goes back to equal slots
+        if (!c0.box) for (const c of cs) { delete c.greens; delete c.design; }
+        return;
+      }
       const design = websterTiming(ratio.map(y => ({ flow: y, saturationFlow: 1 })), { amberS: SIGNAL_AMBER_S, allRedS: SIGNAL_ALL_RED_S });
-      c.cycleS = design.cycleS;
-      c.greens = design.greensS;
-      c.design = design;
-      if (c.offset >= c.cycleS) c.offset %= c.cycleS;
+      for (const c of cs) {
+        c.cycleS = design.cycleS;
+        c.greens = [...design.greensS];
+        c.design = design;
+        if (c.offset >= c.cycleS) c.offset %= c.cycleS;
+      }
     });
   }
 
@@ -1637,7 +1722,8 @@ export class TrafficMicroSim {
    * project's own timing (fixed) are left as they are.
    */
   private coordinateCloseSignals(assigned: Float64Array) {
-    const free = (n: string) => { const c = this.controls.get(n); return c?.kind === 'signal' && !c.fixed ? c : null; };
+    // A signal box (applySignalBoxes) is one controller already: its members are not offset against each other
+    const free = (n: string) => { const c = this.controls.get(n); return c?.kind === 'signal' && !c.fixed && !c.box ? c : null; };
     const shortLinks = this.links.filter(l => l.length < COORDINATED_LINK_M && l.from !== l.to && free(l.from) && free(l.to));
     if (!shortLinks.length) return;
     const nbrs = new Map<string, Set<string>>();
@@ -2268,7 +2354,10 @@ export class TrafficMicroSim {
     const link = this.links[linkIndex];
     const c = this.controls.get(link.to);
     if (!c || c.kind !== 'signal') return Infinity;
-    const { start, green, cycle } = this.phaseWindow(c, c.groups.get(linkIndex) ?? 0);
+    const group = c.groups.get(linkIndex) ?? 0;
+    // A piece inside a box or an edited junction is never stopped (phaseWindow gives it the whole cycle)
+    if (group < 0) return Infinity;
+    const { start, green, cycle } = this.phaseWindow(c, group);
     const local = ((at + c.offset) % cycle - start + cycle) % cycle;
     return local < green ? green - local : 0;
   }
