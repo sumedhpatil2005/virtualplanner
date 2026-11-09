@@ -2071,3 +2071,7 @@ Code: vp-wt-fix3 on integration head 984a0e4 plus d90711c, 155913a, 01f158b, ccc
 | vite build | built, 1,919 modules (chunk-size warning only) |
 
 Previous full run (§ Phase 3, e8a1ec8): 557 passed, 6 skipped. Not run here: the whole-database edit harness for every operation (only delete, 60 samples, 0 violations, §27.7) and the opt-in validation harness (VAL24=1).
+
+### 30.1 Final integrated run, 2026-11-10 02:00 IST (code 7cc1c46)
+- vitest file by file: 76 files, 572 passed, 6 skipped, 0 failed. tsc 0 errors; oxlint 0 errors (5 old warnings); vite build ok.
+- Merge into main: NOT done. Acceptance not met: §24 validation fails every TAG M3.1 test (GEH<5 on 0 of 15 counts; river screen line −30%; day speeds too fast). See §24.7 for proposed calibrations (not applied) and §28/§29 for remaining model and UI issues.
