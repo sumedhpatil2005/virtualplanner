@@ -1,3 +1,4 @@
+import { osmRoadClass } from '../simulation/networkCorrections';
 import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory, RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
@@ -854,14 +855,8 @@ export class EditingEngine {
       }
       const highwayType = tags.highway || 'local';
 
-      let roadClass: 'highway' | 'arterial' | 'collector' | 'local' = 'local';
-      if (highwayType === 'motorway' || highwayType === 'trunk' || highwayType === 'motorway_link') {
-        roadClass = 'highway';
-      } else if (highwayType === 'primary' || highwayType === 'secondary' || highwayType === 'primary_link') {
-        roadClass = 'arterial';
-      } else if (highwayType === 'tertiary' || highwayType === 'tertiary_link') {
-        roadClass = 'collector';
-      }
+      // A slip road or ramp (*_link) takes its parent road's class (trunk_link and secondary_link used to fall through to local)
+      const roadClass = osmRoadClass(highwayType);
 
       // junction=roundabout (and circular) implies oneway=yes unless the way says otherwise (OSM wiki Tag:junction=roundabout)
       const isOneWay = tags.oneway === 'yes' || tags.oneway === '1' || tags.oneway === '-1' || highwayType === 'motorway' || highwayType === 'motorway_link'

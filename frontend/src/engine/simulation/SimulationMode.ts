@@ -693,6 +693,7 @@ export class SimulationMode {
       correctionsEnabled: this.correctionsEnabled,
       applied: this.lastCorrectionReport?.applied.length ?? 0,
       impliedOneWay: this.lastCorrectionReport?.impliedOneWay.length ?? 0,
+      impliedClass: this.lastCorrectionReport?.impliedClass.length ?? 0,
       signalTiming: this.signalTiming,
     };
   }

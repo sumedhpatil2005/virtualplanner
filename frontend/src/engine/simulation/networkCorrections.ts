@@ -6,7 +6,10 @@
  *
  * Also applies OSM tag implications the importer used to miss on roads
  * imported before it was fixed: junction=roundabout (or circular) implies
- * oneway=yes unless the way says oneway=no (OSM wiki, Tag:junction=roundabout).
+ * oneway=yes unless the way says oneway=no (OSM wiki, Tag:junction=roundabout);
+ * a trunk_link or secondary_link takes its parent's class like every other
+ * *_link (the importer gave motorway_link highway, primary_link arterial,
+ * tertiary_link collector, but trunk_link and secondary_link local).
  */
 import type { DrivableObject } from './StudyAreaExplorer';
 import type { RoadObject } from '../objects/types';
@@ -43,6 +46,36 @@ export interface CorrectionReport {
   impliedOneWay: string[];
   /** Lane corrections not applied because the user set that road's lanes in Build. */
   userOverridden: string[];
+  /** Slip roads (trunk_link, secondary_link) imported as local that take their parent's class. */
+  impliedClass: string[];
+}
+
+export type RoadClassName = 'highway' | 'arterial' | 'collector' | 'local';
+
+/**
+ * Road class from the OSM highway tag, as the importer assigns it. A slip road
+ * or ramp (*_link) takes its parent's class (OSM wiki, Key:highway: "link
+ * roads" are classified as the road they serve).
+ */
+export function osmRoadClass(highway: string | undefined): RoadClassName {
+  const hw = (highway ?? '').replace(/_link$/, '');
+  if (hw === 'motorway' || hw === 'trunk') return 'highway';
+  if (hw === 'primary' || hw === 'secondary') return 'arterial';
+  if (hw === 'tertiary') return 'collector';
+  return 'local';
+}
+
+/**
+ * The class a road imported before the importer gave trunk_link and
+ * secondary_link their parent's class should have, or null when its stored
+ * class stands. Only the importer's old value (local) is replaced: a class the
+ * user picked in Build is kept (one who set such a road to local explicitly
+ * is indistinguishable from the old import, a stated limitation).
+ */
+export function impliedRoadClass(r: RoadObject): RoadClassName | null {
+  const hw = (r.osmProvenance?.originalTags as Record<string, string> | undefined)?.highway;
+  if ((hw !== 'trunk_link' && hw !== 'secondary_link') || (r.roadClass ?? 'local') !== 'local') return null;
+  return osmRoadClass(hw);
 }
 
 const ACTIONS: readonly CorrectionAction[] = ['reverse', 'set_two_way', 'set_oneway', 'set_lanes', 'set_roundabout'];
@@ -121,7 +154,7 @@ export function impliesOneWay(tags: Record<string, string> | undefined): boolean
  */
 export function applyNetworkCorrections(roads: readonly DrivableObject[], layer: NetworkCorrectionLayer | null, enabled = true):
   { roads: DrivableObject[]; report: CorrectionReport } {
-  const report: CorrectionReport = { applied: [], notFound: [], impliedOneWay: [], userOverridden: [] };
+  const report: CorrectionReport = { applied: [], notFound: [], impliedOneWay: [], userOverridden: [], impliedClass: [] };
   const byWay = new Map<number, NetworkCorrection[]>();
   if (layer && enabled) for (const c of layer.corrections) if (c.enabled !== false) {
     if (!byWay.has(c.osm_way_id)) byWay.set(c.osm_way_id, []);
@@ -137,6 +170,8 @@ export function applyNetworkCorrections(roads: readonly DrivableObject[], layer:
       r = setOneWay(r, userLanes ? Math.max(1, r.laneCount) : oneWayLanes(r));
       report.impliedOneWay.push(r.id);
     }
+    const cls = impliedRoadClass(r);
+    if (cls) { r = { ...r, roadClass: cls }; report.impliedClass.push(r.id); }
     const way = osmWayOf(r);
     const fixes = way === undefined ? undefined : byWay.get(way);
     if (fixes) for (const c of fixes) {

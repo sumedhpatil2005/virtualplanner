@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { RoadObject } from '../objects/types';
-import { applyNetworkCorrections, validateCorrectionLayer, impliesOneWay, type NetworkCorrectionLayer, type NetworkCorrection } from '../simulation/networkCorrections';
+import { applyNetworkCorrections, validateCorrectionLayer, impliesOneWay, osmRoadClass, type NetworkCorrectionLayer, type NetworkCorrection } from '../simulation/networkCorrections';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
 
@@ -63,6 +63,18 @@ describe('network corrections', () => {
     expect(applyNetworkCorrections([r], layer, false).roads[0]).toBe(r);
     const disabled = layerOf([{ osm_way_id: 3, action: 'set_two_way', params: { lanes_forward: 2, lanes_backward: 2 }, enabled: false }]);
     expect(applyNetworkCorrections([r], disabled).roads[0]).toBe(r);
+  });
+
+  it('a slip road or ramp (*_link) takes its parent road\'s class; trunk_link and secondary_link imported as local are corrected, a class set in Build is kept', () => {
+    // Every *_link as its parent (the importer gave trunk_link and secondary_link local, unlike motorway_link, primary_link, tertiary_link)
+    for (const [hw, cls] of [['motorway', 'highway'], ['trunk', 'highway'], ['primary', 'arterial'], ['secondary', 'arterial'], ['tertiary', 'collector'], ['residential', 'local'], ['service', 'local']] as const) {
+      expect(osmRoadClass(hw), hw).toBe(cls);
+      if (!['residential', 'service'].includes(hw)) expect(osmRoadClass(`${hw}_link`), `${hw}_link`).toBe(cls);
+    }
+    const imported = (id: number, hw: string, cls: RoadObject['roadClass']) => ({ ...osmRoad(id, [[0, 0], [30, 0]], { highway: hw }, true), roadClass: cls });
+    const { roads, report } = applyNetworkCorrections([imported(11, 'trunk_link', 'local'), imported(12, 'secondary_link', 'local'), imported(13, 'secondary_link', 'collector'), imported(14, 'primary_link', 'arterial'), imported(15, 'residential', 'local')], null);
+    expect(roads.map(r => (r as RoadObject).roadClass)).toEqual(['highway', 'arterial', 'collector', 'arterial', 'local']);
+    expect(report.impliedClass).toEqual(['osm_11', 'osm_12']);
   });
 
   it('treats junction=roundabout as one-way unless the way says oneway=no (OSM wiki)', () => {
