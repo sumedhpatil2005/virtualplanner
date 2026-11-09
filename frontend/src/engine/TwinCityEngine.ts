@@ -1139,7 +1139,7 @@ export class TwinCityEngine {
       return;
     }
 
-    const snap = this.editing.getSnapManager().findSnap([mouseLng, mouseLat, mouseAlt]);
+    const snap = this.editing.findSnap([mouseLng, mouseLat, mouseAlt]);
     this.editing.setActiveSnap(snap.type !== 'none' ? snap : null);
 
     const activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];

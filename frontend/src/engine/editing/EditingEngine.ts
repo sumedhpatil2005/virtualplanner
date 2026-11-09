@@ -3,7 +3,7 @@ import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, 
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
-import { SnapManager, type SnapResult } from './SnapManager';
+import { SnapManager, SAME_LEVEL_SNAP_M, type SnapResult } from './SnapManager';
 import { OverpassCancelledError, OverpassClient } from './OverpassClient';
 import { LocalOsmIndex } from './LocalOsmIndex';
 import { findNearestTrack } from '../objects/stationAlignment';
@@ -136,10 +136,20 @@ export class EditingEngine {
     return this.drawingPoints;
   }
 
+  /**
+   * The snap for a point of the drawing in the current mode. A road or a
+   * junction is drawn on the ground (the click picks the ground): it snaps only
+   * to points at the ground's level, not to a flyover deck above (§27).
+   */
+  public findSnap(point: [number, number, number]): SnapResult {
+    const grounded = this.activeMode === 'draw_road' || this.activeMode === 'draw_junction';
+    return this.snapManager.findSnap(point, undefined, grounded ? { sameLevelM: SAME_LEVEL_SNAP_M } : {});
+  }
+
   public addDrawingPoint(point: [number, number, number]) {
     // A throttled hover preview may still describe an older pointer location.
     // A study-area boundary is not a road: it does not snap to road points.
-    const snap = this.activeMode === 'import_osm' ? null : this.snapManager.findSnap(point);
+    const snap = this.activeMode === 'import_osm' ? null : this.findSnap(point);
     const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
 
     // A double-click also fires two single clicks at the same spot; ignore

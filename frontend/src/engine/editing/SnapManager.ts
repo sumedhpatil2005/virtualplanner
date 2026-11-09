@@ -14,6 +14,20 @@ export interface SnapResult {
   description?: string;
 }
 
+/**
+ * A drawn point snaps only to road points at its own level (docs/OVERHAUL.md §27):
+ * a ground road clicked within the snap radius (about 16 m) of a flyover deck
+ * vertex used to join the deck in mid-air. Points within this height (m) of the
+ * clicked point count as the same level: well under the clearance under a deck
+ * (about 4.5 m and more), so the foot of a ramp still snaps.
+ */
+export const SAME_LEVEL_SNAP_M = 2.5;
+
+export interface SnapOptions {
+  /** Snap only to points whose height differs from the clicked point's by at most this (m). Absent: any level. */
+  sameLevelM?: number;
+}
+
 export class SnapManager {
   private objectManager: ObjectManager;
   // Snap tolerance in degrees (~18m at equator, ~12m at mid-latitudes)
@@ -30,9 +44,12 @@ export class SnapManager {
    */
   public findSnap(
     rawPoint: [number, number, number],
-    excludeObjId?: string
+    excludeObjId?: string,
+    options: SnapOptions = {}
   ): SnapResult {
     const objects = this.objectManager.getAll();
+    const level = rawPoint[2] || 0;
+    const atLevel = (z: number) => options.sameLevelM === undefined || Math.abs((z || 0) - level) <= options.sameLevelM;
     let bestResult: SnapResult = {
       point: rawPoint,
       type: 'none'
@@ -46,7 +63,7 @@ export class SnapManager {
       if (obj.type === 'junction') {
         const jCoords = obj.coordinates;
         const d = this.distanceDeg(rawPoint, jCoords);
-        if (d < this.vertexSnapRadius && d < minDistance) {
+        if (d < this.vertexSnapRadius && d < minDistance && atLevel(jCoords[2] || 0)) {
           minDistance = d;
           bestResult = {
             point: [jCoords[0], jCoords[1], jCoords[2] || 0],
@@ -81,7 +98,7 @@ export class SnapManager {
       // Check Start Vertex
       const startPt = coords[0];
       const dStart = this.distanceDeg(rawPoint, startPt);
-      if (dStart < this.vertexSnapRadius && dStart < minDistance) {
+      if (dStart < this.vertexSnapRadius && dStart < minDistance && atLevel(startPt[2] || baseElevation)) {
         minDistance = dStart;
         bestResult = {
           point: [startPt[0], startPt[1], startPt[2] || baseElevation],
@@ -99,7 +116,7 @@ export class SnapManager {
       // Check End Vertex
       const endPt = coords[coords.length - 1];
       const dEnd = this.distanceDeg(rawPoint, endPt);
-      if (dEnd < this.vertexSnapRadius && dEnd < minDistance) {
+      if (dEnd < this.vertexSnapRadius && dEnd < minDistance && atLevel(endPt[2] || baseElevation)) {
         minDistance = dEnd;
         bestResult = {
           point: [endPt[0], endPt[1], endPt[2] || baseElevation],
@@ -118,7 +135,7 @@ export class SnapManager {
       for (let i = 1; i < coords.length - 1; i++) {
         const midPt = coords[i];
         const dMid = this.distanceDeg(rawPoint, midPt);
-        if (dMid < this.vertexSnapRadius && dMid < minDistance) {
+        if (dMid < this.vertexSnapRadius && dMid < minDistance && atLevel(midPt[2] || baseElevation)) {
           minDistance = dMid;
           bestResult = {
             point: [midPt[0], midPt[1], midPt[2] || baseElevation],
@@ -164,11 +181,11 @@ export class SnapManager {
         // Ignore if very close to endpoints (already handled above)
         if (t < 0.05 || t > 0.95) continue;
 
-        if (distance < this.edgeSnapRadius && distance < minDistance) {
+        const alt1 = p1[2] || baseElevation;
+        const alt2 = p2[2] || baseElevation;
+        const interpolatedAlt = alt1 + t * (alt2 - alt1);
+        if (distance < this.edgeSnapRadius && distance < minDistance && atLevel(interpolatedAlt)) {
           minDistance = distance;
-          const alt1 = p1[2] || baseElevation;
-          const alt2 = p2[2] || baseElevation;
-          const interpolatedAlt = alt1 + t * (alt2 - alt1);
 
           bestResult = {
             point: [closestPt[0], closestPt[1], interpolatedAlt],

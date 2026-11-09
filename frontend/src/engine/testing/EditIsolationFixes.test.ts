@@ -4,6 +4,7 @@ import path from 'path';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, deleteWithHistory } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
+import { SAME_LEVEL_SNAP_M } from '../editing/SnapManager';
 import { commitRoadFieldEdit } from '../editing/roadEdits';
 import type { CityObject, RoadObject } from '../objects/types';
 import { canon, contentChanged, keyOf, loadNetwork, snap } from './editHarness';
@@ -145,5 +146,38 @@ describe('a road raised as an approach and lowered again has its own points back
     expect((om.getById('osm_1118894175') as RoadObject).coordinates.length).toBe(n0);
     expect(contentChanged(s0, snap(om))).toEqual([]);
     expect(keyOf(om)).toBe(k0);
+  });
+});
+
+describe('a drawn road snaps only to points at its own level', () => {
+  it('a ground click 10 m from a flyover deck vertex does not join the deck in mid-air; the foot of the ramp and a ground road still snap; a flyover drawing still snaps to the deck', () => {
+    // A deck at 6.5 m from (100, 0), its approach ramp coming down to the ground at (0, 0); a ground road ending at (100, -40)
+    // (drawn by hand with these heights: imported bridges get their heights from §21's elevation pass)
+    const deck = road('deck', [pt(100, 0, 6.5), pt(200, 0, 6.5)]);
+    const ramp = road('ramp', [pt(0, 0, 0), pt(50, 0, 3.2), pt(100, 0, 6.5)]);
+    const ground = road('ground', [pt(100, -200), pt(100, -40)]);
+    const { om, editing } = setup([deck, ramp, ground]);
+    expect(om.getById('deck')!.coordinates[0][2]).toBe(6.5);
+    expect((om.getById('ramp') as RoadObject).coordinates[0][2]).toBe(0);
+    editing.setMode('draw_road');
+    // 10 m from the deck vertex (inside the ~16 m vertex snap radius), on the ground
+    const nearDeck = editing.findSnap(pt(100, 10));
+    expect(['deck', 'ramp']).not.toContain(nearDeck.targetObjId);
+    expect(nearDeck.point[2]).toBe(0);
+    // 8 m from the ramp's foot (at 0 m) snaps to it
+    const foot = editing.findSnap(pt(0, 8));
+    expect(foot.targetObjId).toBe('ramp');
+    expect(foot.point).toEqual(pt(0, 0, 0));
+    // A ground road's end 6 m away still snaps
+    const g = editing.findSnap(pt(104, -36));
+    expect(g.targetObjId).toBe('ground');
+    // Drawing a road through it: no point of the new road lies at deck height
+    editing.addDrawingPoint(pt(100, 10));
+    expect(editing.getDrawingPoints()[0][2]).toBe(0);
+    editing.clearDrawing();
+    // A flyover is drawn to meet decks: it keeps the any-level snap
+    editing.setMode('draw_flyover');
+    expect(['deck', 'ramp']).toContain(editing.findSnap(pt(100, 10)).targetObjId);
+    expect(editing.findSnap(pt(100, 10)).point[2]).toBeGreaterThan(SAME_LEVEL_SNAP_M);
   });
 });
