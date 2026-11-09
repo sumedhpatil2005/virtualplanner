@@ -1336,3 +1336,363 @@ Measured in the browser (earlier run of this pass; not repeated in this run):
   NW −78 s, SE +7.5 s, N +227 s. Comparison inputs matched; undo and redo exact; the edit persisted across a reload.
 - UI: the centred tool bar ran under a 22rem / 27rem side panel at 1,600 px and covered the junction editor's title;
   fixed in `7cc3057` (compact layout below 1,700 / 1,830 px).
+
+## 24. Validation against observations
+
+Question: how close is the model to measured Pune traffic by the usual acceptance tests, and why does the volume on a bridge depend on which road was selected, and why are morning and evening the same? Nothing was fitted to the observations and **no default was changed**. Every calibration in 24.6–24.7 is **PROPOSED, NOT APPLIED**.
+
+**Labels.**
+- **Model numbers: headless, not browser-verified.** They come from headless runs of the app's own analysis code: the opt-in harness `frontend/src/engine/testing/NetworkValidation.test.ts` (`VAL24=1`, skipped in the normal suite) drives `SimulationMode`, the code behind the Simulate panel, on a copy of the project database with a backend on port 8211. None of it was checked on the page.
+- **Observations** are measured real-world data, graded A/B/C as in 24.1.
+- **Hypothetical rows** (24.6) are model outputs with one option switched on in the harness. They are estimates of what a change would do, not results of the shipped model.
+
+**Code and signal state of these runs (read this before using the numbers).**
+- The runs were made on 2026-11-09 between 15:00 and 16:46 IST in the worktree `vp-wt-val2` at `6be175b` (= `1941fc5` + harness hooks). That code **includes the heading fix** (`71d55d0`). It does **not** include `e8a1ec8` (signal boxes vs editing, arms within 35° grouped in box phases, two covered junctions kept as complete junctions) or `a6e30e7` (`trunk_link` / `secondary_link` take their parent's class instead of `local`). `47f93fa` (drawing snaps) does not affect analysis.
+- The task brief for this section said the runs had no OSM index and used estimated signals. **The run records say otherwise.** The backend was started with `TWINCITY_OSM_INDEX` set to the main checkout's `backend/data/osm/osm_index.db`, which is byte-identical (`cmp`) to `/workspace/work/vp-int-e2e/db_osm_index.db` (552 signals). The backend log shows `/api/osm/signals` requests answered 200. In **168 of 182** recorded runs the harness recorded `signals: ready` with a mapped-signal count (20–143 per area). In **14 runs** the signal request failed (`signals: error`, mostly with the backend overloaded: `/api/objects/batch` 500), and the app then **estimated** signals from road classes. Those runs are `c_rajaram_10`, `s_sinhagad_03`, `s_sinhagad_09`, `x_mhatre_18_r3000`, `x_rajaram_10_r2000`, `x_rajaram_10_r3000`, `x_yerwada_18_r3000`, `x_wadia_11_r3000`, `x_sambhaji_via_lbs`, `d_nagar`, `d_baner`, `d_koregaon`, `a_baner` and `a_wakad`.
+- What could change on the current head (`ee77ef2`) is listed in 24.8.
+
+### 24.1 Observations used (`backend/data/observed_validation/pune_network_validation_v1.json`)
+
+Grades from the file: **A** = recent (2023 or later) direct measurement at an unambiguous location. **B** = direct measurement but older (before 2020) or quoted second-hand, at a clear location. **C** = old and/or the location or extent is inferred, or the figure is an aggregate.
+
+| Source | What | Where | Date | Method | Grade | URL |
+|---|---|---|---|---|---|---|
+| PMC Comprehensive Mobility Plan for Pune (2008), Table 4.1 and annexure Tables 6 and 8 | Peak-hour classified counts, both directions | 9 river crossings (screen line 2) and 3 rail crossings (screen line 1) mapped to OSM ways. 7 more screen-line-1 sites could not be tied to a way and are not used. | 2008 survey | Manual classified volume counts, 12 h (some 24 h) | B; C for Sangam, Yerwada + Ambedkar (grouped today's crossings) and the ROB near Sancheti Hospital | https://data.opencity.in/dataset/bb6b3dc4-6ff5-42bf-b41f-3d823a4e8ef8/resource/e883b43e-aaa8-4411-bfa8-860f05154f5d/download/9d5dca7b-5ddb-4c91-b9f8-cae4acbef71c.pdf |
+| CMP 2008 Table 4.10 | Peak-hour journey speed, each direction | 8 corridors (of 19 surveyed) | 2008 | Test car, speed and delay survey | B (C for Koregaon Road) | same PDF |
+| Thakur et al. (2017), IJETT 47(2):91–97 | Hourly classified counts | Nagar Road at Gunjan Chowk, both directions | January and March 2017 | Manual counts 08:00–20:00 | B | http://www.ijettjournal.org/assets/year/2017/volume-47/number-2/IJETT-V47P215.pdf |
+| TraffiCure "Best time to leave – Pune" (Lepton Software with Pune City Traffic Police; Google Maps data) | Average speed by hour of day, 00–23 h | Citywide (116 corridors) and 5 named corridors | Data updated 2026-08-19 | Probe (GPS) travel speed over the route. Corridor geometry not published, only end-point names. | A for the measurement; C for our corridor mapping | https://trafficure.com/tools/best-time-to-leave-pune (corridor pages under the same path) |
+| TomTom Traffic Index 2025, Pune | Citywide time per 10 km: morning rush 38 min 13 s (15.7 km/h), evening rush 41 min 40 s (14.4 km/h) | Whole city network | 2025, published 2026-01-22 | Floating-car data | C (aggregate) | https://www.tomtom.com/traffic-index/city/pune/ |
+| UK DfT TAG unit M3.1 (May 2026), Tables 2–3 | Acceptance criteria (not an observation) | — | 2026-05 | Standard practice | — | https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf |
+
+### 24.2 Acceptance criteria and verdicts
+
+Criteria (TAG M3.1 Tables 2–3; FHWA Traffic Analysis Toolbox Vol. III uses the same targets):
+- **Link flows:** GEH < 5 at more than 85% of count sites.
+- **Flow criterion:** modelled flow within 100 veh/h of the count below 700, within 15% from 700 to 2,700, and within 400 veh/h above 2,700, at more than 85% of sites.
+- **Screen lines:** totals within 5%.
+- **Journey times or speeds:** within 15% on more than 85% of routes.
+
+GEH = √(2 (M − C)² / (M + C)).
+
+**The model does NOT currently meet any of these criteria.**
+
+| Criterion | Required | Model (assigned volume, 2 km area round each site) | Model (simulated, got through) | Verdict |
+|---|---|---|---|---|
+| GEH < 5 | > 85% of sites | 0 of 15 (0%); mean GEH 32.3 | 0 of 14 (0%); mean GEH 68.9 | **FAIL** |
+| GEH < 10 (looser, for reference) | — | 2 of 15 | 0 of 14 | — |
+| Flow criterion | > 85% | 0 of 15 | 0 of 14 | **FAIL** |
+| River screen line (9 crossings) | within 5% | 54,504 vs 78,357 veh/h (−30%) | — | **FAIL** |
+| Section speeds within 15% (simulated, 21 corridor-hours) | > 85% | — | 7 of 21 (33%), MAPE 32%, bias −15% | **FAIL** |
+| Corridor assignment speeds within 15% (5 TraffiCure corridors × 24 h) | > 85% | 23 of 120 (19%), MAPE 58%, bias +45% | — | **FAIL** |
+| Network speed by hour vs TraffiCure citywide (mean of 10 areas, 9 hours) | > 85% | 1 of 9 hours within 15% (09:00), MAPE 35%, bias +35% | — | **FAIL** |
+
+Context for the counts: TAG's criteria assume counts from the model year, and these counts are from 2008 and 2017. A failure here is therefore indicative, not a precise error. Even so, traffic growth since 2008 would make 2026 flows **higher**, and the model is mostly **below** the 2008 counts. The speed observations are from 2025–2026 and need no such allowance.
+
+**Hand check of the analysis arithmetic** (`analyze_validation.py`, re-run on 2026-11-09). Three rows of 24.3 were recomputed by hand from `counts.jsonl`:
+- **Shivaji Bridge:** M = 2,369, C = 7,470. GEH = √(2·5,101² / 9,839) = 72.7. Flow criterion: C > 2,700, so |M − C| must be ≤ 400; it is 5,101, so it fails.
+- **Yerwada + Ambedkar:** M = 8,815 + 4,772 + 5,900 = 19,487, C = 20,240. GEH = √(2·753² / 39,727) = 5.34. Flow criterion: 753 > 400, so it fails.
+- **RUB at Range Hill Road:** M = 2,782, C = 1,693. GEH = √(2·1,089² / 4,475) = 23.0. Flow criterion: 15% of 1,693 = 254 < 1,089, so it fails.
+- Total bias: (82,267 − 117,359) / 117,359 = −29.9%.
+
+All of these match the script's output. One fix was made to the script: the hypothetical corridor-speed table compared the PCU option, run on 3 corridors, with a baseline over 5 corridors. Each option is now compared with the current model on the same corridors (24.6).
+
+### 24.3 Traffic counts: observed vs model (both directions, veh/h, at the counted hour)
+
+Model assigned = the area's user-equilibrium assignment (the demand routed onto the counted way); simulated = vehicles that got through in the micro-simulation (3 seeds, 42/7/11). GEH and the flow criterion are on the assigned volume (TAG M3.1 and FHWA compare assigned flows); the simulated column shows how much of it the simulated network actually passed.
+
+| Site (2008 / 2017 count) | Grade | OSM class | Hour | Count | Assigned | Assigned / count | GEH | Flow criterion | Simulated | Sim / count | GEH (sim) | Section speed km/h each dir (free) | LOS | Served |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Shivaji Bridge | B | trunk | 18:00 | 7,470 | 2,369 | 32% | 72.7 | fail | 1,816 | 24% | 83.0 | 37.9 (45) / 30.7 (45) | A/C | 91% |
+| Mathre (Mhatre) Bridge | B | secondary | 18:00 | 10,262 | 4,741 | 46% | 63.7 | fail | 2,737 | 27% | 93.3 | 4.5 (40) / 3.4 (40) | F/F | 97% |
+| Shinde Bridge | B | tertiary | 18:00 | 4,986 | 2,061 | 41% | 49.3 | fail | 1,139 | 23% | 69.5 | 4.6 (40) / 15.5 (40) | F/E | 80% |
+| Tilak Bridge | B | tertiary | 10:00 | 2,213 | 1,696 | 77% | 11.7 | fail | 980 | 44% | 30.9 | 5.1 (40) / 1.2 (40) | F/F | 84% |
+| Z-Bridge (Kakasaheb Gadgil Bridge) | B | not in DB (from OSM index) | 10:00 | 3,928 | not run | | | | | | | | | |
+| S. M. Joshi Bridge | B | secondary | 11:00 | 4,302 | 1,973 | 46% | 41.6 | fail | 1,384 | 32% | 54.7 | 36.2 (50) / 24.7 (50) | F/F | 68% |
+| Sambhaji Bridge (Lakdi Pul) | B | primary | 11:00 | 5,042 | 4,056 | 80% | 14.6 | fail | 1,924 | 38% | 52.8 | 7.4 (50) / 14.1 (50) | F/F | 79% |
+| Raja Ram Bridge | B | not in DB (from OSM index) | 10:00 | 7,830 | 7,093 | 91% | 8.5 | fail | 2,568 | 33% | 73.0 | 3.6 (50) | F | 77% |
+| Sangam Bridge | C | primary | 19:00 | 16,012 | 11,028 | 69% | 42.9 | fail | 2,256 | 14% | 143.9 | 1.8 (50) | F | 55% |
+| Yerwada Bridge (14,240 veh, 18-19 h) + Ambedkar Bridge (6,000 veh, 19-20 h) | C | trunk | 18:00 | 20,240 | 19,487 | 96% | 5.3 | fail | 10,552 | 52% | 78.1 | 8.9 (60) | F | 90% |
+| ROB at Wadia College | B | secondary | 11:00 | 4,634 | 3,721 | 80% | 14.1 | fail | 2,151 | 46% | 42.6 | 6.3 (50) / 37.8 (50) | F/F | 65% |
+| RUB at Range Hill Road | B | secondary | 16:00 | 1,693 | 2,782 | 164% | 23.0 | fail | – | – | – | 33.9 (50) / 7.3 (50) / 42.8 (50) / 32.2 (50) | C/F/F/F | 80% |
+| ROB near Sancheti Hospital | C | trunk | 19:00 | 6,600 | 5,747 | 87% | 10.9 | fail | 1,836 | 28% | 73.4 | 35.4 (40) / 31.5 (42.2) / 42.3 (50) / 28.9 (40) | A/C/A/C | 78% |
+| Nagar Road at Gunjan Chowk | B | trunk | 09:00 | 10,034 | 5,735 | 57% | 48.4 | fail | 4,229 | 42% | 68.7 | 15.9 (60) / 6.3 (50) / – (50) / – (50) | F/F/–/– | 92% |
+| Nagar Road at Gunjan Chowk | B | trunk | 14:00 | 6,581 | 4,043 | 61% | 34.8 | fail | 3,839 | 58% | 38.0 | 19.6 (60) / 7.8 (50) / – (50) / – (50) | E/F/–/– | 98% |
+| Nagar Road at Gunjan Chowk | B | trunk | 19:00 | 9,460 | 5,735 | 61% | 42.7 | fail | 4,229 | 45% | 63.2 | 15.9 (60) / 6.3 (50) / – (50) / – (50) | F/F/–/– | 92% |
+
+**All sites, assigned:** n=15: GEH<5 0/15 (0%), GEH<10 2/15, flow criterion 0/15, mean GEH 32.3, MAPE 36%, bias -30%, median model/count 0.69, %RMSE 39%; total 82,267 vs 117,359.
+**All sites, simulated (got through):** n=14: GEH<5 0/14 (0%), GEH<10 0/14, flow criterion 0/14, mean GEH 68.9, MAPE 64%, bias -64%, median model/count 0.35, %RMSE 75%.
+
+| Group | n | GEH < 5 | Flow criterion | Mean GEH | MAPE | Bias (sum) | Median assigned / count |
+|---|---|---|---|---|---|---|---|
+| grade B | 12 | 0 | 0 | 35.4 | 41% | -38% | 0.61 |
+| grade C (grouped or mapping inferred) | 3 | 0 | 0 | 19.7 | 16% | -15% | 0.87 |
+| morning 09-11 h | 6 | 0 | 0 | 23.2 | 28% | -29% | 0.78 |
+| afternoon 14-16 h | 2 | 0 | 0 | 28.9 | 51% | -18% | 1.13 |
+| evening 18-19 h | 7 | 0 | 0 | 41.1 | 38% | -32% | 0.61 |
+| OSM trunk | 6 | 0 | 0 | 35.8 | 34% | -29% | 0.61 |
+| OSM primary | 2 | 0 | 0 | 28.7 | 25% | -28% | 0.75 |
+| OSM secondary | 4 | 0 | 0 | 35.6 | 48% | -37% | 0.63 |
+| OSM tertiary | 2 | 0 | 0 | 30.5 | 41% | -48% | 0.59 |
+| river bridges (CMP 2008 screen line 2) | 9 | 0 | 0 | 34.5 | 36% | -30% | 0.69 |
+| rail crossings (screen line 1) | 3 | 0 | 0 | 16.0 | 32% | -5% | 0.87 |
+| Nagar Road, Gunjan Chowk 2017 | 3 | 0 | 0 | 42.0 | 40% | -41% | 0.61 |
+
+River screen line (CMP 2008 screen line 2, 9 crossings, each at its own counted hour and from its own study area): model 54,504 vs counted 78,357 veh/h (-30%); TAG M3.1 asks screen-line totals within 5%.
+
+
+**Counts: the model fails every criterion.** Assigned volumes are mostly too low: −30% on the total, and the median site carries 0.69 of its count. Evening sites are further off than morning ones (bias −32% vs −29%; median 0.61 vs 0.78). The volume that gets through the micro-simulation is about a third of the count, because the simulated neighbourhoods are saturated (LOS F on most counted sections, 55–98% of routed demand served). Bias by class is negative on every OSM class, from trunk −29% to tertiary −48%. It is smallest on the rail crossings (−5%) and the grade-C grouped sites (−15%).
+
+Two sites have a network cause rather than a demand cause:
+- **Z-Bridge (Kakasaheb Gadgil Bridge, way 53759030):** OSM tags it `motor_vehicle=no`, so the model cannot route anything over it, against 3,928 veh/h counted in 2008. Its access today was not established, so it is left out of the statistics.
+- **Sambhaji Bridge:** the 2008 count has no two-wheelers, which are banned on the bridge. The model does not apply the ban, so about half of its assigned 4,056 veh/h are two-wheelers by the default mix.
+
+Nagar Road at Gunjan Chowk shows the morning/evening identity of 24.5 directly. The 09:00 and 19:00 runs assign exactly the same 5,735 veh/h, while the counts are 10,034 and 9,460.
+### 24.3b The same counted crossing seen from different study areas (assignment only, counted hour)
+
+| Site | Count | Assigned, area 1 km / 2 km / 3 km round the bridge | Max / min | Distance from counted way to nearest cordon point, m (1 / 2 / 3 km) | Area cordon inflow veh/h (1 / 2 / 3 km) | Through share of area demand (1 / 2 / 3 km) |
+|---|---|---|---|---|---|---|
+| Shivaji Bridge (18 h) | 7,470 | 4,073 / 2,369 / 3,814 | 1.7 | 551 / 752 / 1,971 | 20,200 / 35,300 / 57,200 | 100% / 100% / 100% |
+| Mathre (Mhatre) Bridge (18 h) | 10,262 | 12,501 / 4,741 / 5,344 | 2.6 | 440 / 1,057 / 362 | 22,700 / 29,000 / 54,700 | 100% / 100% / 100% |
+| Shinde Bridge (18 h) | 4,986 | 4,545 / 2,061 / 1,172 | 3.9 | 587 / 1,092 / 1,739 | 23,600 / 32,800 / 38,400 | 100% / 100% / 100% |
+| Tilak Bridge (10 h) | 2,213 | 2,542 / 1,696 / 1,119 | 2.3 | 580 / 877 / 1,912 | 19,800 / 40,000 / 63,200 | 100% / 100% / 100% |
+| Z-Bridge (Kakasaheb Gadgil Bridge) (10 h) | 3,928 | – / – / – | nan | – / – / – | 20,500 / 46,600 / 46,300 | 100% / 100% / 100% |
+| S. M. Joshi Bridge (11 h) | 4,302 | 2,828 / 1,973 / 2,373 | 1.4 | 480 / 403 / 1,779 | 19,000 / 36,300 / 49,800 | 100% / 100% / 100% |
+| Sambhaji Bridge (Lakdi Pul) (11 h) | 5,042 | 2,990 / 4,056 / 4,044 | 1.4 | 684 / 1,258 / 1,933 | 16,700 / 29,900 / 42,900 | 100% / 100% / 100% |
+| Raja Ram Bridge (10 h) | 7,830 | 8,089 / 7,093 / 4,844 | 1.7 | 282 / 753 / 1,840 | 16,900 / 28,700 / 27,100 | 100% / 100% / 100% |
+| Sangam Bridge (19 h) | 16,012 | 8,425 / 11,028 / 5,529 | 2.0 | 22 / 426 / 1,048 | 19,700 / 47,700 / 43,000 | 100% / 100% / 100% |
+| Yerwada Bridge (14,240 veh, 18-19 h) + Ambedkar Bridge (6,000 veh, 19-20 h) (18 h) | 20,240 | 19,335 / 19,487 / 22,730 | 1.2 | 45 / 925 / 1,166 | 16,300 / 20,900 / 32,600 | 100% / 100% / 100% |
+| ROB at Wadia College (11 h) | 4,634 | 2,044 / 3,721 / 8,120 | 4.0 | 35 / 724 / 1,493 | 16,600 / 28,000 / 43,100 | 100% / 100% / 100% |
+| RUB at Range Hill Road (16 h) | 1,693 | 2,482 / 2,782 / 3,075 | 1.2 | 329 / 1,100 / 710 | 9,500 / 23,700 / 32,000 | 100% / 100% / 100% |
+| ROB near Sancheti Hospital (19 h) | 6,600 | 8,636 / 5,747 / 10,325 | 1.8 | 0 / 93 / 1,283 | 22,900 / 27,400 / 60,700 | 100% / 100% / 100% |
+| Nagar Road at Gunjan Chowk (09 h) | 10,034 | – / 5,735 / – | nan | – / 920 / – | – / 22,000 / – | – / 100% / – |
+| Nagar Road at Gunjan Chowk (14 h) | 6,581 | – / 4,043 / – | nan | – / 920 / – | – / 22,000 / – | – / 100% / – |
+| Nagar Road at Gunjan Chowk (19 h) | 9,460 | – / 5,735 / – | nan | – / 920 / – | – / 22,000 / – | – / 100% / – |
+
+Sambhaji Bridge (count 5,042 veh/h, 11:00, no two-wheelers allowed) from areas grown round other roads (range 2 km):
+
+| Area seeded on | Seed road | Assigned on the bridge | Bridge to nearest cordon point, m | Area demand veh/h | internal / to-from edge / through | Cordon points |
+|---|---|---|---|---|---|---|
+| the bridge itself | osm_207872405 (Sambhaji Bridge) | 4,056 | 1,258 | 26,499 | 0 / 0 / 26,499 | 113 |
+| gokhale | osm_281308015 (Gopal Krushna Gokhale Path) | 4,284 | 972 | 33,594 | 0 / 0 / 33,594 | 148 |
+| jangli | osm_217431357 (Jangli Maharaj Path) | 4,954 | 972 | 32,098 | 0 / 0 / 32,098 | 136 |
+| karve | osm_1147910707 (Karve Road) | 5,437 | 890 | 34,199 | 0 / 0 / 34,199 | 106 |
+| laxmi | osm_282484427 (Laxmi Path) | 6,367 | 1,222 | 43,897 | 0 / 0 / 43,897 | 152 |
+| lbs | osm_199637809 (Lalbahadur Shashtri Marg) | 5,859 | 890 | 31,498 | 0 / 0 / 31,498 | 150 |
+| tilakmarg | osm_1563082509 (Lokmanya Tilak Marg) | 3,362 | 1,057 | 30,666 | 0 / 0 / 30,666 | 136 |
+
+Within a site, changing only the study area (1, 2 or 3 km round the same bridge) changed the bridge's assigned volume by max/min 1.2-4.0 (median 1.8, 12 sites). Ordered by the bridge's distance from the area edge, the volume fell steadily at 3 sites, rose at 2 and went both ways at 7: distance to the edge alone does not set it. In every one of the 48 areas the demand was 100% edge-to-edge through traffic (internal and land-use-to-edge parts 0).
+
+
+**Why the volume on a bridge depends on the selected road and the study area: boundary demand, and only boundary demand, in central Pune. Established from the plan contents of all 48 area runs and 12 sites. This does not depend on seeds.**
+1. **The demand is 100% edge-to-edge.** A study area's demand plan (`AreaDemand.compileAreaDemand`) has three parts:
+   - trips between land uses inside the area;
+   - trips between the area's land use and its edge;
+   - through traffic between cordon points.
+
+   In all 48 area runs and every counted-site run, the first two parts were **0**, so the whole plan was cordon-to-cordon through traffic. The reason is where land use is. Of the 2,445 buildings in the database, 2,425 (population 97,320) lie in 73.727–73.770 E / 18.582–18.600 N in west Pune. Another 18 are surveyed or OSM buildings at the west edge (Hinjawadi). The 8 zones and 5 gateways are also in west Pune.
+
+   Two user-drawn buildings lie near 73.855 E / 18.519 N: "TwinTowers Block A" (population 240) and "Cyber IT Park" (800). The central areas round Sambhaji and Shivaji bridges still show 0 land-use trips. Why they do not count was **not investigated** (open item).
+
+   In the hourly sweep, only the three west areas (Baner, Wakad, Hinjawadi) have land-use trips.
+2. **Edge flows are fixed per lane and placed wherever the area boundary cuts a road.** Each road the boundary cuts gets 500 veh/h per lane per direction (arterial and highway) or 300 (collector). Local streets get none (`EDGE_FLOW_PER_LANE_VPH`). These flows are balanced into an edge-to-edge matrix, so a bridge carries the share of those pairs whose cheapest path crosses it. Going from a 1 km to a 3 km area round the same bridge raises total cordon inflow from about 17–23k to 27–63k veh/h. The set of cut roads changes as well, so the bridge's share moves in no fixed direction: it fell steadily at 3 sites, rose at 2 and went both ways at 7 (max/min 1.2–4.0, median 1.8). Seeding a 2 km area on six other nearby roads instead of Sambhaji Bridge (same hour, same 2 km range) gave 3,362–6,367 veh/h on the bridge (count 5,042).
+3. **Nothing else changes between those runs:** the network, signals, hour factor and seeds are the same, and only the area (and therefore the cordon) changes. Nothing ties a bridge's flow to a city-wide quantity. Real trips crossing a Pune river bridge are mostly 4.7–8.5 km long (CMP 2018 mean trip lengths), so they start and end outside any 2 km area. In the model such trips can only appear as cordon flow, and the cordon is drawn round whatever the user selected.
+
+So the volume shown on a road is a property of the study area, not of the road.
+
+Caveat: 6 of the 48 area runs had estimated signals (listed above). Signals change route costs, so they could shift the exact volumes in those 6 runs. They cannot change point 1, which comes from the plan composition before assignment.
+### 24.4 Corridor speeds: TraffiCure 2026 (probe data, hour by hour) vs the simulated section
+
+| Corridor (observed) | Model section | Hour | Observed km/h | Model km/h, matching direction (all dirs) | Model / observed | Within 15% | Model LOS | Model free flow | Served |
+|---|---|---|---|---|---|---|---|---|---|
+| Khandoji Baba Chowk -> Warje Junction (Karve Road, inferred) | Karve Road (383 m) | 03:00 | 41.3 | 18.4 (north-east 7.3 / south-west 18.4) | 0.45 | no | E | 65 | 98% |
+| Khandoji Baba Chowk -> Warje Junction (Karve Road, inferred) | Karve Road (383 m) | 09:00 | 21.1 | 17.5 (south-west 17.5 / north-east 14.7) | 0.83 | no | F | 65 | 56% |
+| Khandoji Baba Chowk -> Warje Junction (Karve Road, inferred) | Karve Road (383 m) | 19:00 | 14.0 | 17.5 (south-west 17.5 / north-east 14.7) | 1.25 | no | F | 65 | 56% |
+| Alka Talkies Chowk -> Jedhe Chowk (Tilak Road, inferred) | Lokmanya Tilak Marg (440 m) | 03:00 | 38.1 | 25 (south-east 25 / north-west 43.1) | 0.66 | no | D | 50 | 91% |
+| Alka Talkies Chowk -> Jedhe Chowk (Tilak Road, inferred) | Lokmanya Tilak Marg (440 m) | 09:00 | 17.4 | 16.6 (south-east 16.6 / north-west 32.5) | 0.95 | yes | F | 50 | 59% |
+| Alka Talkies Chowk -> Jedhe Chowk (Tilak Road, inferred) | Lokmanya Tilak Marg (440 m) | 19:00 | 10.6 | 16.6 (south-east 16.6 / north-west 32.5) | 1.57 | no | F | 50 | 59% |
+| Jedhe Chowk -> Nanded City (Sinhagad Road, inferred) | Sinhagad Road (2238 m) | 03:00 | 41.8 | 36.9 (south-west 36.9 / north-east 30.4 / south-east None / north-west None) | 0.88 | yes | C | 50 | 98% |
+| Jedhe Chowk -> Nanded City (Sinhagad Road, inferred) | Sinhagad Road (2238 m) | 09:00 | 28.5 | 29.3 (north-east 6.3 / south-west 29.3 / south-east None / north-west None) | 1.03 | yes | F | 50 | 40% |
+| Jedhe Chowk -> Nanded City (Sinhagad Road, inferred) | Sinhagad Road (2238 m) | 19:00 | 17.3 | 19.2 (north-east 10.9 / south-west 19.2 / south-east None / north-west None) | 1.11 | yes | F | 50 | 43% |
+| SB Junction - Symbiosis College - Law College Road -> Nal Stop (OSM 'Vishnushastri Chiplunkar Path') | Vishnushastri Chiplunkar Path (443 m) | 03:00 | 35.7 | 30 (southbound 30 / northbound 23.2) | 0.84 | no | C | 50 | 100% |
+| SB Junction - Symbiosis College - Law College Road -> Nal Stop (OSM 'Vishnushastri Chiplunkar Path') | Vishnushastri Chiplunkar Path (443 m) | 19:00 | 14.4 | 5.8 (southbound 5.8 / northbound 12.8) | 0.40 | no | F | 50 | 55% |
+| Pune Vidhyapeeth Chowk -> Hotel Radha Chowk (Baner Road, OSM 'Gopal Hari Deshmukh Marg', inferred) | Gopal Hari Deshmukh Marg (1338 m) | 03:00 | 34.9 | 34.7 (eastbound 35.5 / westbound 34.7) | 0.99 | yes | A | 40 | 90% |
+| Pune Vidhyapeeth Chowk -> Hotel Radha Chowk (Baner Road, OSM 'Gopal Hari Deshmukh Marg', inferred) | Gopal Hari Deshmukh Marg (1338 m) | 19:00 | 15.7 | 29.1 (westbound 29.1 / eastbound 31.1) | 1.85 | no | C | 40 | 97% |
+
+| Corridor (CMP 2008 Table 4.10, peak hour) | Observed km/h each dir | Model section (09:00 run) | Model km/h each dir | Model mean / observed | Within 15% | Model LOS | Model free flow |
+|---|---|---|---|---|---|---|---|
+| Karve Road, Deccan - Karve Nagar (3.2 km) | 18 / 18 | Karve Road (383 m) | 17.5 / 14.7 | 0.89 | yes | F/F | 65 / 65 |
+| Ganeshkhind Road, Sancheti Hospital - University Chowk (2.8 km) | 22 / 22 | Ganeshkhind Road (1664 m) | 16.5 / 5 | 0.49 | no | F/F | 30 / 30 |
+| Shivaji Road, Sancheti Hospital - Swami Vivekananda Statue (6.2 km) | 17 / 18 | Shivaji Road (813 m) | 9.3 / None | 0.52 | no | C/– | 15 / 15 |
+| Jangli Maharaj Road, Deccan - Sancheti Hospital (2.2 km) | 15 / 16 | Jangli Maharaj Path (454 m) | 5 | 0.33 | no | F | 65 |
+| Deccan College Road, Mula Road - Sangamwadi (2.1 km) | 41 / 43 | Deccan College Road (972 m) | 10.8 / 39.3 | 0.60 | no | F/F | 50 / 50 |
+| Koregaon Road, Commissioner office - Yerwada (3.0 km) | 18 / 14 | Koregaon Road (272 m) | 3 / 27.2 | 0.94 | yes | F/A | 30 / 30 |
+| Nagar Road, Bund Garden - Ramwadi (4.47 km) | 16 / 18 | Nagar Road (966 m) | 15.9 / 6.3 / None / None | 0.65 | no | F/F/–/– | 60 / 50 / 50 / 50 |
+| Sinhagad Road, Sarasbaug - Mutha River junction (3.3 km) | 32 / 19 | Sinhagad Road (2238 m) | 6.3 / 29.3 / None / None | 0.68 | no | F/F/–/– | 50 / 50 / 36 / 36 |
+
+**Simulated section speeds, all 21 comparisons:** MAPE 32%, mean bias -15%, within 15% 7/21 (TAG M3.1 journey-time criterion asks > 85%), median model/observed 0.84.
+
+| Subset | n | MAPE | Mean bias | Within 15% | Median model / observed |
+|---|---|---|---|---|---|
+| 03:00 | 5 | 24% | -24% | 2 | 0.84 |
+| 09:00 | 11 | 28% | -28% | 4 | 0.68 |
+| 19:00 | 5 | 48% | +24% | 1 | 1.25 |
+| TraffiCure | 13 | 29% | -1% | 5 | 0.95 |
+| CMP 2008 | 8 | 36% | -36% | 2 | 0.62 |
+
+### 24.4b Assignment speed on the TraffiCure corridors, every hour (mean of the two directions; user-equilibrium link times incl. signal delay)
+
+| Hour | karve obs / model | tilak obs / model | sinhagad obs / model | lawcollege obs / model | baner obs / model |
+|---|---|---|---|---|---|
+| 00 | 35.8 / 29.5 | 31.6 / 50.0 | 38.0 / 35.1 | 33.8 / 27.7 | 31.2 / 40.0 |
+| 01 | 38.5 / 29.5 | 35.5 / 50.0 | 40.2 / 35.1 | 34.7 / 27.7 | 32.9 / 40.0 |
+| 02 | 40.4 / 29.5 | 37.4 / 50.0 | 41.3 / 35.1 | 35.2 / 27.7 | 33.9 / 40.0 |
+| 03 | 41.3 / 29.5 | 38.1 / 50.0 | 41.8 / 35.1 | 35.7 / 27.7 | 34.9 / 40.0 |
+| 04 | 41.0 / 29.4 | 37.4 / 50.0 | 41.7 / 35.1 | 36.7 / 27.7 | 35.3 / 40.0 |
+| 05 | 39.3 / 29.4 | 35.1 / 49.9 | 40.8 / 35.0 | 37.4 / 27.7 | 35.6 / 40.0 |
+| 06 | 35.7 / 29.0 | 31.1 / 48.8 | 39.1 / 33.1 | 34.8 / 27.7 | 36.0 / 40.0 |
+| 07 | 30.2 / 26.5 | 24.4 / 44.4 | 35.1 / 25.8 | 28.9 / 27.4 | 31.8 / 39.9 |
+| 08 | 25.2 / 20.4 | 21.4 / 39.3 | 31.9 / 15.2 | 24.6 / 24.8 | 26.3 / 39.1 |
+| 09 | 21.1 / 18.1 | 17.4 / 37.6 | 28.5 / 12.8 | 20.2 / 23.4 | 20.9 / 38.6 |
+| 10 | 20.1 / 22.0 | 15.2 / 40.6 | 27.1 / 17.9 | 19.0 / 25.7 | 19.8 / 39.5 |
+| 11 | 19.2 / 21.7 | 13.5 / 40.1 | 26.7 / 17.1 | 19.0 / 25.5 | 20.9 / 39.4 |
+| 12 | 18.5 / 24.8 | 11.9 / 42.5 | 25.6 / 22.5 | 18.2 / 26.8 | 20.6 / 39.8 |
+| 13 | 19.8 / 25.9 | 12.0 / 43.6 | 25.4 / 24.5 | 18.3 / 27.2 | 20.9 / 39.9 |
+| 14 | 20.8 / 24.2 | 12.3 / 42.2 | 25.8 / 21.8 | 18.7 / 26.6 | 21.2 / 39.7 |
+| 15 | 20.7 / 24.6 | 12.4 / 42.5 | 25.4 / 22.4 | 19.0 / 26.8 | 21.0 / 39.8 |
+| 16 | 18.9 / 22.6 | 12.6 / 40.9 | 23.4 / 19.0 | 17.3 / 26.0 | 20.6 / 39.6 |
+| 17 | 17.0 / 20.7 | 11.5 / 39.4 | 22.1 / 15.4 | 15.9 / 24.9 | 19.1 / 39.1 |
+| 18 | 14.9 / 19.3 | 10.7 / 38.3 | 19.1 / 14.0 | 14.1 / 24.1 | 16.5 / 38.8 |
+| 19 | 14.0 / 18.1 | 10.6 / 37.6 | 17.3 / 12.8 | 14.4 / 23.4 | 15.7 / 38.5 |
+| 20 | 15.7 / 23.8 | 11.9 / 41.9 | 19.9 / 21.1 | 18.2 / 26.5 | 18.6 / 39.7 |
+| 21 | 20.0 / 27.2 | 14.7 / 45.3 | 24.8 / 28.0 | 21.9 / 27.6 | 23.2 / 39.9 |
+| 22 | 25.2 / 29.1 | 18.3 / 49.0 | 28.9 / 33.3 | 25.3 / 27.7 | 26.0 / 40.0 |
+| 23 | 31.8 / 29.4 | 25.6 / 49.8 | 33.8 / 34.9 | 30.8 / 27.7 | 29.3 / 40.0 |
+
+| Hours | n | MAPE | Mean bias | Within 15% |
+|---|---|---|---|---|
+| night 00-05 | 30 | 24% | -1% | 7 |
+| morning 07-10 | 20 | 49% | +28% | 5 |
+| midday 11-16 | 30 | 82% | +76% | 4 |
+| evening 17-20 | 20 | 98% | +90% | 1 |
+| late 21-23 | 15 | 51% | +49% | 5 |
+| all hours | 120 | 58% | +45% | 23 |
+
+
+**Speeds: FAIL.** The two model speeds disagree with the observations in opposite directions:
+- **Simulated section speeds are too low where the section saturates.** At LOS F the micro-simulation of a 2 km area, fed with boundary demand, jams at the bridges and arterials where the edge flows converge. CMP 2008 corridors: −36% bias. Peak 09:00: −28%.
+- **Assignment (user-equilibrium) speeds are about right at night but too high by day.** Night bias is −1%, but it is +28% in the morning (07–10 h), +76% at midday and +90% in the evening (17–20 h).
+- **Free-flow speeds are off in both directions on individual sections.** For example, Tilak Road is untagged and so takes the 50 km/h urban default, against 38 km/h observed at 03:00. Karve Road and Jangli Maharaj Path are tagged 65 km/h.
+### 24.5 Network-wide speed by hour: ten 2 km areas (assignment, vehicle-km weighted) vs citywide observations
+
+| Hour | TraffiCure citywide km/h | baner | central | deccan | hinjawadi | kothrud | sinhagad | swargate | university | wakad | yerawada | Mean of areas | Model / observed |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 03:00 | 31.4 | 40.6 | 35.2 | 35.3 | 29.7 | 37.6 | 34.6 | 35.9 | 34.5 | 38.4 | 40.9 | 36.3 | 1.15 |
+| 07:00 | 26.5 | 38.7 | 32.6 | 32.9 | 21.7 | 30.1 | 27.8 | 33.7 | 26.9 | 34.7 | 38.5 | 31.8 | 1.20 |
+| 09:00 | 21.3 | 33.3 | 27.6 | 28.4 | 8.6 | 16.1 | 14.5 | 30.1 | 13.1 | 23.9 | 29.5 | 22.5 | 1.06 |
+| 11:00 | 19.5 | 35.8 | 29.8 | 30.5 | 13.0 | 21.8 | 19.6 | 31.7 | 18.2 | 28.6 | 33.9 | 26.3 | 1.35 |
+| 14:00 | 19.6 | 37.2 | 31.5 | 31.9 | 22.9 | 26.5 | 24.2 | 32.8 | 22.9 | 32.4 | 36.8 | 29.9 | 1.53 |
+| 17:00 | 18.2 | 34.6 | 29.1 | 29.8 | 18.3 | 19.7 | 17.7 | 31.1 | 16.4 | 28.0 | 32.4 | 25.7 | 1.41 |
+| 19:00 | 16.6 | 33.2 | 27.6 | 28.4 | 15.6 | 16.1 | 14.5 | 30.1 | 13.1 | 25.2 | 29.5 | 23.3 | 1.40 |
+| 21:00 | 20.5 | 39.0 | 32.9 | 33.4 | 26.0 | 31.6 | 29.4 | 34.1 | 28.5 | 35.6 | 39.1 | 33.0 | 1.61 |
+| 23:00 | 25.5 | 40.7 | 35.0 | 35.2 | 29.3 | 36.8 | 34.4 | 35.8 | 34.0 | 38.3 | 40.9 | 36.0 | 1.41 |
+
+VKT-weighted free-flow speed of the same areas: baner 39.87, central 34, deccan 34.22, hinjawadi 28.37, kothrud 36.77, sinhagad 33.57, swargate 34.8, university 33.72, wakad 36.95, yerawada 40.4 km/h.
+
+| Area | Demand 09:00 veh/h | Demand 19:00 veh/h | Through 09 / 19 | To-from edge 09 / 19 | Internal 09 / 19 | Speed 09 / 19 km/h |
+|---|---|---|---|---|---|---|
+| baner | 12,743 | 13,026 | 11,607 / 11,919 | 1,073 / 1,073 | 64 / 35 | 33.29 / 33.18 |
+| central | 29,200 | 29,200 | 29,200 / 29,200 | 0 / 0 | 0 / 0 | 27.58 / 27.58 |
+| deccan | 27,596 | 27,596 | 27,596 / 27,596 | 0 / 0 | 0 / 0 | 28.43 / 28.43 |
+| hinjawadi | 20,686 | 18,676 | 12,198 / 9,596 | 8,322 / 8,689 | 173 / 473 | 8.56 / 15.55 |
+| kothrud | 22,799 | 22,799 | 22,799 / 22,799 | 0 / 0 | 0 / 0 | 16.08 / 16.08 |
+| sinhagad | 31,193 | 31,193 | 31,193 / 31,193 | 0 / 0 | 0 / 0 | 14.47 / 14.47 |
+| swargate | 27,200 | 27,200 | 27,200 / 27,200 | 0 / 0 | 0 / 0 | 30.05 / 30.05 |
+| university | 35,595 | 35,595 | 35,595 / 35,595 | 0 / 0 | 0 / 0 | 13.07 / 13.07 |
+| wakad | 29,020 | 30,216 | 16,902 / 17,669 | 11,823 / 12,101 | 579 / 721 | 23.88 / 25.24 |
+| yerawada | 19,400 | 19,400 | 19,400 / 19,400 | 0 / 0 | 0 / 0 | 29.51 / 29.51 |
+
+Model 19:00 vs 09:00: demand -0.3% (range -9.7% to +4.1%), area speed +8.7% (range -0.3% to +81.7%). Observed: TraffiCure citywide 21.3 → 16.6 km/h (-22%); TomTom 2025 morning rush 15.7, evening rush 14.4 km/h (-8%); Gunjan Chowk counts 09:00 10,034, 19:00 9,460 veh/h (-6%).
+
+| Road class (model) | km in the 10 areas | Speed 03:00 | 09:00 | 19:00 | Free flow |
+|---|---|---|---|---|---|
+| local | 2661 | 28.7 | 15.8 | 16.9 | 28.7 |
+| collector | 334 | 36.0 | 16.5 | 17.0 | 35.3 |
+| arterial | 306 | 37.1 | 20.2 | 22.8 | 36.3 |
+| highway | 60 | 40.1 | 21.9 | 22.0 | 39.1 |
+
+| Hours | n | MAPE vs TraffiCure citywide | Mean bias |
+|---|---|---|---|
+| all | 9 | 35% | +35% |
+| peaks 09/17/19 | 3 | 29% | +29% |
+| night 03/23 | 2 | 28% | +28% |
+
+
+**Why morning and evening are the same: established (plan contents, 10 areas; independent of seeds).**
+- **The demand is literally identical.** In the 7 areas without land use, the 09:00 and 19:00 plans have the same total (for example, central 29,200 and 29,200 veh/h), the same parts (all through) and the same area speed to 0.01 km/h. Only the 3 west areas with land use differ, by −9.7% to +4.1%.
+- **Mechanism 1.** The edge flows per lane are the same for every period and in both directions. Without land use, the AM and PM matrices are therefore identical. Land use is what makes them differ: residents leave in the morning and return in the evening (`activityEndpoints`).
+- **Mechanism 2.** The hour factor is taken against the peak of the clock's own half of the day (`referenceHour`: 09:00 before noon, 19:00 after), so both peaks get ×1.000. In the profile, 19:00 is 7.80% of daily traffic and 09:00 is 7.46%.
+- **Observed:** the evening is slower everywhere. TraffiCure citywide goes from 21.3 to 16.6 km/h (−22%), its 5 corridors fall 19–39%, and TomTom 2025 goes from 15.7 to 14.4 km/h (−8%). Evening volumes are about equal or lower (Gunjan Chowk 10,034 at 09:00 and 9,460 at 19:00). Fixing both mechanisms would add only about +4.6% evening demand, which would not reproduce the evening slowdown. The evidence points to evening capacity loss or friction (roadside activity, parking, pedestrians, more trips inside the city), which the model does not represent by period. That is an inference; it was not tested.
+- **Bias by class and hour (assignment):** every class is close to free flow at 03:00 and roughly halves at 09:00 and 19:00. 19:00 is never slower than 09:00 in any class (local 15.8 vs 16.9, arterial 20.2 vs 22.8 km/h), while observed evening speeds are lower.
+### 24.6 Hypothetical calibrations: measured in headless runs (PROPOSED, NOT APPLIED; defaults unchanged)
+
+| Option | Sites | GEH < 5 | Flow criterion | Mean GEH | MAPE | Bias | Median assigned / count | Area speed at the counted hour, mean km/h |
+|---|---|---|---|---|---|---|---|---|
+| current model (2 km area, same runs) | 15 | 0 | 0 | 32.3 | 36% | -30% | 0.69 | 24.9 |
+| PCU TRR 2021 mid-range (all links) | 15 | 1 | 2 | 31.5 | 35% | -28% | 0.74 | 30.2 |
+| 50 km/h cap on tagged maxspeed | 15 | 0 | 0 | 31.0 | 34% | -29% | 0.69 | 24.2 |
+| edge flow per lane x1.8 | 15 | 0 | 1 | 28.0 | 42% | +24% | 1.19 | 10.2 |
+| all demand x1.43 (sum counts / sum assigned) | 15 | 0 | 0 | 22.4 | 30% | -1% | 0.93 | 15.9 |
+
+| Corridor speed option (assignment, TraffiCure corridors, 24 h) | Corridors | Night 00-05 MAPE / bias | Evening 17-20 MAPE / bias | All hours MAPE / bias |
+|---|---|---|---|---|
+| current model (same 5 corridors) | karve, tilak, sinhagad, lawcollege, baner | 24% / -1% | 98% / +90% | 58% / +45% |
+| 50 km/h cap on tagged maxspeed | karve, tilak, sinhagad, lawcollege, baner | 23% / -5% | 90% / +82% | 54% / +39% |
+| current model (same 3 corridors) | karve, tilak, sinhagad | 26% / +0% | 102% / +89% | 65% / +47% |
+| PCU TRR 2021 (all links) | karve, tilak, sinhagad | 26% / +0% | 121% / +121% | 71% / +61% |
+
+How these were run: each option is switched on only inside the harness process, through `VAL24_HYPO_PCU=trr2021`, `VAL24_HYPO_SPEEDCAP=50`, `VAL24_HYPO_EDGE=1.8` or `VAL24_HYPO_SCALE=1.43`. Each is one assignment-only run per counted site (16 runs, 15 sites scored; Z-Bridge carries nothing) at the counted hour, in the same 2 km areas as the baseline row. The baseline row comes from the `x_<site>_r2000` runs (one of them, Raja Ram, with estimated signals). The corridor rows are 24 h assignment sweeps. The PCU sweep finished only 3 of the 5 TraffiCure corridors, so it is compared with the baseline on those same 3. No shipped default was touched, and the harness's PCU hook swaps the table in its own process only.
+
+### 24.7 Proposed calibrations — PROPOSED, NOT APPLIED
+
+"Measured effect" means the change in the headless prototype runs of 24.6 (assignment, 15 counted sites; 24 h corridor sweeps). These options were not applied, and the project owner decides on each.
+
+| # | Parameter | Current | Proposed | Evidence | Measured effect (hypothetical runs) | Risk |
+|---|---|---|---|---|---|---|
+| 1 | Signal PCU (`VEHICLE_TYPES[].pcu` as used in the assignment) | two-wheeler 0.75, three-wheeler 2.0, car 1.0, bus/truck 2.2 (IRC mid-block values) | At signal stop lines only: two-wheeler 0.22, three-wheeler 0.62, bus/truck 5.0 (mid-points of the measured ranges) | Patel & Dhamaniya, *Transportation Research Record* 2675(11), 2021, doi:10.1177/03611981211018694: dynamic PCU from saturated-green discharge at signals in three Indian cities (two-wheeler 0.12–0.32, three-wheeler 0.45–0.80, heavy 3.5–6.5). Indo-HCM 2017 (CSIR-CRRI) works signal capacity in PCU on a width-based saturation flow, which the model already uses (docs/CALIBRATION.md). Indo-HCM's own signal PCU table was **not checked** in this round. | Prototype applied on **all links**, not only at stop lines. GEH < 5: 0 → 1 of 15. Flow criterion: 0 → 2. Mean GEH 32.3 → 31.5. Bias −30% → −28%. Mean area speed 24.9 → 30.2 km/h. Corridor evening bias +89% → +121% (3 corridors). | It makes daytime speeds even faster than observed (already too fast), so it should wait for #4. Mid-block PCU differs from stop-line PCU, so it needs a per-link PCU in the assignment. The simulator's discharge is vehicle physics and does not use PCU. |
+| 2 | Speed on OSM-tagged roads (`urbanSpeeds`) | Tagged `maxspeed` used as is (Karve Road, Jangli Maharaj Path 65; several trunk pieces 60) | Cap at the 50 km/h urban ceiling already used for untagged roads | TraffiCure 2026 night speeds on the corridors are 31–42 km/h, and its citywide 03:00 speed is 31.4 km/h. The Maharashtra 2019 notification sets 50 km/h for motorcycles in municipal areas (about half the traffic), as already cited in `roadParameters.ts`. | Counts almost unchanged (mean GEH 32.3 → 31.0, bias −30% → −29%). Corridor speeds (5 corridors, 24 h): all-hours MAPE 58% → 54%, bias +45% → +39%. Evening MAPE 98% → 90%. Night MAPE 24% → 23%, bias −1% → −5%. | Low. A 60–65 tag may be a real posted limit for cars. It is a small improvement and does not fix the daytime bias. |
+| 3 | Global demand scale | none (×1.0) | **Do not apply.** Tested at ×1.43 = sum of counts / sum of assigned over the 15 sites | The counts in 24.3 | Bias −30% → −1%, mean GEH 32.3 → 22.4, median ratio 0.69 → 0.93, but GEH < 5 still 0 of 15. Mean area speed 24.9 → 15.9 km/h. | It is fitted to the same counts it is judged on (circular). It matches the total while every site stays outside GEH 5, hides the structural error of 24.3b, and does not carry over to areas without counts. |
+| 4 | Where area demand comes from (`AreaDemand`: edge flows at the cordon of whatever is selected) | All central-Pune traffic enters and leaves at the selected 2 km cordon at a class flow per lane; no land use outside west Pune | Cordon flows taken from a fixed larger network (assign once on a city-wide or 8–10 km network and cut the sub-area from it: the standard sub-area or windowing method). Add land use for the rest of PMC (Census 2011 ward population projected to 2026; CMP 2018 zone employment). | 24.3b: the same bridge varies by a factor of 1.2–4.0 with the area alone. 100% of demand is edge-to-edge in all 48 areas. 24.5: AM = PM. | **Not prototyped** (needs a city-wide run, about 18k roads). By construction it removes the area dependence and gives the demand a period and a direction. | Run time; data effort. Matrix adjustment to counts (ODME) can overfit, so the counts must stay validation data, not be fitted. |
+| 5 | Edge flow per lane (`EDGE_FLOW_PER_LANE_VPH`) | arterial and highway 500, collector 300 veh/h per lane per direction | **Do not raise.** Tested at ×1.8 (the upper end of counted west-Pune approaches, about 890 veh/h per lane) | `backend/data/observed_counts/pune_west_2026.json` (Khandekar et al. 2025, doi:10.17492/jpi/nicmar/2507129) | Bias −30% → +24%, MAPE 36% → 42%, GEH < 5 still 0. Mean area speed 24.9 → **10.2 km/h**, against 17–21 observed. | It fixes the level and breaks the speeds. That confirms the error is where the demand is placed (#4), not how much there is. |
+| 6 | Reference hour of the hour factor (`referenceHour`) | 09:00 before noon, 19:00 after, so both are ×1.000 | One weekday reference: 19:00 = 1.000, 09:00 = 0.956 (profile shares 7.80% and 7.46%) | `pune_hourly_profile_v1.json`; the AM = PM identity of 24.5 | Not prototyped. Evening demand +4.6% over morning, which is far too small to produce the observed −22% evening speed. | Low. The 2017 Gunjan Chowk counts have 09:00 > 19:00, so the sign is uncertain. |
+| 7 | Z-Bridge access; Sambhaji Bridge two-wheeler ban | Z-Bridge not drivable (`motor_vehicle=no`); Sambhaji open to all classes | Corrections in `network_corrections` once today's rules are confirmed (OSM itself is not edited) | 2008 count of 3,928 veh/h on Z-Bridge; the 2008 Sambhaji count has no two-wheelers | Not prototyped | A wrong correction adds a crossing or a ban that does not exist. It needs per-class restrictions in the assignment and simulator. |
+
+Not proposed: an evening capacity or friction factor. Observed evening speeds are 19–39% below morning on the 5 corridors with about equal volume, but without a measured cause such a factor would be fitting.
+
+### 24.8 What could change on the current code (`ee77ef2`) and with mapped signals everywhere
+
+These are not re-run here. Any re-run should be made one at a time, on port 8221 with the OSM index, as set out in the phase 3 note.
+
+- **Robust (do not depend on signals or road classes):** that demand is 100% edge-to-edge in central Pune, the area dependence of volumes (24.3b, mechanism), AM = PM, the size of the hour-factor effect, and the Z-Bridge and Sambhaji network issues. All of these come from the demand plan, which is composed before routing.
+- **Could change on `ee77ef2`:**
+  - `a6e30e7` turns 45 `trunk_link` and 55 `secondary_link` roads from `local` into arterial or collector. Where the cordon cuts one, it now gets 300–500 veh/h per lane instead of 0. Assigned volumes at the bridges, the totals in 24.3 and the area-dependence ratios could all move, in either direction.
+  - `e8a1ec8` changes the phases and grouping of mapped signal boxes. This affects simulated volumes and section speeds (24.3 simulated column, 24.4) and, through signal delay, assignment speeds and routes.
+- **Could change with mapped signals in the 14 estimated-signal runs:** Raja Ram's counted row, the two Sinhagad Road speed rows at 03:00 and 09:00, the corridor sweeps on Nagar Road, Baner and Koregaon Road (CMP corridors), the Baner and Wakad area sweeps, and the 6 area-dependence runs listed above.
+- **Unlikely to flip any verdict.** The margins are large: the best site is at GEH 5.3, the median at 35, and the screen line is −30%. A pass on GEH would need errors to shrink by about an order of magnitude. That is an inference from the margins, not a re-run.
+
+### 24.9 Limitations
+
+- **Age of the counts.** The bridge counts are from 2008 and Gunjan Chowk from 2017, while the network is 2026. Crossings added since then (for example the second Sangam carriageway) split the traffic differently. The grade-C sites group today's crossings into 2008 sites by inference.
+- **Probe speed vs section speed.** TraffiCure and TomTom report probe travel speed over a whole route (including junction delay), and CMP 2008 used a test car over 2–6 km. The model's simulated speed is the speed on the analysis section round the seed road (0.27–2.2 km). The assignment speed is the mean of the two directions, whereas TraffiCure gives one direction. These are not like-for-like, and a 15% band is tight for that mismatch.
+- **Mapping inference.** TraffiCure corridors are mapped from end-point names only (grade C mapping). CMP corridors are mapped by road name to one section. Count sites are mapped to OSM ways by name and position, and 7 screen-line-1 sites could not be mapped.
+- **Each count site is judged from its own 2 km area at its own hour,** so the screen-line total sums different areas. That is the area dependence itself (24.3b).
+- **Simulated numbers** are means over seeds 42/7/11. Assignment numbers are deterministic. The causes named above rest on plan contents and the assignment, not on one seed.
+- **Not done:** browser verification; a re-run on `ee77ef2`; class-mix and turning comparisons at Gunjan Chowk; weekend hours; the 2 user-drawn central buildings that do not enter the plans (24.3b).
+
+### 24.10 Reproduce
+
+- Backend: `DATABASE_URL=sqlite:///<copy>/twincity.db TWINCITY_OSM_INDEX=/workspace/work/vp-int-e2e/db_osm_index.db python3 -m uvicorn main:app --port <port>`. Check that `/api/osm/signals` requests appear in the log.
+- From `frontend/`, one run per id, one process at a time (about 1–1.5 GB each):
+  `VAL24=1 VAL24_API=http://127.0.0.1:<port> VAL24_DB=<city_objects dump>.json VAL24_RUNS=../backend/data/observed_validation/runs/runs_counts.json VAL24_OUT=counts.jsonl VAL24_ONLY=c_shivaji_18 npx vitest run src/engine/testing/NetworkValidation.test.ts`
+- Hypotheticals: add `VAL24_HYPO_PCU=trr2021 | VAL24_HYPO_SPEEDCAP=50 | VAL24_HYPO_EDGE=1.8 | VAL24_HYPO_SCALE=1.43`.
+- Analysis: `VAL24_DATA=<dir with *.jsonl> python3 backend/data/observed_validation/analyze_validation.py` writes `sec24_tables.md` and `summary.json`.
+- The run lists are committed in `backend/data/observed_validation/runs/`. The outputs used here (13 counts, 21 speeds, 10 sweeps, 11 + 11 + 3 corridor sweeps, 48 area runs, and 4 × 16 hypothetical runs) are in `/workspace/work/vp-wt-val2/valdata/*.jsonl` and are not committed.

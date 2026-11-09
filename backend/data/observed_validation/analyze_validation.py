@@ -331,12 +331,16 @@ for k, lab in [('pcu', 'PCU TRR 2021 mid-range (all links)'), ('cap50', '50 km/h
     if data: hyp_row(lab, data)
 P('')
 if DS and any(DSH.values()):
-    P('| Corridor speed option (assignment, TraffiCure corridors, 24 h) | Night 00-05 MAPE / bias | Evening 17-20 MAPE / bias | All hours MAPE / bias |'); P('|---|---|---|---|')
-    for lab, d in [('current model', DS), ('50 km/h cap on tagged maxspeed', DSH['cap50']), ('PCU TRR 2021', DSH['pcu'])]:
-        if not d: continue
-        b = band_stats(sweep_compare(d)); summ.setdefault('hypo_speed', {})[lab] = b
-        g = lambda k: f"{b[k]['mape']:.0%} / {b[k]['bias']:+.0%}" if k in b else '–'
-        P(f"| {lab} | {g('night 00-05')} | {g('evening 17-20')} | {g('all hours')} |")
+    # Each option is compared with the current model on the SAME corridors (an option run on fewer corridors gets its own baseline row)
+    P('| Corridor speed option (assignment, TraffiCure corridors, 24 h) | Corridors | Night 00-05 MAPE / bias | Evening 17-20 MAPE / bias | All hours MAPE / bias |'); P('|---|---|---|---|---|')
+    tck = [k for _, k, _ in corr]
+    for lab, d in [('50 km/h cap on tagged maxspeed', DSH['cap50']), ('PCU TRR 2021 (all links)', DSH['pcu'])]:
+        keys = [k for k in tck if d.get(f'd_{k}') and DS.get(f'd_{k}')]
+        if not keys: continue
+        for l2, src in [(f'current model (same {len(keys)} corridors)', DS), (lab, d)]:
+            b = band_stats(sweep_compare({f'd_{k}': src[f'd_{k}'] for k in keys})); summ.setdefault('hypo_speed', {})[l2] = b
+            g = lambda k: f"{b[k]['mape']:.0%} / {b[k]['bias']:+.0%}" if k in b else '–'
+            P(f"| {l2} | {', '.join(keys)} | {g('night 00-05')} | {g('evening 17-20')} | {g('all hours')} |")
     P('')
 open(os.path.join(D, 'sec24_tables.md'), 'w').write('\n'.join(out))
 json.dump(summ, open(os.path.join(D, 'summary.json'), 'w'), indent=1, default=str)
