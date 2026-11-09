@@ -2001,3 +2001,73 @@ Code: worktree vp-wt-ux2 at integration head e04c9bb (includes 902e354 and 2d107
 
 - **Hover preview** — BROWSER-VERIFIED (previous round): hovering a lane-scope choice previews exactly the ways the edit is then applied to (then: Sangamwadi deck, 3 pieces, 564 m; the scope rules changed since in §27.7 and the same choice is now 2 pieces, 504 m — UNIT-TESTED there, not re-hovered in the browser). Junction editor highlights its arms; the highlight clears on mouse-out, deselect, Escape and mode switch. Worst-places rows and suggestion buttons have **no hover preview** (not built; not a defect, a missing feature).
 - **Sangamwadi planner workflow** — BROWSER-VERIFIED, partial (previous round): Map Selected Area 19 s, analysis 47 s. Worst place #2 Dr. Rajendra Prasad Path; its "Give its approach more green time" suggestion had no way to open the junction (fixed in 902e354, test). Retime and lane change each applied as one undo step. Open items carried into 29.3: the wording "No pressing problem at this hour" shown while 886 of 1,954 veh/h get through, and a junction reported as having "ran this junction without a signal" (possibly fixed by 2d1073b).
+
+### 29.2 Narrow windows (task 1)
+
+BROWSER-VERIFIED. `steps_layout.json` + `js/layout.js` (floating boxes overlapping, off-screen, controls covered at their centre, clipped content) in View, Build, Draw Area, road selected, junction editor, Simulate (pick / What's wrong / Improve & compare after Save + Compare + Through the day / outdated banner), at 1,920, 1,600, 1,366, 1,280, 1,024, 768 and 390 px wide (900 px high; 390 × 844). `run.sh layout 1600`; log `out/layout.log` (after) and `out/layout_before.log`.
+
+| width | before (e04c9bb) | after b1d71f8 |
+|---|---|---|
+| 1,920 / 1,600 | clean | clean (a first version of the fix put the Cesium toolbar under Build's centred toolbar at 1,920 with the junction editor open; fixed) |
+| 1,366 / 1,280 | centred Mode bar covers the Cesium home / 2D-3D / base-layer buttons whenever a right panel is open (junction, Simulate, road panel at 1,280) | clean |
+| 1,024 | Mode bar also covers the top of the right panel (junction editor "Back", Simulate header), and the Cesium buttons | clean |
+| 768 | Mode bar under the top-left box and over the panel | the 27rem panel (Simulate, junction editor) leaves no room: Mode bar dropped under the top-left box still runs 30 px under the panel's left edge; Cesium buttons under the top-left box. Not fixed (tablet layout would need a design, not CSS nudges) |
+| 390 | panels (27rem = 432 px) wider than the screen | unchanged: no phone layout exists |
+
+Fix (CSS only, `index.css` + one class in `App.tsx`): the Mode bar stays centred while it fits between the top-left box and the panel, else sits just right of the top-left box (≤ 1,250 px with the 27rem panel, ≤ 1,090 px with the 22rem panel, ≤ 960 px with none), else drops under it (≤ 1,101 / 1,021 / 669 px) with Build's compact toolbar moved down; the Cesium toolbar goes below the Mode row when a panel is open under 1,500 px. Screenshots (looked at): `/workspace/work/vp-overhaul-shots/v3-ux2-layout-*_1366.png`, `*_1024.png`.
+
+### 29.3 Planner workflow on Shivajinagar / COEP (task 2)
+
+BROWSER-VERIFIED, 1,600 × 1,000, mapped signals loaded, seed Veer Santaji Ghorpade Road `osm_218681353`, area 900 m square centred 73.8612, 18.5265. Steps `steps_w_coep_A.json` (draw + import), `_B.json` (analysis → edit → compare → undo/redo → reload), `_C.json` (fresh session = reload → Through the day). All numbers are model output.
+
+| step | time | result |
+|---|---|---|
+| Draw Area (4 clicks) → Map Selected Area | 9 s | "Area mapped: 883 new objects. 51 road ends cut at the boundary"; 0 roads changed (they are already in the DB); 2 undo steps |
+| Simulate, click road → analysis | 80 s (75 s running) | north-east 2 km/h LOS F, v/c 2.76 of 704 PCU/h; south-west 40 km/h LOS B; cause spillback traced to "Veer Santaji Ghorpade Road / Underpass / Babasaheb Ambedkar Marg" (its signal), 3/3 runs |
+| Worst places | — | 1 Smita Patil Path at its signal 4.5×, 2 Unnamed road 3.2×, 3 Unnamed road 3.3×, 4 Ganeshkhind Road 3.3× |
+| Suggestion "Fix the junction where the queue starts" → Test it → Save existing city | 40 s | baseline 32,492 veh/h, 09:00, 3 seeds |
+| Open the junction in Build | instant | opens `jx_cdfebe2b` (5 approaches, 19 internal), arms highlighted; start note: "the signal plan the last analysis ran here (mapped signal)… No signal held Unnamed road from the south-west in that run: shown in every phase (always green)" |
+| Edit: Veer Santaji Ghorpade Road green 20 → 35 s (cycle 151 → 166 s), then lanes 3 → 4 on 3 pieces, 448 m | — | 1 undo step each |
+| Simulate re-run | 40 s | outdated banner shown, then new key; north-east 11 km/h LOS F (v/c 0.23), cause now its own signal |
+| Compare | 40 s | "Mixed", confidence low: road and neighbourhood better, area worse (2 new bottlenecks named) |
+| Undo ×2 / Redo ×2 (Ctrl+Z / Ctrl+Y) | — | undo returns every changed object to its pre-edit state (0 differences); redo re-applies all 4 objects |
+| Reload | — | all 4 edited objects persisted unchanged; re-analysis 52 s gives the same result key (b6e115c3) as before the reload |
+| Through the day | 96 s | 4 rows; "Congested in all 4 periods" |
+
+Console errors: none from the app (only the blocked Google Fonts request). Hover preview on worst-places rows and suggestion buttons: still none (not built, as 29.1).
+
+Re-checks:
+- **"ran this junction without a signal"** (Sangamwadi, 29.1): not seen. On the COEP junction the editor names the mapped signal and words the unsignalised arm as "No signal held … always green", and the comparison reports that arm as 0 → 0 veh/h, so the note matches the run. Consistent with 2d1073b (UNIT-TESTED there); BROWSER-VERIFIED here on one junction only.
+- **"No pressing problem at this hour"** while most of the routed traffic did not reach the road: plainly contradicted the "886 veh/h · 1,954 routed" beside it. Changed (wording only, b1d71f8): when a flowing/moderate road has a direction with ≥ 100 veh/h routed and < 80% of it through, the card reads "The road flows, but traffic is held before it — 39% of the traffic routed eastbound got through" with "the limit is before this road… see the worst places". UNIT-TESTED (`RoadAnalysisPanelPieces.test.ts`, 16/16) and BROWSER-VERIFIED on Sangamwadi at 1,366 px (`v3-ux2-layout-sim-understand_1366.png`). The card still carries the green check icon of the "times" kind; arguably it should not look like an all-clear (not changed).
+
+Wording / consistency problems found, reported, not changed (they need a decision on the metric, not a wording tweak):
+1. Compare KPIs disagree: Time to drive 396 → 88 s (−78%, 3/3 runs) but Speed 22 → 21 km/h (−5.6%, "0/3 runs"). Cause (read from `ScenarioComparison.ts`): time is the unweighted mean of the two directions; speed is flow-weighted, and the fast south-west direction's flow halved (989 → 484 veh/h), pulling the weighted mean down; the per-run agreement for speed uses 1/time, so the "0/3" contradicts its own −5.6%. Proposal: compute both from the same weighting.
+2. Compare junction card: "Babasaheb Ambedkar Marg from the south-east … green —% → 36%" although the editor showed the before-plan as 60 s of 151 s.
+3. "End junction delay 288 s → — no data … the simulation recorded no junction at the road's ends in any run" after an edit made to the very junction at the road's end.
+4. What's wrong: south-west "989 veh/h, 2,681 routed" yet load 91% and LOS B, with no line saying the other 1,692 veh/h were held before the road (the new suggestion wording only fires when the road is not congested overall).
+5. Through the day: Night row "Demand 293 veh/h, Got through 382 veh/h" (more through than demand); summary "the demand on its towards the north-east side is 0% of its capacity (23 veh/h)" (grammar; 0% from rounding).
+
+### 29.4 Import → Undo / Redo (task 3)
+
+Live Overpass checked first (2026-11-10 01:11 IST): overpass-api.de, overpass.kumi.systems, overpass.private.coffee all HTTP 000 (unreachable).
+
+**BROWSER-VERIFIED with recorded Overpass response, not live Overpass.** Backend started without the OSM index so the app's own Overpass path is used; Playwright intercepts the Overpass hosts and answers from `overpass_stub.py` (Overpass-format JSON built from the local extract, recorded to `overpass_recorded/<sha1>.json`; 14 queries served: roads, buildings, metro, signals). Steps `steps_imp.json`, `run.sh imp 1600 --stub …/overpass_stub.py`. Area 820 × 800 m at 73.865, 18.465 (not fully in the DB).
+
+| check | result |
+|---|---|
+| Draw Area → Map Selected Area | 10 s; 18,273 → 18,536 roads; "975 new objects. 70 road ends cut at the boundary"; network key d3a77b4 → 4d3bbbba |
+| Ctrl+Z once | only the "Area saved" step is undone: roads, pieces and key unchanged (UX: the import is 2 undo steps, so the first Ctrl+Z appears to do nothing — reported, not changed) |
+| Ctrl+Z twice | 18,273 roads, 76 clipped pieces, key d3a77b4 (exactly the pre-import key), deleted list 0 |
+| Ctrl+Y twice | 18,536 roads, key 4d3bbbba again |
+| Reload | same 18,536 road ids (0 missing, 0 extra), deleted list identical (0), key identical |
+| c01 (programmatic, same session): clipped L-shaped import | 369 added, source "Overpass", 80 boundary cuts, 202 pieces; study-area load +1,565 |
+| c01 connectivity (600 m area round osm_436192004) | 648 roads, 1,033 shared-OSM-node pairs, 0 not joined; 3 bridges |
+| c01 import undo / redo elsewhere | 20,692 → 20,965 → 20,692 → 20,965 roads; undo restores the key exactly, redo restores the post-import key; 0 OSM deletions left after undo |
+
+Same run with the backend's local OSM index (source "local", Overpass not called): identical counts (975 objects, 70 cuts, 369/80/202, +1,565, 648/1,033/0) and the same undo/redo/reload behaviour; only the network keys differ (f2f7db6a vs 4d3bbbba after import, presumably mapped vs no signals — not investigated). Logs `out/imp.log` (stub), `out/imp_localindex.log`.
+
+### 29.5 Not done
+- 768 px with the 27rem panel and any phone width (390 px): need a responsive design, not CSS fixes.
+- Hover preview for worst-places rows and suggestion buttons (feature, not built).
+- The five wording / metric items in 29.3 and the two-step import undo in 29.4: reported only.
+- Only one junction re-checked for the "without a signal" note; one workflow run (no seed repetition of the browser workflow).
