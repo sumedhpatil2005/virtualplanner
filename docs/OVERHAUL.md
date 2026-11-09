@@ -1992,3 +1992,12 @@ Code: vp-wt-fix3 on integration head 984a0e4 plus d90711c, 155913a, 01f158b, ccc
 | vite build | built, 1,919 modules (chunk-size warning only) |
 
 Previous full run (§ Phase 3, e8a1ec8): 557 passed, 6 skipped. Not run here: the whole-database edit harness for every operation (only delete, 60 samples, 0 violations, §27.7) and the opt-in validation harness (VAL24=1).
+
+## 29. Outstanding browser checks
+
+Code: worktree vp-wt-ux2 at integration head e04c9bb (includes 902e354 and 2d1073b). Backend on 8281 with a fresh copy of the project DB and the local OSM index (`TWINCITY_OSM_INDEX=/workspace/work/vp-int-e2e/db_osm_index.db`, mapped signals); static build on 4421. Harness: `/workspace/work/vp-ux2-e2e/` (copied from `/workspace/work/vp-ux-e2e/`: `harness.py`, `run.sh NAME WIDTH`, `steps_*.json`, `js/`). Run 2026-11-10.
+
+### 29.1 Carried over from the previous round (vp-ux-e2e, before e04c9bb)
+
+- **Hover preview** — BROWSER-VERIFIED (previous round): hovering a lane-scope choice previews exactly the ways the edit is then applied to (then: Sangamwadi deck, 3 pieces, 564 m; the scope rules changed since in §27.7 and the same choice is now 2 pieces, 504 m — UNIT-TESTED there, not re-hovered in the browser). Junction editor highlights its arms; the highlight clears on mouse-out, deselect, Escape and mode switch. Worst-places rows and suggestion buttons have **no hover preview** (not built; not a defect, a missing feature).
+- **Sangamwadi planner workflow** — BROWSER-VERIFIED, partial (previous round): Map Selected Area 19 s, analysis 47 s. Worst place #2 Dr. Rajendra Prasad Path; its "Give its approach more green time" suggestion had no way to open the junction (fixed in 902e354, test). Retime and lane change each applied as one undo step. Open items carried into 29.3: the wording "No pressing problem at this hour" shown while 886 of 1,954 veh/h get through, and a junction reported as having "ran this junction without a signal" (possibly fixed by 2d1073b).
