@@ -1696,3 +1696,24 @@ These are not re-run here. Any re-run should be made one at a time, on port 8221
 - Hypotheticals: add `VAL24_HYPO_PCU=trr2021 | VAL24_HYPO_SPEEDCAP=50 | VAL24_HYPO_EDGE=1.8 | VAL24_HYPO_SCALE=1.43`.
 - Analysis: `VAL24_DATA=<dir with *.jsonl> python3 backend/data/observed_validation/analyze_validation.py` writes `sec24_tables.md` and `summary.json`.
 - The run lists are committed in `backend/data/observed_validation/runs/`. The outputs used here (13 counts, 21 speeds, 10 sweeps, 11 + 11 + 3 corridor sweeps, 48 area runs, and 4 × 16 hypothetical runs) are in `/workspace/work/vp-wt-val2/valdata/*.jsonl` and are not committed.
+## 25. Stale "Through the day" rows: browser check, and the Sangam Bridge report
+
+### 25.1 Browser check of the stale-row fixes (8b17c37), 2026-11-09
+
+Production build of this worktree (ee77ef2 + this section's fix), headless Chromium, backend on a database copy **with the local OSM index (mapped signals loaded)**, Sangamwadi deck `osm_208004768`, area 1 km, seed 42, weekday. Script `vp-sev2-e2e/steps5.json` + `js5/` (working files, not in the repository). Each change was made through the engine API the UI calls (Build edit with history, demand settings, signal timing, day type), then the state and DOM were read: `timeline.outdated`, the amber notice `timeline-outdated`, opacity of `timeline-results` (rows, day summary and per-run table are inside it), and whether the row object is the one computed before (identity).
+
+| Change | Marked at once (notice, dimmed 0.6) | Back (Undo / setting back) restores the earlier rows as current | Label |
+|---|---|---|---|
+| Lane change on the deck (+1 lane, 2 roads changed) | yes | yes, same rows object | BROWSER-VERIFIED |
+| Deletion of `osm_317550182`, Undo (reconnected), Redo, Undo | yes after delete and after Redo | yes after each Undo | BROWSER-VERIFIED |
+| Through traffic off / on | yes | yes | BROWSER-VERIFIED |
+| Hypothetical ×2 / back to ×1 | yes | yes | BROWSER-VERIFIED |
+| Signal timing equal / Webster | yes | yes | BROWSER-VERIFIED |
+| Day type weekend / weekday | yes | yes | BROWSER-VERIFIED |
+| Edit → Run again → Undo → Redo → Undo | yes before the re-run | re-run gave new rows (09:00 1,968 → 2,044 veh/h through); Undo showed the original rows, Redo the re-run's rows, both as current, no re-run | BROWSER-VERIFIED |
+| Junction editor: green +20 s, Undo | – | – | not done (see below) |
+| ×2 set while the periods run, then back to ×1 | yes while running | **bug, fixed here** (below) | BROWSER-VERIFIED (bug), fix UNIT-TESTED |
+
+**Bug found: a change made during the run and then undone left mixed rows on show as current.** Each period reads the network and demand in force when it starts (`studyPlan` per period). With ×2 set after the 09:00 row landed, the 19:00 and 23:00 rows were computed at ×2 (19:00: 2,121 veh/h Severe; 23:00: 1,039 veh/h, against 1,968 Flowing and 534 at ×1) while the run kept the key of its start. Changing back to ×1 then showed these rows undimmed as the ×1 case, and the run was also kept for Undo. Fix (`SimulationMode.runTimeline`): before each period the current key is compared with the run's; if it differs the run is marked `mixed`, which keeps it outdated whatever the case becomes, it is not kept for Undo, and the notice says the later periods describe the changed case. Test: `TimelineStale.test.ts` "a change made while the periods run and then undone…" (fails on ee77ef2, passes with the fix).
+
+Analysis error seen: with through traffic off, the road analysis above the rows went to status `error` (the rows were correctly marked); not investigated here.

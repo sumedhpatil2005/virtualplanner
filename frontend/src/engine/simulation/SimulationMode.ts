@@ -92,6 +92,11 @@ export interface TimelineState {
   key: string | null;
   /** The network, demand or settings changed since the rows were computed: they describe another case until run again. */
   outdated?: boolean;
+  /**
+   * A later period started after the case had changed (it reads the network and demand in force when it starts),
+   * so the rows mix two cases: outdated whatever the case now is, and never kept for Undo (docs/OVERHAUL.md §25).
+   */
+  mixed?: boolean;
 }
 
 /** One period of the day: its own demand (hour factor on the period's plan), its own assignment and corridor runs. */
@@ -1472,6 +1477,8 @@ export class SimulationMode {
     try {
       for (let i = 0; i < DAY_PERIODS.length; i++) {
         const p = DAY_PERIODS[i];
+        // This period reads the case in force now: if it is no longer the one the run started on, the rows mix two cases
+        if (!this.state.timeline.mixed && this.timelineKey() !== key) this.setState({ timeline: { ...this.state.timeline, mixed: true, outdated: true } });
         const landUsePeriod = p.hour < 12 ? 'AM_Peak' as const : 'PM_Peak' as const;
         const plan = this.studyPlan(area, landUsePeriod);
         if (!plan?.trips.length) throw new Error('No traffic can be estimated for this area.');
@@ -1489,8 +1496,8 @@ export class SimulationMode {
       }
       this.timelineRun = null;
       // A change made while the periods ran leaves rows for the case at the start: marked, and kept for an Undo back to it
-      const done: TimelineState = { ...this.state.timeline, status: 'ready', progress: 1, outdated: key !== this.timelineKey() };
-      this.keepTimeline(done);
+      const done: TimelineState = { ...this.state.timeline, status: 'ready', progress: 1, outdated: !!this.state.timeline.mixed || key !== this.timelineKey() };
+      if (!done.mixed) this.keepTimeline(done);
       this.setState({ timeline: done });
       return true;
     } catch (err) {
@@ -1521,7 +1528,7 @@ export class SimulationMode {
     const kept = tl.key !== key && tl.status !== 'running' ? this.keptTimelines.get(key) : undefined;
     if (kept) { this.setState({ timeline: kept }); return; }
     if (!tl.rows.some(r => r.result)) return;
-    const outdated = tl.key !== key;
+    const outdated = tl.key !== key || !!tl.mixed;
     if (!!tl.outdated !== outdated) this.setState({ timeline: { ...tl, outdated } });
   }
 

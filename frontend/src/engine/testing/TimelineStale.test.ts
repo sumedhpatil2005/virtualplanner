@@ -105,6 +105,29 @@ describe('Through the day: no stale rows on show', () => {
     mode.exit();
   }, 240000);
 
+  it('a change made while the periods run and then undone leaves the rows marked: they mix two cases', async () => {
+    const { mode } = setup();
+    // The change lands as soon as the first period's row does (the user changes the ×2 setting mid-run), and is
+    // changed back once the next period has started on it
+    let step = 0, outdatedAfterBack: boolean | undefined;
+    const unsub = mode.subscribe(() => {
+      const t = tl(mode);
+      if (step === 0 && t.status === 'running' && t.rows[0]?.result) { step = 1; mode.setDemandSettings({ hypotheticalScale: 2 }); }
+      else if (step === 1 && t.mixed) { step = 2; mode.setDemandSettings({ hypotheticalScale: null }); outdatedAfterBack = tl(mode).outdated; }
+    });
+    expect(await mode.runTimeline()).toBe(true);
+    unsub();
+    expect(step).toBe(2);
+    expect(tl(mode).mixed).toBe(true);
+    expect(outdatedAfterBack, 'mixed rows shown as current after changing back').toBe(true);
+    expect(tl(mode).outdated).toBe(true);
+    // not kept: a later change and change back does not bring them back as current
+    mode.setDayType('weekend'); mode.setDayType('weekday');
+    await sleep(50);
+    expect(tl(mode).outdated).toBe(true);
+    mode.exit();
+  }, 240000);
+
   it('Undo back to a case that was run brings its rows back; Redo brings back the rows of the edit', async () => {
     const { mode, edit } = setup();
     await mode.runTimeline();

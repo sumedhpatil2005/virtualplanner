@@ -246,7 +246,9 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           <Button size="sm" icon={tl.status === 'running' ? Loader2 : Clock} spin={tl.status === 'running'} disabled={tl.status === 'running'} onClick={() => void mode.runTimeline()}>{tl.rows.some(r => r.result) ? 'Run again' : 'Compare times of day'}</Button>
           {tl.status === 'running' && <><span className="text-xs text-slate-400 tabular-nums">{Math.round(tl.progress * 100)}%</span><Button size="sm" variant="ghost" onClick={() => mode.cancelTimeline()}>Stop</Button></>}
         </div>
-        {tl.outdated && <p className="text-[11px] text-amber-200 flex items-center gap-1" role="status" data-testid="timeline-outdated"><AlertTriangle size={12} />{tl.status === 'running'
+        {tl.outdated && <p className="text-[11px] text-amber-200 flex items-center gap-1" role="status" data-testid="timeline-outdated"><AlertTriangle size={12} />{tl.mixed
+          ? 'The network or demand changed while these ran: the later periods describe the changed case, the earlier ones the case before. Run again.'
+          : tl.status === 'running'
           ? 'The network or demand changed after these runs started: they describe the earlier case. Run again when they finish.'
           : 'The network or demand changed since these were computed: they describe the earlier case. Run again.'}</p>}
         {/* Everything read from the rows (rows, day summary, per-run table) is dimmed together when they describe another case (docs/OVERHAUL.md §25) */}
