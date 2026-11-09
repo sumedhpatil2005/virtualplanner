@@ -1736,7 +1736,7 @@ User's rows (as reported): 09:00 1,112 veh/h 3 km/h Severe; 14:00 1,152 Severe (
 | b7f319e | 1 km | mapped (22) | 1,436 (3.5) | 1,624 (4.4) | 1,436 (3.5) | 992 (33) | S S S Moderate |
 | b7f319e | 3 km | mapped (156) | 1,156 (2.8) | 952 (2.7) | 1,156 (2.8) | 424 (46) | S S S Flowing |
 
-29f1ca4 with the index gave the same figures as the earlier run of that commit (§ earlier sev work), so its night 0 is not a signal-source effect.
+29f1ca4 with the index gave the same figures as the earlier run of that commit (`vp-sev-e2e/out/29f1ca4-osm_23028035-r2000-tl.json`, signals 70 there too), so its night 0 is not a signal-source effect.
 
 **Reproduced (within 10% on all four volumes):** b7f319e, 2 km, mapped signals: +1%, −5%, −2%, −7%, the same four statuses, speeds 2–3 km/h at the three day periods. Without mapped signals the volumes are within +4%, −14%, +1%, −8% and the speeds match as shown (3 and 12 km/h). In both, at 2 km the area is over-saturated in the model (893 links over capacity at 09:00; 56–57% of the corridor's routed demand got onto the network), the bridge carries what gets past queues reaching back onto it (demand 2,500–3,700 veh/h routed onto a 2,571 PCU/h one-way), and at 23:00 demand (≈780 veh/h) is far below capacity yet speed is 12–20 km/h (LOS E). So the user's pattern is what the code before the §22 fixes (9f35cca) produced for a 2 km area: the all-day Severe is the model's saturated 2 km neighbourhood, not a display error, and it depends on the area size (1 km: night Moderate; 3 km: night Flowing). 29f1ca4 (before the §19 changes) did not produce it (night 0). Which §19 change moved the night row was not isolated (one seed).
 
