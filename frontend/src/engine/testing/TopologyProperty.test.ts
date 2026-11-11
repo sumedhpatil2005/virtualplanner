@@ -200,8 +200,13 @@ function draw(mode: 'draw_road' | 'draw_flyover', pts: Pt[], move?: { index: num
  * Checks one drawn object against the acceptance criteria. `s0` = before the drawing, `s1` = after.
  * `bad(rule, detail)` records a violation.
  */
-function verifyDrawn(newId: string, s0: Snap, s1: Snap, bad: (rule: string, detail: string) => void, notes: Record<string, number>, expectJoin: string[] = []) {
+function verifyDrawn(newId: string, s0: Snap, s1: Snap, bad0: (rule: string, detail: string) => void, notes: Record<string, number>, expectJoin: string[] = []) {
   const nr = s1.get(newId) as Drivable;
+  // VP_DUMPDIR: the drawn road and the drawing points of every failing sample, to reproduce it
+  const bad = (rule: string, detail: string) => {
+    bad0(rule, detail);
+    if (process.env.VP_DUMPDIR) fs.appendFileSync(path.join(process.env.VP_DUMPDIR, 'dump.jsonl'), JSON.stringify({ rule, detail, nr, before: (s0.get(detail.split(' ')[0]) ?? null) }) + '\n');
+  };
   const nc = nr.coordinates as Pt[];
   const note = (k: string) => (notes[k] = (notes[k] ?? 0) + 1);
   // zero length
