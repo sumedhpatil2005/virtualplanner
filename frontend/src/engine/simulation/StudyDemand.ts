@@ -5,6 +5,7 @@ import type { MicroDemandTrip, VehicleKind } from './TrafficMicroSim';
 import { resolveBuildingTripEvents, hasTripOverrides } from './modeSplit';
 import { PUNE_TRIP_RATES, vehicleTripsByClass } from './tripRates';
 import type { Bounds } from './StudyAreaExplorer';
+import type { OdmeProvenance } from '../demand/odmeAssignment';
 
 export interface SimulationContext {
   scenarioId?: string;
@@ -23,6 +24,8 @@ export interface DemandProvenance {
   pairCount: number;
   /** For area demand (AreaDemand.ts): veh/h by part. */
   components?: DemandComponents;
+  /** Set when the plan is a demand version estimated from calibration counts (demand/odmeAssignment.ts): prior, datasets, iterations, change statistics. */
+  odme?: OdmeProvenance;
 }
 /** Peak-hour vehicles per hour by part of the area demand. */
 export interface DemandComponents {
