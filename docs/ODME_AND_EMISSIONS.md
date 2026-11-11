@@ -18,8 +18,9 @@ Labels: **UNIT-TESTED** (vitest), **HEADLESS-RUN** (app code run headlessly on a
 - **Not a multiplier:** each OD cell gets its own factor from the gradient; a cell absent from the prior stays absent
   (no OD pair is invented). There is no global scale.
 - **Additions (all reported in the run's provenance):** cell factor bounds, default 0.25–4 (the bounds the app's IPF seeding
-  already uses, `calibration/ipf.ts`; an app choice, not a standard); optional regularisation toward the prior,
-  + ½ μ Σ (g − ĝ)²/ĝ (GLS-style, Cascetta 1984), default μ = 0 = Spiess as published, UI offers 0 / 0.1 / 1; a step that
+  already uses, `calibration/ipf.ts`; an app choice, not a standard); optional regularisation toward the prior
+  (engine option only), + ½ μ Σ (g − ĝ)²/ĝ (GLS-style, Cascetta 1984), default μ = 0 = Spiess as published (the UI runs
+  μ = 0: at real volumes small μ has no effect, §4); a step that
   raises Z after re-assignment is halved (max 4 times) and, if it still does, discarded (the iteration is reported with
   `accepted: false`, the previous matrix is kept).
 - **Count → model:** a road-direction count is compared with the busiest link of that road in that direction (as
@@ -115,7 +116,12 @@ Sites not in the 3 km areas (no link of their ways): Mhatre and Yerwada + Ambedk
   (Sancheti, Sangam) have inferred mappings; one area ran with estimated signals; 7 sites only; split rule fixed in advance
   (id order, alternate) but with so few sites any split is fragile.
 
-MU1_PLACEHOLDER
+**Regularisation check (μ = 1, same runs; raw `/workspace/work/um-odme-run/odme_real_mu1.json`).** Practically no
+difference: calibration GEH after 0.2 / 0.9 / 0.3 / 4.2, validation 55.6 / 37.0 / 52.9, Table 5 breached the same way (PM cell
+R² 0.80, sector 71%; AM cell R² 0.56, sector 33%). Reason: the count term is unweighted (veh/h)² as in Spiess, while the
+prior term is (veh/h)²/(veh/h), so μ = 0.1–1 is orders of magnitude too small to hold the matrix at these volumes. The UI's
+μ choices therefore do little; a scale-consistent weighting (e.g. counts weighted 1/count, GLS) is an open item — not tuned
+here to make the result look better. The AM area ran with **estimated** signals in both runs (the signal request failed).
 
 ## 5. Fuel and emissions — what it does
 
@@ -155,9 +161,28 @@ steady one; totals = sum of classes, per hour = × 3600/window, seeds averaged, 
 missing class listed. Plus `RoadAnalysis.test.ts` (existing comparison test, extended): a real analysis job produces emissions
 for both seeds and an ARAI estimate, and a re-run of the same job compares with zero change on every emissions row.
 
-## 7. Not done / open
+**Idle rates (read before using totals).** The published HBEFA4 fit's standstill term for PC petrol Euro-4 is
+f0 = 493 mg/s fuel (≈ 2.4 L/h); for the motorcycle class 74 mg/s (≈ 0.36 L/h). These are the coefficients as published by
+SUMO; they were not checked against measured idle consumption of Indian vehicles, so in a saturated corridor (where idling
+is a large share of fuel) the absolute totals are uncertain. Differences between scenarios on the same demand are the
+intended use.
 
-- Browser: see §8 (or UNTESTED where not listed there).
-- Turning-count constraints in ODME; ODME in a Web Worker; per-dataset count weights from provenance (all weights 1).
+## 8. Browser verification (2026-11-11, headless Chromium + SwiftShader, backend on a copy of twincity.db, port 8305/4505)
+
+Script `/workspace/work/um-odme-run/e2e.py` (scratch, not committed); screens `/workspace/work/um-odme-run/shots/`.
+SYNTHETIC Traffic-data datasets created through the API on the DB copy: *SYNTHETIC ODME calibration* (Shivaji Bridge
+`osm_22841323`, 09:00–10:00 weekday, fwd 1,500 / bwd 1,300 veh/h) and *SYNTHETIC ODME validation* (Jangli Maharaj Path
+`osm_217431357` fwd 1,020 veh/h). These numbers are invented; the GEH values below say nothing about model accuracy.
+
+| Step | Result | Label |
+|---|---|---|
+| Simulate Shivaji Bridge, 2 km, 09:00 → Details → Fuel and emissions | card shows corridor fuel 1,530.9 L/h, CO₂ 3,610.6 kg/h, NOx 7,698 g/h, PM 1,070.7 g/h, idling 712.7 veh·h/h (55% of fuel), 10,284 veh·km/h; per-class rows with HBEFA class and "stand-in" for two-wheeler/auto; ARAI cross-check block (103,696 veh·km/h, CO₂ 10,179 kg/h, PM without two-wheelers) with sources | BROWSER-VERIFIED |
+| Details → Checks against traffic counts → Estimate demand from calibration counts | 45 s; 3 accepted iterations (9 routings), demand 29,200 → 29,840 veh/h, 1,212 cells, 20 at a bound; Table 5: trip-end slope 0.926, trip-end R² 0.949, sector 29.7% → "OUTSIDE limits" in red; calibration GEH 24.6 → 17.0 (bwd), 9.2 → 0.5 (fwd); validation (held out) 43.5 → 43.5 | BROWSER-VERIFIED |
+| Tick "Run the analysis on this estimated demand" | analysis re-ran (141 s) on the ODME version: demand label "ESTIMATED FROM CALIBRATION COUNTS … OUTSIDE TAG M3.1 Table 5 limits"; corridor fuel 1,557.4 L/h; `frozenAssumptions().demandEstimatedFromCounts` = prior key, dataset, 3 iterations, 09:00 | BROWSER-VERIFIED |
+| Save existing city + Compare (same network, ODME demand frozen) | in-page `ComparisonResult`: verdict no change, inputs matched, every emissions row before = after, change 0 | BROWSER-VERIFIED (engine state in the page); the Compare emissions block's rendering was not captured by the script → **UNTESTED** visually |
+
+## 9. Not done / open
+
+- Scale-consistent regularisation / count weighting (GLS); turning-count constraints in ODME; ODME in a Web Worker; per-dataset count weights from provenance (all weights 1).
 - Emissions: slope (terrain) not passed (flat road); fleet vintage / fuel mix not user-editable; no Indian instantaneous
   2W/3W model exists in the sources opened; scenario HTML/CSV report does not yet include emissions or ODME provenance.

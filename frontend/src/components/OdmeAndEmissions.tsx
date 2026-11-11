@@ -43,12 +43,11 @@ const FitTable: React.FC<{ title: string; rows: OdmeFit[]; testId: string; note:
 export const OdmeCard: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
   const [kinds, setKinds] = useState<DatasetKind[]>(['measured', 'manual']);
-  const [mu, setMu] = useState(0);
   const o = sim.odme, r = o.report, p = r?.provenance;
   const run = async () => {
     try {
       const rows = await trafficApi.counts({ kinds });
-      await mode.estimateDemandFromCounts(rows, { allowEstimated: kinds.includes('estimated'), options: { priorWeight: mu } });
+      await mode.estimateDemandFromCounts(rows, { allowEstimated: kinds.includes('estimated') });
     } catch (e) {
       // The estimator reports its own errors in state; this is the count fetch failing
       console.warn('[OdmeCard] counts not read', e);
@@ -58,13 +57,9 @@ export const OdmeCard: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   return (
     <div className="space-y-2 text-xs text-slate-400 rounded-lg border border-cyan-400/20 bg-cyan-500/5 p-2" data-testid="odme-card">
       <p className="flex items-center gap-2 text-cyan-100 font-medium"><Sigma size={13} /> Estimate demand from calibration counts</p>
-      <p className="leading-snug">Adjusts the area's OD demand so the routed volumes come closer to your <strong>Calibration</strong> counts at {String(sim.timeOfDay.hour).padStart(2, '0')}:00 (Spiess 1990 gradient method on this app's equilibrium routing; cells change by a factor of 0.25–4 at most; no new OD pairs). <strong>Validation</strong> counts are never used for fitting; they are checked before and after. The result is a separate demand version: the baseline demand is not changed, and you choose whether to run on it.</p>
+      <p className="leading-snug">Adjusts the area's OD demand so the routed volumes come closer to your <strong>Calibration</strong> counts at {String(sim.timeOfDay.hour).padStart(2, '0')}:00 (Spiess 1990 gradient method on this app's equilibrium routing; cells change by a factor of 0.25–4 at most; no new OD pairs; no extra regularisation toward the estimate). <strong>Validation</strong> counts are never used for fitting; they are checked before and after. The result is a separate demand version: the baseline demand is not changed, and you choose whether to run on it.</p>
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={kinds.includes('estimated')} onChange={e => setKinds(e.target.checked ? ['measured', 'manual', 'estimated'] : ['measured', 'manual'])} /> include estimated datasets</label>
-        <label className="flex items-center gap-1">stay close to the demand estimate
-          <select className="bg-slate-900 border border-white/10 rounded px-1" value={mu} onChange={e => setMu(Number(e.target.value))} aria-label="Regularisation toward the prior">
-            <option value={0}>no extra weight (Spiess)</option><option value={0.1}>weight 0.1</option><option value={1}>weight 1</option>
-          </select></label>
       </div>
       <Button size="sm" icon={o.status === 'running' ? Loader2 : Sigma} spin={o.status === 'running'} disabled={o.status === 'running' || !sim.area} onClick={() => void run()} data-testid="odme-run">{r ? 'Estimate again' : 'Estimate demand from calibration counts'}</Button>
       {o.status === 'running' && <p>Estimating… each iteration re-runs the area routing; the page may pause.</p>}
@@ -78,9 +73,9 @@ export const OdmeCard: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             <table className="w-full tabular-nums"><tbody>{p.change.map(c => (
               <tr key={c.name} className="border-t border-white/5"><td className="py-0.5 text-slate-300">{c.name}</td>
                 <td className="text-right">{c.value === null ? '–' : Math.abs(c.value) >= 100 ? fmt(c.value) : c.value.toFixed(3)}{c.name.includes('change') ? '%' : ''}</td>
-                <td className="text-right text-slate-500">{c.limit}</td>
-                <td className={`text-right ${c.within === false ? 'text-rose-300' : c.within ? 'text-emerald-300' : 'text-slate-500'}`}>{c.within === null ? 'reported' : c.within ? 'ok' : 'breach'}</td></tr>))}</tbody></table>
-            <p className="text-[11px] text-slate-500 leading-snug">TAG M3.1 asks that estimation not change the prior demand significantly; a breach means the counts pull the demand far from the estimate, which usually points at the network or the demand model rather than at the counts. Source: DfT TAG M3.1 (May 2026), Table 5.</p>
+                <td className="text-right text-slate-500 pl-2">{c.within === null ? '≈ 0' : c.limit}</td>
+                <td className={`text-right pl-2 ${c.within === false ? 'text-rose-300' : c.within ? 'text-emerald-300' : 'text-slate-500'}`}>{c.within === null ? 'reported' : c.within ? 'ok' : 'breach'}</td></tr>))}</tbody></table>
+            <p className="text-[11px] text-slate-500 leading-snug">Intercepts: TAG asks "near zero" without a number, so they are reported, not judged. TAG M3.1 asks that estimation not change the prior demand significantly; a breach means the counts pull the demand far from the estimate, which usually points at the network or the demand model rather than at the counts. Source: DfT TAG M3.1 (May 2026), Table 5.</p>
           </div>
           <FitTable title="Calibration counts (fitted: not independent evidence)" rows={r.calibration} testId="odme-calibration" note="Routed volume of the area assignment before and after, at the count's road and direction. These counts were used for fitting, so a better fit here is expected." />
           <FitTable title="Validation counts (held out, never fitted)" rows={r.validation} testId="odme-validation" note={r.validation.length ? 'Independent check: only these say whether the estimate generalises. Routed volume (assignment), not throughput.' : 'No validation count matches this area and hour, so the estimate has no independent check.'} />
@@ -113,10 +108,10 @@ export const EmissionsCard: React.FC<{ result: RoadAnalysisResult | null | undef
             <tr><td>Standing still, engine idling</td><td className="text-right text-slate-200">{fmt(e.perHour.idleS / 3600, 1)} veh·h/h ({fmt(e.perHour.idleFuelG / Math.max(1e-9, e.perHour.fuelG) * 100, 0)}% of fuel)</td></tr>
             <tr><td>Distance driven</td><td className="text-right text-slate-200">{fmt(e.perHour.vkm, 0)} veh·km/h</td></tr>
           </tbody></table>
-          <table className="w-full tabular-nums mt-1"><thead><tr className="text-slate-500"><th className="text-left font-medium">Class (model class)</th><th className="text-right font-medium">L/h</th><th className="text-right font-medium">CO₂ kg/h</th></tr></thead>
+          <table className="w-full tabular-nums mt-1"><thead><tr className="text-slate-500"><th className="text-left font-medium">Class (model class)</th><th className="text-right font-medium pl-2">L/h</th><th className="text-right font-medium pl-2">CO₂ kg/h</th></tr></thead>
             <tbody>{e.byKind.map(k => { const f = e.windowS > 0 ? 3600 / e.windowS : 0; return (
               <tr key={k.kind} className="border-t border-white/5" title={k.note}><td className="py-0.5">{k.kind.replace('_', ' ')} <span className="text-slate-500">({k.hbefaClass}{/STAND-IN/.test(k.note) ? ', stand-in' : ''})</span></td>
-                <td className="text-right">{fmt(k.totals.fuelL * f, 1)}</td><td className="text-right">{kg(k.totals.co2G * f)}</td></tr>); })}</tbody></table>
+                <td className="text-right pl-2">{fmt(k.totals.fuelL * f, 1)}</td><td className="text-right pl-2">{kg(k.totals.co2G * f)}</td></tr>); })}</tbody></table>
           <p className="text-[11px] text-slate-500 leading-snug mt-1">{e.label} Measured window {Math.round(e.windowS)} s × {e.perSeed.length} runs. Model: <a className="underline" href={e.model.url} target="_blank" rel="noreferrer">{e.model.model}</a>.</p>
         </div>
       )}
