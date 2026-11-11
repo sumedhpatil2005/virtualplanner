@@ -100,7 +100,30 @@ Explanation per scenario: improved / worse (beyond noise vs the baseline), assum
 
 ## 7. Browser verification
 
-BROWSER_RESULTS
+**BROWSER-VERIFIED, 2026-11-11.** Production build (`vite build`, API :8306) served on :4506; backend :8306 on a fresh copy of `twincity.db` (20,732 base objects) with the local OSM index (mapped signals) and the feasibility layers; Chromium/swiftshader via Playwright (map canvas hidden after load, as earlier harnesses). Script `/workspace/work/um-gen-run/e2e/gen_e2e.py`, results `/workspace/work/um-gen-run/e2e/results.json`, screenshots `/workspace/work/um-gen-run/shots/gen-table.png`, `gen-comparison.png`, `gen-candidates-viewport.png`. All clicks on the generator's own buttons (DOM).
+
+Shivajinagar: road `osm_22841323` (Shivaji Bridge), range 1 km, 09:00 weekday, seeds 42/7/11. Analysis 154 s: severe, 7 of 45 km/h north-west.
+
+| Step | Result |
+|---|---|
+| Diagnose | 5 locations. Shivaji Bridge NW at Shivaji Road / Jnanoba Bhakuji Jadhav Path: **downstream spillback, high** (39 % of delay behind a full road ahead, all seeds) + **excessive demand, high** (demand/capacity 1.31). SE direction: **turning conflicts, medium** (54 % of delay giving way / opposed). Area (assignment only): Dr. Rajendra Prasad Path, Nyaymurti Ranade Path, Bajirao Road — excessive demand (v/c 2.2–2.9, medium); Bajirao Road also **poor connectivity, medium** (detour ratio 2.7, 100 % no alternative). |
+| Candidates (4) | A retime the signal where the queue starts (Shivaji Road / Nyaymurti Ranade Path / …); B bus priority lane NW on Shivaji Bridge; A retime the signal at Bajirao Road / Nakalakar Bhonde Path / … (Webster); F +1 lane NW where Shivaji Bridge is narrowest. No flyover (the corridor junction had no signal plan in the run), no connector (no main road ending without a connection within 800 m), no turn ban (no right-turn movement matched on that approach). |
+| Create | 4 proposals, each with version "Generated (v1)" (backend `GET /scenarios/{id}/versions`: v1 each). Widening: feasibility screening 16 investigations, outside existing RoW **true (estimated)** → land take class 1; metro Line 2 crossing flagged. **Baseline unchanged**: sha256 of the base view (20,732 objects, `updatedAt` excluded) identical before, after creation and after evaluation. Active scenario after the batch: base. |
+| Evaluate | 736 s for baseline + 4 runs (2-CPU sandbox). **All 4 rows: inputs matched** the baseline run (demand key, trips, hour, seeds, warm-up, measured period, signal settings, corrections). |
+
+Results (model output, ESTIMATED; mean of 3 seeds):
+
+| Scenario | Trip time s | Delay s | Trips | Served % | Section km/h | Area veh·h | Cost / land / disruption | Compare verdict |
+|---|---|---|---|---|---|---|---|---|
+| Existing | 358 | 265 | 2,769 | 71.6 | 10.0 | 2,148 | 0 / 0 / 0 | — |
+| Retime queue origin | 356 | 268 | 2,547 | 70.4 | 9.0 | 2,262 | 1 / 0 / 1 | worse |
+| Bus lane NW | 361 | 274 | 2,500 | 68.8 | 12.3 | 2,174 | 2 / 0 / 2 | worse |
+| Retime Bajirao Road | 365 | 271 | 2,788 | 70.6 | 11.2 | 2,046 | 1 / 0 / 1 | better (selected road, every run) |
+| +1 lane NW | 358 | 263 | 2,761 | 70.9 | 12.8 | 2,141 | 3 / 1 / 4 | worse |
+
+Pareto set over the default priorities (trip time, trips completed, cost, land, disruption): **only the existing network** — every candidate is tied or worse on the traffic objectives within noise/seed agreement and worse on works classes; the table names who dominates each and on what (e.g. the bus lane is dominated by the existing network on trips completed, cost and disruption). Selecting *speed on the selected road* or *total time in the area* as objectives brings the Bajirao Road retiming and the lane addition into the set: the trade-off is visible, not hidden. The weighted ranking (trip time 2, cost 1) was shown beside it with its weights and normalisation. The explanation of "Retime queue origin" listed: worse trips completed 2,769 → 2,547 and area time 2,148 → 2,262 veh·h, confidence low (overloaded neighbourhood; runs disagree), assumptions (same frozen inputs; Webster on assigned demand; 3.5 m lanes), missing fuel/CO₂ (not available). Interpretation: under the estimated demand the generator's management options do not relieve this oversaturated corridor, and Webster retiming of an oversaturated junction on assigned demand can make the neighbourhood worse — exactly what the comparison is there to show. Console errors: only aborted external requests (`net::ERR_FAILED`).
+
+Found and fixed during the runs: version notes over the API's 1,000-character limit (422; now a compact note); the automatic road analysis restarted after the scenario switches and competed with the batch for the worker (now suspended and cancelled during create/evaluate). After the run, the scenario-name column was truncated to 9 rem with the full name as a tooltip (the narrow side panel wrapped names over many lines in `gen-table.png`) — CSS only, **not re-verified in the browser**. Not exercised in the browser: a drawn candidate (flyover / connector) through the Build drawing path (UNIT-TESTED headless with a plain add + topology check only); COEP area.
 
 ## 8. Limits and next steps
 
