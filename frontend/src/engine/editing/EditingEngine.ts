@@ -337,9 +337,12 @@ export class EditingEngine {
       // Junction: reuse a vertex of the other road (or of the new road) right at the crossing
       const oc = other.coordinates;
       const near = [x.sb, x.sb + 1].map(i => ({ i, d: planDistM(oc[i], x.point) })).sort((a, b) => a.d - b.d)[0];
-      const p: [number, number, number] = near.d <= VERTEX_REUSE_M ? [oc[near.i][0], oc[near.i][1], x.za] : [x.point[0], x.point[1], x.za];
+      let p: [number, number, number] = near.d <= VERTEX_REUSE_M ? [oc[near.i][0], oc[near.i][1], x.za] : [x.point[0], x.point[1], x.za];
+      // Two crossings this close on the new road share one junction point (no sliver, no second node)
+      const same = near.d > VERTEX_REUSE_M ? onNew.find(n => planDistM(n.p, p) < VERTEX_REUSE_M) : undefined;
+      if (same) p = same.p;
       if (near.d > VERTEX_REUSE_M) (byOther.get(other.id) ?? byOther.set(other.id, []).get(other.id)!).push({ sb: x.sb, tb: x.tb, p: [p[0], p[1], x.zb] });
-      if (!onNew.some(n => planDistM(n.p, p) < 0.05)) onNew.push({ sa: x.sa, ta: x.ta, p });
+      if (!onNew.some(n => planDistM(n.p, p) < 0.01)) onNew.push({ sa: x.sa, ta: x.ta, p });
     }
     // Other roads: insert from the far end so earlier indices stay valid
     for (const [id, pts] of byOther) {
@@ -356,7 +359,9 @@ export class EditingEngine {
     let coords = [...drawn.coordinates];
     if (!profiled) {
       for (const n of [...onNew].sort((a, b) => b.sa - a.sa || b.ta - a.ta)) {
-        const at = coords.findIndex(c => planDistM(c, n.p) < VERTEX_REUSE_M);
+        if (coords.some(c => planDistM(c, n.p) < 0.01)) continue;
+        // A drawn point right at the crossing becomes the junction point (moved < 0.5 m); never an end
+        const at = coords.findIndex((c, i) => i > 0 && i < coords.length - 1 && planDistM(c, n.p) < VERTEX_REUSE_M && !onNew.some(m => m !== n && planDistM(m.p, c) < 0.01));
         if (at >= 0) { coords[at] = [n.p[0], n.p[1], coords[at][2] || 0]; continue; }
         coords.splice(n.sa + 1, 0, n.p);
       }
