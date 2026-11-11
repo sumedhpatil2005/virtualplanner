@@ -93,14 +93,34 @@ database itself holds no proposals, so no real proposal data existed to migrate.
 
 | Check | Where | Label |
 |---|---|---|
-| Baseline isolation (edit, delete, override, Undo/Redo), lane scope, 3 independent proposals | `frontend/src/engine/testing/ScenarioIsolation.test.ts` (7) | UNIT-TESTED |
-| Modify/tombstone/revert, refusal for non-base ids and the baseline, 3 independent proposals, legacy upsert guard, versions immutable, restore = new head + auto-save, baseline-changed flag, fork, delete cascade, run inputs + compare differences, migration (synthetic + project DB copy) | `backend/tests/test_scenario_versions.py` (12), `test_scenario_isolation_repro.py` (1), existing `test_scenarios.py` (6) | UNIT-TESTED |
-| Fair-comparison input differences | `frontend/src/engine/testing/ScenarioIsolation.test.ts` "checkRunInputs" | UNIT-TESTED |
+| Baseline isolation (edit, delete, override, Undo/Redo), lane scope, 3 independent proposals, reload from the synced changes (incl. an undone edit dropped), restore replaces one proposal only | `frontend/src/engine/testing/ScenarioIsolation.test.ts` (9 of 10) | UNIT-TESTED |
+| Modify/tombstone/revert, refusal for non-base ids and the baseline, 3 independent proposals, legacy upsert guard, versions immutable, restore = new head + auto-save, baseline-changed flag, fork, delete cascade, run inputs + compare differences, migration (synthetic + project DB copy) | `backend/tests/test_scenario_versions.py` (11), `test_scenario_isolation_repro.py` (1), existing `test_scenarios.py` (6) | UNIT-TESTED |
+| Fair-comparison input differences | `frontend/src/engine/testing/ScenarioIsolation.test.ts` "checkRunInputs…" (1 of 10) | UNIT-TESTED |
+| Existing suites that touch the changed code, run one file at a time: EditScope 11, LaneScopeStore 3, CarriagewayDefinition 7, CarriagewayProperties 2 (+1 skipped as before), EditingWorkflow 9, JunctionEditing 29, EditRecompute 14, ComparisonAgreement 9, HistoryManager 7, HonestControls 17 (one call adapted to the new `compareScenario(baseView, scenarioView)` signature, assertions unchanged), EditIsolationFixes 9; backend full suite 62 passed, 2 skipped (no local OSM index; skipped before too) | — | UNIT-TESTED (all pass) |
+| Not re-run here: the full Vitest suite (other suites, e.g. NetworkEditIsolation and the validation harnesses, are heavy; a 2-CPU sandbox shared with other agents) | — | UNTESTED after this change |
 | Browser: 2 proposals, delete a base road in one, modify it in the other, reload, restore an older version | §6 | see §6 |
 
-## 6. Browser verification
+## 6. Browser verification (BROWSER-VERIFIED, 2026-11-11)
 
-See §6 results below (filled in after the run).
+Built app (`vite build`, served on 127.0.0.1:4502) against the backend on 127.0.0.1:8302, using a fresh copy of the
+project database (20,732 base objects). Chromium (swiftshader). External requests were aborted (globe imagery not
+needed). Script: `/workspace/work/um-scen-run/browser.py` (phases one/two/three = before reload, after reload,
+after a second reload). Results: `/workspace/work/um-scen-run/out/result_*.json`, screenshots `out/1_…png`–`5_…png`.
+Road under test: base road `osm_1052214584` (speed limit 60, 2 lanes).
+
+| Step | How | Result |
+|---|---|---|
+| Create proposal P1 | "New proposal" button + form (DOM) | created, active |
+| Delete the base road in P1 | `engineInstance.deleteObjectWithHistory` (the method behind the Build panel's Delete button and the Delete key) | P1: road absent. Baseline: road present, 60 km/h. Backend change row `delete` |
+| Save version "P1 tombstone" | Versions panel (DOM) | v1 saved, assumptions recorded (hour 9, seeds 42/7/11, Webster, signals estimated, corrections on) |
+| Create proposal P2, modify the same road | Properties panel "Speed Limit" field (DOM input) → 25. Save version "P2 speed 25". Then 15 (unsaved) | P2 25 → 15. **P1 still has no road; the baseline is still 60.** Backend base row byte-identical |
+| Reload | new page load | baseline 60 (equal to before, in memory and the backend row), P1 road absent, P2 15. Panel shows "Unsaved changes" |
+| Restore v1 in P2 | Restore button + confirmation (DOM) | P2 25. List: v3 "Restored version 1", v2 "Unsaved changes before restore", v1. Status "At version 3". P1 and the baseline unchanged |
+| Reload again | new page load | the same: baseline equal, P1 absent, P2 25, versions v3/v2/v1 in the API and the DOM |
+
+Console errors during the runs: only the aborted external requests (`net::ERR_FAILED`, and Cesium's minified `kre`
+from the aborted ion request). No page errors. Not exercised in the browser: run recording (`/api/runs`) from the
+Simulate → Compare flow (frontend recorder UNTESTED in the browser; the endpoint is UNIT-TESTED) and Duplicate (fork; UNIT-TESTED on the backend only).
 
 ## 7. Limitations (honest)
 
