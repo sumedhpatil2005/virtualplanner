@@ -92,6 +92,10 @@ class DocModel:
     subtitle: str
     generated_at: str
     sections: list[Section]
+    # Optional overrides so other documents (planning project report) reuse the renderers; empty = this document's text
+    header_text: str = ""
+    disclaimer: str = ""
+    template_version: str = ""
 
 
 def _cl(c: str | None) -> str:
@@ -255,12 +259,12 @@ def render_docx(m: DocModel) -> bytes:
     st.font.name = "Calibri"
     st.font.size = Pt(10)
     sec = d.sections[0]
-    sec.header.paragraphs[0].text = HEADER_TEXT
-    sec.footer.paragraphs[0].text = HEADER_TEXT + " | " + TEMPLATE_VERSION
+    sec.header.paragraphs[0].text = m.header_text or HEADER_TEXT
+    sec.footer.paragraphs[0].text = (m.header_text or HEADER_TEXT) + " | " + (m.template_version or TEMPLATE_VERSION)
     d.add_heading(m.title, level=0)
     d.add_paragraph(m.subtitle)
     p = d.add_paragraph()
-    r = p.add_run(DISCLAIMER)
+    r = p.add_run(m.disclaimer or DISCLAIMER)
     r.bold = True
     r.font.color.rgb = RGBColor(0x9F, 0x12, 0x39)
     for s in m.sections:
@@ -325,12 +329,13 @@ def render_pdf(m: DocModel) -> bytes:
     from fpdf.fonts import FontFace
 
     font = _find_font()
+    HDR = m.header_text or HEADER_TEXT
 
     class Doc(FPDF):
         def header(self):
             self.set_font(FAM, "", 7)
             self.set_text_color(120, 20, 50)
-            self.cell(0, 4, T(HEADER_TEXT), align="C", new_x="LMARGIN", new_y="NEXT")
+            self.cell(0, 4, T(HDR), align="C", new_x="LMARGIN", new_y="NEXT")
             self.set_text_color(0, 0, 0)
             self.ln(2)
 
@@ -338,7 +343,7 @@ def render_pdf(m: DocModel) -> bytes:
             self.set_y(-12)
             self.set_font(FAM, "", 7)
             self.set_text_color(120, 20, 50)
-            self.cell(0, 4, T(f"{HEADER_TEXT}  |  Page {self.page_no()}/{{nb}}"), align="C")
+            self.cell(0, 4, T(f"{HDR}  |  Page {self.page_no()}/{{nb}}"), align="C")
             self.set_text_color(0, 0, 0)
 
     pdf = Doc(format="A4")
@@ -361,7 +366,7 @@ def render_pdf(m: DocModel) -> bytes:
     pdf.ln(2)
     pdf.set_fill_color(253, 236, 240)
     pdf.set_font(FAM, "B", 9)
-    pdf.multi_cell(0, 4.6, T(DISCLAIMER), border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(0, 4.6, T(m.disclaimer or DISCLAIMER), border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
     W = pdf.epw
     for s in m.sections:

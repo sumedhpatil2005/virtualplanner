@@ -13,10 +13,13 @@ from api.feasibility_router import router as feasibility_router  # registers fs_
 import traffic_data.models  # noqa: F401  (registers the td_* tables; additive)
 from traffic_data.seed import seed_traffic_data
 from database.connection import SessionLocal
+from api.planning_router import router as planning_router  # planning_* + audit_log tables (additive), audit hooks
+from planning.audit import install_triggers, current_actor
 
 # Initialize database tables and the mandatory base scenario
 Base.metadata.create_all(bind=engine)
 migrate(engine)
+install_triggers(engine)  # audit_log / planning_decisions append-only at the database level
 ensure_base_scenario()
 with SessionLocal() as _s:
     seed_traffic_data(_s)
@@ -36,6 +39,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Optional self-declared actor for the audit log (no authentication; docs/PLANNING_WORKSPACE.md)
+@app.middleware("http")
+async def _actor_header(request, call_next):
+    a = (request.headers.get("x-actor") or "").strip()[:120]
+    tok = current_actor.set((a, "header") if a else None)
+    try:
+        return await call_next(request)
+    finally:
+        current_actor.reset(tok)
+
 # Mount core API router
 app.include_router(router, prefix="/api")
 app.include_router(scenario_router, prefix="/api")
@@ -47,6 +60,7 @@ app.include_router(corrections_router, prefix="/api")
 app.include_router(screenline_router, prefix="/api")
 app.include_router(traffic_data_router, prefix="/api")
 app.include_router(feasibility_router, prefix="/api")
+app.include_router(planning_router, prefix="/api")
 
 @app.get("/")
 def read_root():
