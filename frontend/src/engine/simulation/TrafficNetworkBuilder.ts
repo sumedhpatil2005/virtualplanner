@@ -2,6 +2,7 @@ import type { RoadObject } from '../objects/types';
 import type { TrafficNetwork, TrafficNode, TrafficEdge, TurnMovement, TurnDirection } from '../objects/trafficTypes';
 import { SpatialHashGrid } from '../rendering/spatial/SpatialHashGrid';
 import { hasOsmTopology } from '../objects/osmTopology';
+import { heldApartPoints, planDistM, FLAG_MATCH_M, FLAG_GUARD_M } from '../editing/levelCrossings';
 
 /**
  * Calculates geodesic distance between two points in meters using the Haversine formula.
@@ -94,6 +95,8 @@ export interface GradeSeparation {
 export const JOIN_TOLERANCE_DEG = 0.00006;
 /** Roads further apart vertically than this (m) pass over each other instead of joining. */
 export const GRADE_SEPARATION_M = 3.0;
+/** A point this close to a road lies on it (in degrees, ~0.5 m; EditingEngine ON_ROAD_M). */
+const ON_ROAD_DEG = 0.0000045;
 
 export class TrafficNetworkBuilder {
   private readonly spatialTolerance = JOIN_TOLERANCE_DEG;
@@ -260,6 +263,10 @@ export class TrafficNetworkBuilder {
         // Two OSM roads (one of them edited) at a node they both still hold: the same OSM node, joined
         // whatever their heights there (an edited road keeps the heights it had when it was edited)
         const sameOsmNode = (pt: readonly number[]) => !!provA && !!provB && shared!.has(vertexKey(pt));
+        // Crossings the user has not confirmed as a junction (level unknown when drawn) or chose to keep separate
+        // (docs/TOPOLOGY_RECONSTRUCTION.md): never joined, neither at the crossing nor by a nearby vertex
+        const heldApart = heldApartPoints(roadA, roadB);
+        const isHeldApart = (pt: readonly number[], m: number) => heldApart.length > 0 && heldApart.some(h => planDistM(h, pt) <= m);
 
         // X-crossing check (Segment-Segment intersection)
         for (let sA = 0; sA < roadA.coordinates.length - 1; sA++) {
@@ -290,6 +297,13 @@ export class TrafficNetworkBuilder {
               // A crossing at a shared node is a junction; the vertex checks below join it
               if (gradeSeparated && shared!.has(vertexKey(crossing))) continue;
 
+              if (isHeldApart(crossing, FLAG_MATCH_M)) {
+                bridgeTunnelCrossingsCount++;
+                const aOnTop = z_A >= z_B;
+                gradeSeparations.push({ coordinates: crossing, upperZ: Math.max(z_A, z_B), lowerZ: Math.min(z_A, z_B), roadIds: aOnTop ? [roadA.id, roadB.id] : [roadB.id, roadA.id] });
+                continue;
+              }
+
               if (gradeSeparated || Math.abs(z_A - z_B) > GRADE_SEPARATION_M) {
                 bridgeTunnelCrossingsCount++;
                 // Same height but different OSM layers: the higher layer is on top
@@ -318,7 +332,9 @@ export class TrafficNetworkBuilder {
             const pB2 = roadB.coordinates[sB + 1];
 
             const res = pointToSegmentDistance(ptA[0], ptA[1], pB1[0], pB1[1], pB2[0], pB2[1]);
-            if (res.distance < this.spatialTolerance) {
+            // A point of an OSM way as mapped joins a drawn or edited road only where it lies on it: OSM says where the
+            // way ends and what it meets; the join tolerance is for ends the user drew short (docs/TOPOLOGY_RECONSTRUCTION.md)
+            if (res.distance < this.spatialTolerance && !isHeldApart(ptA, FLAG_GUARD_M) && !(osmTopology.get(roadA.id) && res.distance > ON_ROAD_DEG)) {
               const dxB = pB2[0] - pB1[0];
               const dyB = pB2[1] - pB1[1];
               const ub = dxB !== 0 ? (res.closestPt[0] - pB1[0]) / dxB : (res.closestPt[1] - pB1[1]) / (dyB || 1);
@@ -352,7 +368,7 @@ export class TrafficNetworkBuilder {
             const pA2 = roadA.coordinates[sA + 1];
 
             const res = pointToSegmentDistance(ptB[0], ptB[1], pA1[0], pA1[1], pA2[0], pA2[1]);
-            if (res.distance < this.spatialTolerance) {
+            if (res.distance < this.spatialTolerance && !isHeldApart(ptB, FLAG_GUARD_M) && !(osmTopology.get(roadB.id) && res.distance > ON_ROAD_DEG)) {
               const dxA = pA2[0] - pA1[0];
               const dyA = pA2[1] - pA1[1];
               const ua = dxA !== 0 ? (res.closestPt[0] - pA1[0]) / dxA : (res.closestPt[1] - pA1[1]) / (dyA || 1);

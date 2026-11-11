@@ -703,6 +703,7 @@ export class TwinCityEngine {
         try {
           this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
           this.clearSnapPreview();
+          this.reportUncertainCrossings();
         } catch (err: any) {
           (window as any).showToast?.(err.message || "Failed to finalize drawing.", "error");
         }
@@ -1075,9 +1076,30 @@ export class TwinCityEngine {
     try {
       this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
       this.clearSnapPreview();
+      this.reportUncertainCrossings();
     } catch (err: any) {
       (window as any).showToast?.(err.message || "Failed to finalize drawing.", "error");
     }
+  }
+
+  /** After a drawing: crossings whose level is not known are kept apart until the user confirms them (Build panel). */
+  private reportUncertainCrossings() {
+    const n = this.editing.lastUncertainCrossings;
+    if (n > 0) {
+      (window as any).showToast?.(`${n} crossing${n > 1 ? 's' : ''} of the new road could be a bridge, tunnel or ramp: kept separate until you check. Select the road and see "Crossings to check".`, 'info');
+    }
+  }
+
+  /** Crossings of this road whose level the user has not confirmed. */
+  public uncertainCrossings(roadId: string) {
+    const o = this.objects.getById(roadId) as { levelCrossings?: import('./editing/levelCrossings').LevelCrossing[] } | undefined;
+    return (o?.levelCrossings ?? []).map((f, index) => ({ ...f, index })).filter(f => f.decision === 'unconfirmed');
+  }
+
+  /** Confirm a junction at, or keep separate, an uncertain crossing (Build mode only; one undo step). */
+  public resolveLevelCrossing(roadId: string, index: number, decision: 'junction' | 'separate'): void {
+    if (!this.isPlanningMode) throw new Error('Switch to Build mode to edit roads.');
+    this.editing.resolveLevelCrossing(roadId, index, decision);
   }
 
   /**

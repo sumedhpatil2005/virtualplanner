@@ -5,6 +5,7 @@ import { Trash2, ArrowLeft } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { RoadGapPanel } from './RoadGapPanel';
+import { LevelCrossingPanel } from './LevelCrossingPanel';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
 import { MODE_SPLIT_KEYS, rebalanceSplit } from '../engine/simulation/modeSplit';
 
@@ -337,6 +338,7 @@ export const PropertiesPanel: React.FC = () => {
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
             {selectedObj.type === 'road' && <RoadGapPanel road={selectedObj as RoadObject} />}
+            {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && <LevelCrossingPanel roadId={selectedObj.id} />}
 
             {/* Flyover Feasibility Report */}
             {(selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (selectedObj as any).feasibilityResult && (

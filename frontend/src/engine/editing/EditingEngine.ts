@@ -14,6 +14,8 @@ import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
+import { classifyCrossing, findCrossings, planDistM, type LevelCrossing, type CrossingDecision } from './levelCrossings';
+import { applyFlyoverElevationProfile } from '../objects/flyoverHelper';
 import { junctionLayout } from '../objects/junctionLayout';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
@@ -29,6 +31,15 @@ const OSM_FETCH_BATCH = 400;
 const ON_ROAD_M = 0.5;
 /** Roads further apart vertically pass over each other (autoConnect, the network builder). */
 const SAME_LEVEL_M = 3;
+/** A crossing this close to an existing vertex uses that vertex as the junction point (m): no sliver segments. */
+const VERTEX_REUSE_M = 0.5;
+/** A crossing this close to the new road's end is the end's own T-junction (m). */
+const END_CLEAR_M = 1;
+function boxesOverlap(c: readonly (readonly number[])[], minX: number, minY: number, maxX: number, maxY: number) {
+  let a = Infinity, b = Infinity, cc = -Infinity, d = -Infinity;
+  for (const p of c) { a = Math.min(a, p[0]); cc = Math.max(cc, p[0]); b = Math.min(b, p[1]); d = Math.max(d, p[1]); }
+  return a <= maxX && cc >= minX && b <= maxY && d >= minY;
+}
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover';
 
@@ -284,6 +295,125 @@ export class EditingEngine {
   }
 
   /**
+   * Crossings of a newly drawn road or flyover with the roads it passes over (docs/TOPOLOGY_RECONSTRUCTION.md).
+   * At-grade crossings of two ground roads become a junction: a vertex at the crossing on both roads (an existing vertex
+   * of the other road within VERTEX_REUSE_M is reused, so no sliver or near-duplicate node is made). Crossings whose
+   * level the data does not settle are not joined: they are returned as `unconfirmed` flags for the user to confirm.
+   * Grade-separated crossings are left alone. `drawn` is the new object as it will be stored, with the heights it will
+   * have (a flyover's profile). Returns the new road's coordinates with the junction vertices, the diffs of the roads
+   * changed (one Undo step with the new road) and the flags.
+   */
+  public reconstructCrossings(drawn: CityObject & { coordinates: [number, number, number][] }, scenarioId: string, profiled?: [number, number, number][]): { coordinates: [number, number, number][]; diffs: HistoryDiff[]; flags: LevelCrossing[] } {
+    const line = profiled ?? drawn.coordinates;
+    const diffs: HistoryDiff[] = [];
+    const flags: LevelCrossing[] = [];
+    if (line.length < 2) return { coordinates: drawn.coordinates, diffs, flags };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of line) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+    const others = filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(o => {
+      if (o.id === drawn.id || (o.type !== 'road' && o.type !== 'flyover' && o.type !== 'metro_flyover')) return false;
+      return boxesOverlap(o.coordinates as number[][], minX, minY, maxX, maxY);
+    }) as (CityObject & { coordinates: [number, number, number][] })[];
+    const ends = [line[0], line[line.length - 1]];
+    const found = findCrossings(line, others)
+      // An end on a road is a T-junction, made by insertJunctionIntoIntersectedRoads
+      .filter(x => !ends.some(e => planDistM(e, x.point) < END_CLEAR_M));
+    // Junction points on the new road: (segment, t, point)
+    const onNew: { sa: number; ta: number; p: [number, number, number] }[] = [];
+    const byOther = new Map<string, { sb: number; tb: number; p: [number, number, number] }[]>();
+    for (const x of found) {
+      const other = others.find(o => o.id === x.otherId)!;
+      const { kind, reason } = classifyCrossing(drawn, other, x.za, x.zb);
+      if (kind === 'separate') continue;
+      if (kind === 'uncertain' || drawn.type !== 'road' || other.type !== 'road') {
+        // Through the other road's own end: that end is where it meets the road it continues from, at that level
+        const oe = other.coordinates;
+        if (planDistM(oe[0], x.point) < END_CLEAR_M || planDistM(oe[oe.length - 1], x.point) < END_CLEAR_M) continue;
+        if (!flags.some(f => f.roadId === other.id && planDistM(f.point, x.point) < 1)) {
+          flags.push({ roadId: other.id, point: [x.point[0], x.point[1], x.za], otherZ: x.zb, decision: 'unconfirmed', reason });
+        }
+        continue;
+      }
+      // Junction: reuse a vertex of the other road (or of the new road) right at the crossing
+      const oc = other.coordinates;
+      const near = [x.sb, x.sb + 1].map(i => ({ i, d: planDistM(oc[i], x.point) })).sort((a, b) => a.d - b.d)[0];
+      const p: [number, number, number] = near.d <= VERTEX_REUSE_M ? [oc[near.i][0], oc[near.i][1], x.za] : [x.point[0], x.point[1], x.za];
+      if (near.d > VERTEX_REUSE_M) (byOther.get(other.id) ?? byOther.set(other.id, []).get(other.id)!).push({ sb: x.sb, tb: x.tb, p: [p[0], p[1], x.zb] });
+      if (!onNew.some(n => planDistM(n.p, p) < 0.05)) onNew.push({ sa: x.sa, ta: x.ta, p });
+    }
+    // Other roads: insert from the far end so earlier indices stay valid
+    for (const [id, pts] of byOther) {
+      const before = this.objectManager.getById(id) as RoadObject;
+      let cur: Pick<RoadObject, 'coordinates' | 'sections'> = { coordinates: before.coordinates, sections: before.sections };
+      for (const q of [...pts].sort((a, b) => b.sb - a.sb || b.tb - a.tb)) {
+        if (cur.coordinates.some(c => planDistM(c, q.p) < 0.05)) continue;
+        cur = insertRoadVertex(cur, q.sb + 1, q.p);
+      }
+      this.objectManager.update(id, cur.sections ? { coordinates: cur.coordinates, sections: cur.sections } : { coordinates: cur.coordinates });
+      diffs.push({ type: 'update', id, before, after: this.objectManager.getById(id)!, description: `Junction with ${drawn.name}` });
+    }
+    // The new road (a plain drawn road: its stored points are the drawn ones)
+    let coords = [...drawn.coordinates];
+    if (!profiled) {
+      for (const n of [...onNew].sort((a, b) => b.sa - a.sa || b.ta - a.ta)) {
+        const at = coords.findIndex(c => planDistM(c, n.p) < VERTEX_REUSE_M);
+        if (at >= 0) { coords[at] = [n.p[0], n.p[1], coords[at][2] || 0]; continue; }
+        coords.splice(n.sa + 1, 0, n.p);
+      }
+    }
+    return { coordinates: coords, diffs, flags };
+  }
+
+  /** Flags of a road whose level the user has not confirmed. */
+  public unconfirmedCrossings(roadId: string): LevelCrossing[] {
+    const o = this.objectManager.getById(roadId) as { levelCrossings?: LevelCrossing[] } | undefined;
+    return (o?.levelCrossings ?? []).filter(f => f.decision === 'unconfirmed');
+  }
+
+  /**
+   * The user's answer for an uncertain crossing: `junction` makes it one (a shared vertex on both roads, each at its
+   * own height there), `separate` keeps the roads apart. One Undo step.
+   */
+  public resolveLevelCrossing(roadId: string, index: number, decision: Exclude<CrossingDecision, 'unconfirmed'>): void {
+    if (this.locked) throw new Error('The road network is read-only in Simulation mode.');
+    const road = this.objectManager.getById(roadId) as (CityObject & { levelCrossings?: LevelCrossing[]; coordinates: [number, number, number][] }) | undefined;
+    const flag = road?.levelCrossings?.[index];
+    if (!road || !flag) throw new Error('That crossing is no longer listed.');
+    const other = this.objectManager.getById(flag.roadId) as (CityObject & { coordinates: [number, number, number][] }) | undefined;
+    if (!other) throw new Error('The other road no longer exists.');
+    const diffs: HistoryDiff[] = [];
+    const levelCrossings = road.levelCrossings!.map((f, i) => (i === index ? { ...f, decision } : f));
+    let roadChanges: Partial<CityObject> = { levelCrossings } as Partial<CityObject>;
+    if (decision === 'junction') {
+      if (road.type !== 'road' || other.type !== 'road') throw new Error('A flyover crosses here: connect it with a ramp instead of a junction in mid-span.');
+      const withVertex = (r: CityObject & { coordinates: [number, number, number][] }) => {
+        // Nearest point of r to the flag, at r's own height
+        const kx = 111320 * Math.cos(flag.point[1] * Math.PI / 180);
+        let best = { d: Infinity, s: 0, t: 0 };
+        for (let i = 1; i < r.coordinates.length; i++) {
+          const a = r.coordinates[i - 1], b = r.coordinates[i];
+          const h = this.pointToSegmentDist(0, 0, (a[0] - flag.point[0]) * kx, (a[1] - flag.point[1]) * 111320, (b[0] - flag.point[0]) * kx, (b[1] - flag.point[1]) * 111320);
+          if (h.distance < best.d) best = { d: h.distance, s: i - 1, t: h.t };
+        }
+        const a = r.coordinates[best.s], b = r.coordinates[best.s + 1];
+        if (planDistM(a, flag.point) < 0.05 || planDistM(b, flag.point) < 0.05) return null;
+        const zz = (a[2] || 0) + best.t * ((b[2] || 0) - (a[2] || 0));
+        return insertRoadVertex(r as RoadObject, best.s + 1, [flag.point[0], flag.point[1], zz]);
+      };
+      const o2 = withVertex(other);
+      if (o2) {
+        this.objectManager.update(other.id, o2.sections ? { coordinates: o2.coordinates, sections: o2.sections } : { coordinates: o2.coordinates });
+        diffs.push({ type: 'update', id: other.id, before: other, after: this.objectManager.getById(other.id)!, description: `Junction with ${road.name}` });
+      }
+      const r2 = withVertex(road);
+      if (r2) roadChanges = { ...roadChanges, coordinates: r2.coordinates, ...(r2.sections ? { sections: r2.sections } : {}) } as Partial<CityObject>;
+    }
+    this.objectManager.update(road.id, roadChanges);
+    diffs.push({ type: 'update', id: road.id, before: road, after: this.objectManager.getById(road.id)!, description: decision === 'junction' ? 'Confirm junction' : 'Keep crossing separate' });
+    this.historyManager.pushDiff({ type: 'batch', description: decision === 'junction' ? `Junction: ${road.name} × ${other.name}` : `Keep ${road.name} and ${other.name} separate`, diffs });
+  }
+
+  /**
    * Joins a road end to the road it stops just short of (see findRoadEndGaps).
    * The other road gets a vertex at the join point unless one is already there,
    * so both share an exact point and the traffic network links them. `visible`
@@ -395,8 +525,12 @@ export class EditingEngine {
     return diffs;
   }
 
+  /** Crossings of the last drawn road whose level needs the user's confirmation (0 when none). */
+  public lastUncertainCrossings = 0;
+
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
+    this.lastUncertainCrossings = 0;
 
     const id = Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
@@ -436,6 +570,10 @@ export class EditingEngine {
         updatedAt: createdAt
       };
       splitDiffs = this.insertJunctionIntoIntersectedRoads(coords);
+      const rec = this.reconstructCrossings(newObj as RoadObject, scenarioId);
+      splitDiffs.push(...rec.diffs);
+      newObj = { ...newObj, coordinates: rec.coordinates, ...(rec.flags.length ? { levelCrossings: rec.flags } : {}) } as CityObject;
+      this.lastUncertainCrossings = rec.flags.length;
     } else if (this.activeMode === 'draw_building') {
       minPoints(3, 'A building footprint');
       // Close the polygon ring if not closed
@@ -674,6 +812,14 @@ export class EditingEngine {
     }
 
     if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
+      // Mid-span crossings of a structure are never junctions; those within 3 m of another road's height (ramps) are
+      // listed for the user to confirm, on the heights the flyover will have (its profile, as ObjectManager.add makes it)
+      const profiledObj = structuredClone(newObj) as any;
+      applyFlyoverElevationProfile(profiledObj);
+      const rec = this.reconstructCrossings(newObj as any, scenarioId, profiledObj.coordinates);
+      splitDiffs.push(...rec.diffs);
+      if (rec.flags.length) newObj = { ...newObj, levelCrossings: rec.flags } as CityObject;
+      this.lastUncertainCrossings = rec.flags.length;
       // The capacity the flyover's ramps take from the surface roads is part of this Undo step (docs/OVERHAUL.md §27)
       const { flyover, roadUpdates } = this.objectManager.flyoverFeasibility(newObj);
       newObj = { ...newObj, ...flyover } as CityObject;

@@ -332,7 +332,8 @@ describe(`Build edits change only what they are meant to (${DB ? 'project databa
       const nr = om.getById(added[0]) as RoadObject | undefined;
       if (nr) {
         localIds.add(nr.id);
-        // A road the new road's end lies on, at the same level, gets one vertex there (the junction): where the
+        // A road the new road's end lies on, at the same level, gets one vertex there (the junction), and a ground road
+        // it crosses at grade gets one at the crossing (docs/TOPOLOGY_RECONSTRUCTION.md): where the
         // deleted piece's end was on a deck or in an underpass, the ground click joins the ground road the snap finds
         // there instead (docs/OVERHAUL.md §27.4). Nothing else may change.
         const endKeys = new Set([vkey(nr.coordinates[0]), vkey(nr.coordinates[nr.coordinates.length - 1])]);
@@ -343,7 +344,11 @@ describe(`Build edits change only what they are meant to (${DB ? 'project databa
           if (fieldsChanged(b, a).some(f => f !== 'coordinates' && f !== 'sections')) return false;
           const old = new Set(b.coordinates.map(q => `${vkey(q)},${(q[2] || 0).toFixed(3)}`));
           const added = a.coordinates.filter(q => !old.has(`${vkey(q)},${(q[2] || 0).toFixed(3)}`));
-          return added.length === 1 && endKeys.has(vkey(added[0])) && Math.abs((added[0][2] || 0) - endZ.get(vkey(added[0]))!) < 0.01
+          // At an end: the junction vertex at the end's height. Elsewhere along the new road: an at-grade crossing made a
+          // junction (docs/TOPOLOGY_RECONSTRUCTION.md), a vertex at one of the new road's own points, at this road's height
+          const interior = new Set(nr.coordinates.slice(1, -1).map(vkey));
+          const okPoint = (q: readonly number[]) => (endKeys.has(vkey(q)) && Math.abs((q[2] || 0) - endZ.get(vkey(q))!) < 0.01) || interior.has(vkey(q));
+          return added.length >= 1 && added.every(okPoint) && added.filter(q => endKeys.has(vkey(q))).length <= 1
             && b.coordinates.every(q => a.coordinates.some(r => vkey(r) === vkey(q) && (r[2] || 0) === (q[2] || 0)));
         };
         const changedOthers = contentChanged(s1, s2).filter(id => id !== nr.id);

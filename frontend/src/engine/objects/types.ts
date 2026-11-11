@@ -99,6 +99,8 @@ export interface RoadObject extends BaseCityObject {
   
   // Provenance details
   osmProvenance?: OSMProvenance;
+  /** Crossings drawn where the level was not certain, with the user's decision (docs/TOPOLOGY_RECONSTRUCTION.md). */
+  levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
 
   // Set when a flyover ramp merge/weave zone reduces this road's effective capacity
   flyoverImpact?: {
@@ -214,6 +216,7 @@ export interface JunctionObject extends BaseCityObject {
 
 export interface FlyoverObject extends BaseCityObject {
   type: 'flyover';
+  levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
   coordinates: [number, number, number][]; // Path of flyover
   roadClass: RoadClassification;
   width: number; // overall width in meters
@@ -272,6 +275,7 @@ export interface UtilityObject extends BaseCityObject {
 
 export interface MetroFlyoverObject extends BaseCityObject {
   type: 'metro_flyover';
+  levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
   coordinates: [number, number, number][]; // Path of double-decker corridor
   roadClass: RoadClassification;
   width: number; // overall width of flyover deck (e.g. 19)
