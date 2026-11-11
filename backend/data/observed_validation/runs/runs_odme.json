@@ -1,0 +1,6 @@
+[
+ {"id": "pm18_shivaji_r3000", "seedRoadIds": ["osm_22841323"], "range": 3000, "hour": 18,
+  "sites": ["cmp08_mhatre", "cmp08_sancheti_rob", "cmp08_sangam", "cmp08_shinde", "cmp08_shivaji", "cmp08_yerwada_ambedkar"]},
+ {"id": "am11_sambhaji_r3000", "seedRoadIds": ["osm_207872405"], "range": 3000, "hour": 11,
+  "sites": ["cmp08_rajaram", "cmp08_sambhaji", "cmp08_smjoshi", "cmp08_tilak", "cmp08_wadia_rob"]}
+]
