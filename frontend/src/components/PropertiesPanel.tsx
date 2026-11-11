@@ -6,6 +6,8 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { RoadGapPanel } from './RoadGapPanel';
 import { LevelCrossingPanel } from './LevelCrossingPanel';
+import { FeasibilityPanel } from './FeasibilityPanel';
+import { isProposalObject } from '../engine/feasibility/proposal';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
 import { MODE_SPLIT_KEYS, rebalanceSplit } from '../engine/simulation/modeSplit';
 
@@ -25,6 +27,7 @@ export const PropertiesPanel: React.FC = () => {
   const [isEditingBuilding, setIsEditingBuilding] = useState(false);
   const [draftBuilding, setDraftBuilding] = useState<BuildingObject | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFeasibility, setShowFeasibility] = useState(false);
 
 
 
@@ -246,6 +249,10 @@ export const PropertiesPanel: React.FC = () => {
     (window as any).showToast?.('Object deleted', 'info');
   };
 
+  if (showFeasibility && isProposalObject(selectedObj)) {
+    return <FeasibilityPanel obj={selectedObj} onBack={() => setShowFeasibility(false)} />;
+  }
+
   return (
     <div className="w-[22rem] max-h-full rounded-2xl flex flex-col pointer-events-auto bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 overflow-hidden animate-fade-in">
       <div className="px-4 pt-3.5 pb-3 border-b border-white/10 flex items-center gap-2">
@@ -333,6 +340,14 @@ export const PropertiesPanel: React.FC = () => {
               )
             )}
 
+            {isProposalObject(selectedObj) && (
+              <button
+                onClick={() => setShowFeasibility(true)}
+                className="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-orange-400/25 bg-orange-500/10 px-3 py-2 text-sm font-semibold text-orange-100 hover:bg-orange-500/15 cursor-pointer transition"
+              >
+                Feasibility &amp; investigations <span aria-hidden>→</span>
+              </button>
+            )}
             {selectedObj.type === 'road' && (selectedObj as RoadObject).osmProvenance && <JunctionOffer road={selectedObj as RoadObject} />}
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
