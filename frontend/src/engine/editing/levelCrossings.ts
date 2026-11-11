@@ -2,7 +2,7 @@
  * Where a road the user draws crosses another road: a junction, a grade separation, or "level not known".
  * (docs/TOPOLOGY_RECONSTRUCTION.md)
  *
- * The evidence is what the data holds: OSM `bridge=*`, `tunnel=*` and `layer=*` tags (OSM wiki Key:layer — layer orders
+ * The evidence is what the data holds: OSM `bridge=*`, `tunnel=*`, `layer=*`, `embankment=*` and `cutting=*` tags (OSM wiki Key:layer — layer orders
  * crossing features and is not a height; Key:bridge; Key:tunnel), whether the other object is a structure the user drew
  * (flyover, metro flyover), and the heights the model gives each road at the crossing (bridgeElevation: 6.5 m per deck
  * level, ramps at 5 %, all ESTIMATED from the tags, not measured).
@@ -46,17 +46,29 @@ export const planDistM = (a: readonly number[], b: readonly number[]) =>
 
 type Line = { id: string; type: string; coordinates: readonly (readonly number[])[]; osmProvenance?: RoadObject['osmProvenance'] };
 
-export function levelEvidence(o: Pick<Line, 'type' | 'osmProvenance'>): 'ground' | 'bridge' | 'tunnel' | 'layer' | 'structure' {
+/**
+ * OSM `embankment=*` (way raised on a bank) or `cutting=*` (way below the surrounding ground) on the way, any value but
+ * "no" (OSM wiki Key:embankment oldid 3066147, Key:cutting oldid 2971509). The model gives such a way no height of its
+ * own, so a crossing with it is not known to be at grade.
+ */
+export function earthworkTag(o: Pick<Line, 'osmProvenance'>): 'embankment' | 'cutting' | null {
+  const t = o.osmProvenance?.originalTags;
+  if (!t) return null;
+  for (const k of ['embankment', 'cutting'] as const) { const v = t[k]?.trim().toLowerCase(); if (v && v !== 'no') return k; }
+  return null;
+}
+
+export function levelEvidence(o: Pick<Line, 'type' | 'osmProvenance'>): 'ground' | 'bridge' | 'tunnel' | 'layer' | 'embankment' | 'cutting' | 'structure' {
   if (o.type === 'flyover' || o.type === 'metro_flyover') return 'structure';
   const p = o.osmProvenance;
   if (!p) return 'ground';
   if (isOsmBridge(p)) return 'bridge';
   if (isOsmTunnel(p)) return 'tunnel';
   if ((p.layer ?? 0) !== 0) return 'layer';
-  return 'ground';
+  return earthworkTag(o) ?? 'ground';
 }
 
-const EVIDENCE_WORDS = { bridge: 'is tagged as a bridge in OpenStreetMap', tunnel: 'is tagged as a tunnel or below ground in OpenStreetMap', layer: 'has an OpenStreetMap layer other than 0', structure: 'is a drawn flyover' } as const;
+const EVIDENCE_WORDS = { embankment: 'is tagged as on an embankment in OpenStreetMap', cutting: 'is tagged as in a cutting in OpenStreetMap', bridge: 'is tagged as a bridge in OpenStreetMap', tunnel: 'is tagged as a tunnel or below ground in OpenStreetMap', layer: 'has an OpenStreetMap layer other than 0', structure: 'is a drawn flyover' } as const;
 
 export function classifyCrossing(a: Pick<Line, 'type' | 'osmProvenance' | 'id'>, b: Pick<Line, 'type' | 'osmProvenance' | 'id'> & { name?: string }, za: number, zb: number): { kind: 'junction' | 'separate' | 'uncertain'; reason: string } {
   if (Math.abs(za - zb) > GRADE_SEPARATION_M) return { kind: 'separate', reason: `${Math.abs(za - zb).toFixed(1)} m apart in height` };

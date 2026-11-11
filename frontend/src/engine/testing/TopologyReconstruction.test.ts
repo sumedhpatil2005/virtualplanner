@@ -112,6 +112,34 @@ describe('topology reconstruction (synthetic roads)', () => {
     expect(t.sharedNodes(nr.id, 'osm_4')).toEqual([]);
   });
 
+  it('a ground road crossing an embankment=yes or cutting=yes road at the same modelled height is flagged, not joined; embankment=no is a junction', () => {
+    for (const tags of [{ embankment: 'yes' }, { cutting: 'yes' }]) {
+      const t = setup([row('osm_7', [[-100, 0], [100, 0]], 0, tags)]);
+      const nr = t.draw([[0, -60, 0], [0, 60, 0]]);
+      expect(nr.levelCrossings?.[0]).toMatchObject({ roadId: 'osm_7', decision: 'unconfirmed' });
+      expect(nr.levelCrossings?.[0].reason).toMatch(Object.keys(tags)[0]);
+      expect(t.sharedNodes(nr.id, 'osm_7')).toEqual([]);
+      vi.restoreAllMocks();
+    }
+    const t = setup([row('osm_8', [[-100, 0], [100, 0]], 0, { embankment: 'no' })]);
+    const nr = t.draw([[0, -60, 0], [0, 60, 0]]);
+    expect(nr.levelCrossings).toBeUndefined();
+    expect(t.sharedNodes(nr.id, 'osm_8')).toHaveLength(1);
+  });
+
+  it('crossing a layer=-1 road exactly at the node it shares with a ground road: a junction there, not flagged (OSM joins it at grade there); elsewhere still flagged', () => {
+    const t = setup([
+      row('osm_10', [[-100, 0], [0, 0], [100, 0]], 0),
+      row('osm_11', [[0, 100], [0, 0], [0, -100]], 0, { layer: '-1' }),
+      row('osm_12', [[-100, 30], [100, 30]], 0, { layer: '-1' }),
+    ]);
+    const nr = t.draw([[-60, -60, 0], [60, 60, 0]]);
+    // Only the crossing with osm_12 (no shared node) is flagged
+    expect(nr.levelCrossings?.map(f => f.roadId)).toEqual(['osm_12']);
+    expect(t.sharedNodes(nr.id, 'osm_10')).toHaveLength(1);
+    expect(t.sharedNodes(nr.id, 'osm_12')).toEqual([]);
+  });
+
   it('an OSM road end 5 m from a drawn road is not joined to it; a drawn end 5 m short of a road still is', () => {
     // osm_5 ends 5 m east of where the drawn road passes (x = 0); before, the 6.6 m join tolerance joined them
     const t = setup([row('osm_5', [[5, 0], [100, 0]], 0), row('osm_6', [[-100, 80], [100, 80]], 0)]);

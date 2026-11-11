@@ -344,6 +344,14 @@ export class EditingEngine {
       if (near.d > VERTEX_REUSE_M) (byOther.get(other.id) ?? byOther.set(other.id, []).get(other.id)!).push({ sb: x.sb, tb: x.tb, p: [p[0], p[1], x.zb] });
       if (!onNew.some(n => planDistM(n.p, p) < 0.01)) onNew.push({ sa: x.sa, ta: x.ta, p });
     }
+    // A level crossing right at a node the other road shares (in OSM) with a road this one makes a junction with at
+    // that node is at that road's level: OSM joins ways only where they meet (Key:layer). Not flagged, whether or not
+    // the drawn line crossed it before the junction point moved it onto the node (property test cross-uncertain #95)
+    const sharedNode = (f: LevelCrossing) => {
+      const oc = others.find(o => o.id === f.roadId)!.coordinates;
+      return onNew.some(n => planDistM(n.p, f.point) < END_CLEAR_M && oc.some(q => q[0] === n.p[0] && q[1] === n.p[1]));
+    };
+    for (let i = flags.length - 1; i >= 0; i--) if (sharedNode(flags[i])) flags.splice(i, 1);
     // Other roads: insert from the far end so earlier indices stay valid
     for (const [id, pts] of byOther) {
       const before = this.objectManager.getById(id) as RoadObject;

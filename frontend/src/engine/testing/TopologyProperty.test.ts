@@ -23,7 +23,7 @@ import { contentChanged, fieldsChanged, keyOf, loadNetwork, rng, roadGrid, snap,
  *  - an end within 0.5 m of a road at the same level (≤ 3 m apart vertically) shares a graph node with it;
  *  - a crossing is classified from OSM tags and heights, independently of the implementation:
  *      heights > 3 m apart → separate (flyover, tunnel); tags or heights say "not on the ground" but heights are within
- *      3 m (bridge/tunnel/layer≠0 tag, a drawn flyover, a ramp > 0.5 m off the ground) → uncertain: must NOT be joined
+ *      3 m (bridge/tunnel/layer≠0/embankment/cutting tag, a drawn flyover, a ramp > 0.5 m off the ground) → uncertain: must NOT be joined
  *      and must be flagged for confirmation; otherwise (both on the ground, untagged) → junction: must share a node;
  *  - no new node within 1 m (and 3 m vertically) of another node: no duplicate junctions;
  *  - routing: from the new road's other end there is a route onto every road it joins;
@@ -112,13 +112,16 @@ function nearestOn(p: readonly number[], line: readonly (readonly number[])[]) {
 // ---------- the oracle: what a crossing should be, from tags and heights only ----------
 type Drivable = RoadObject | (CityObject & { coordinates: Pt[] });
 const drivable = (o: CityObject | undefined): o is Drivable => !!o && (o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover');
-function levelTag(o: Drivable): 'ground' | 'bridge' | 'tunnel' | 'layer' | 'structure' {
+function levelTag(o: Drivable): 'ground' | 'bridge' | 'tunnel' | 'layer' | 'earthwork' | 'structure' {
   if (o.type !== 'road') return 'structure';
   const p = (o as RoadObject).osmProvenance;
   if (!p) return 'ground';
   if (isOsmBridge(p)) return 'bridge';
   if (isOsmTunnel(p)) return 'tunnel';
   if ((p.layer ?? 0) !== 0) return 'layer';
+  // OSM embankment=* / cutting=* (any value but "no"): raised or sunk, height not modelled
+  const t = p.originalTags ?? {};
+  if (['embankment', 'cutting'].some(k => t[k] && t[k].trim().toLowerCase() !== 'no')) return 'earthwork';
   return 'ground';
 }
 export function expectedCrossing(a: Drivable, b: Drivable, za: number, zb: number): 'junction' | 'separate' | 'uncertain' {
@@ -279,6 +282,9 @@ function verifyDrawn(newId: string, s0: Snap, s1: Snap, bad0: (rule: string, det
   const legit = new Set<string>();
   for (const id of joined) for (const n of shared(om.getById(id) as Drivable)) legit.add(n);
   for (const { o, x, kind } of pending) {
+    // Through a node the other road shares (in OSM) with a road the new road joins there: OSM joins ways only where
+    // they meet (Key:layer), so the other road is at that road's level at this node, like at its own end
+    if (kind === 'uncertain' && o.coordinates.some(q => distM(q, x.p) < 1 && [...joined].some(id => id !== o.id && (om.getById(id) as Drivable | undefined)?.coordinates.some(r => vkey(r) === vkey(q))))) { note('crossing at a node shared with a joined road'); continue; }
     const near = shared(o).filter(n => nodeDist(net, n, x.p) < JOIN_M && !legit.has(n) && !ends.some(e => nodeDist(net, n, e) < 1));
     if (near.length && process.env.VP_DUMP && !fs.existsSync(process.env.VP_DUMP)) fs.writeFileSync(process.env.VP_DUMP, JSON.stringify({ nr, o, local: [...local] }));
     if (near.length) bad(kind === 'separate' ? 'false junction at grade-separated crossing' : 'uncertain crossing joined without confirmation', `${o.id} (${levelTag(o)}) za ${x.za.toFixed(2)} zb ${x.zb.toFixed(2)} ${dbg(net, o.id, x.p)}`);
