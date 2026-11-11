@@ -9,6 +9,7 @@ from api.scenario_router import router as scenario_router
 from database.migrations import migrate
 from seed import ensure_base_scenario
 from api.traffic_data_router import router as traffic_data_router
+from api.feasibility_router import router as feasibility_router  # registers fs_* tables (additive)
 import traffic_data.models  # noqa: F401  (registers the td_* tables; additive)
 from traffic_data.seed import seed_traffic_data
 from database.connection import SessionLocal
@@ -45,6 +46,7 @@ app.include_router(diurnal_router, prefix="/api")
 app.include_router(corrections_router, prefix="/api")
 app.include_router(screenline_router, prefix="/api")
 app.include_router(traffic_data_router, prefix="/api")
+app.include_router(feasibility_router, prefix="/api")
 
 @app.get("/")
 def read_root():

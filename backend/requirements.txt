@@ -7,3 +7,5 @@ psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
 osmium>=4.0
 openpyxl>=3.1
+python-docx>=1.1
+fpdf2>=2.7
