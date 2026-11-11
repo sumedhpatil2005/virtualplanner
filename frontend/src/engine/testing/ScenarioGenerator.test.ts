@@ -269,7 +269,9 @@ describe('generator end to end (synthetic grid)', () => {
     expect(rows).toHaveLength(3);
     for (const x of rows.slice(1)) expect(x.inputs?.matched).toBe(true);
     expect(rows[0].values.costClass?.value).toBe(0);
-    expect(rows[1].values.fuel?.status).toBe('not_available');
+    // Emissions module is now integrated: fuel comes from the corridor model (was 'not_available' before engine/emissions existed).
+    expect(rows[1].values.fuel?.status).toBe('model_output');
+    expect(rows[1].values.fuel?.value ?? 0).toBeGreaterThan(0);
     const p = paretoSet(rows, ['meanTravelTime', 'costClass']);
     expect(p.some(x => x.inPareto)).toBe(true);
     // A run on other inputs is flagged

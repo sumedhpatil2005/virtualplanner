@@ -38,8 +38,8 @@ export const METRICS: MetricDef[] = [
   { id: 'maxQueue', label: 'Longest junction queue', unit: 'm', better: 'lower', kind: 'simulated', noise: 0.1, definition: 'Longest queue measured at any of the 10 busiest junctions near the road (mean over seeds; per-seed values are not kept, so only the noise threshold applies).', source: 'Corridor micro-simulation (junctionStats maxQueueM). Model output.' },
   { id: 'sectionSpeed', label: 'Speed on the selected road', unit: 'km/h', better: 'higher', kind: 'simulated', noise: 0.05, definition: 'Section length / mean time to drive it.', source: 'Corridor micro-simulation (perSeed.sectionTimeS). Model output.' },
   { id: 'areaVehHours', label: 'Total time in the area', unit: 'veh·h', better: 'lower', kind: 'assignment', noise: 0.01, definition: 'Vehicle-hours over the whole study area at user equilibrium (includes re-routed trips).', source: 'Static assignment (Frank-Wolfe, BPR). Model output, deterministic.' },
-  { id: 'fuel', label: 'Fuel', unit: 'L/h', better: 'lower', kind: 'emissions', noise: 0.03, definition: 'Fuel use from a vehicle-specific instantaneous model (speed, acceleration, idling).', source: 'engine/emissions (not in this build: shown as not available).' },
-  { id: 'co2', label: 'CO₂', unit: 'kg/h', better: 'lower', kind: 'emissions', noise: 0.03, definition: 'CO₂ from the same model as fuel.', source: 'engine/emissions (not in this build: shown as not available).' },
+  { id: 'fuel', label: 'Fuel', unit: 'L/h', better: 'lower', kind: 'emissions', noise: 0.03, definition: 'Fuel use from a vehicle-specific instantaneous model (speed, acceleration, idling).', source: 'Corridor micro-simulation, SUMO HBEFA4 coefficients (engine/emissions); two- and three-wheelers use stand-in classes. Per hour of the measured window, mean of seeds.' },
+  { id: 'co2', label: 'CO₂', unit: 'kg/h', better: 'lower', kind: 'emissions', noise: 0.03, definition: 'CO₂ from the same model as fuel.', source: 'Corridor micro-simulation, SUMO HBEFA4 coefficients (engine/emissions). Per hour of the measured window, mean of seeds.' },
   { id: 'costClass', label: 'Works cost class', unit: '1–5', better: 'lower', kind: 'ordinal', noise: 0, definition: 'Ordinal class of the type of works (0 = no works). Not money.', source: 'Generator classes by works type (docs/SCENARIO_GENERATOR.md §3.3).' },
   { id: 'landTake', label: 'Land take', unit: 'class', better: 'lower', kind: 'ordinal', noise: 0, definition: '0 = no physical works; 1 = feasibility screening infers works outside the existing right of way; unknown otherwise.', source: 'Feasibility engine findings (outsideExistingRoW) with their certainty.' },
   { id: 'disruption', label: 'Construction disruption class', unit: '1–5', better: 'lower', kind: 'ordinal', noise: 0, definition: 'Ordinal class of the type of works (0 = none). Not a programme.', source: 'Generator classes by works type.' },
@@ -69,7 +69,13 @@ export function metricsOfRun(r: RoadAnalysisResult, works: { cost: OrdinalClass 
   const seeds = r.perSeed;
   const sim = (pick: (s: RoadAnalysisResult['perSeed'][number]) => number | null): MetricValue => { const ps = seeds.map(pick); const v = mean(ps); return { value: v, perSeed: ps, status: v === null ? 'unknown' : 'model_output' }; };
   const len = r.section.lengthM;
-  const em = (r as unknown as { emissions?: { fuelLph?: number; co2KgPerH?: number } }).emissions;
+  const em = r.emissions ?? null;
+  const k = em && em.windowS > 0 ? 3600 / em.windowS : null;
+  const emVal = (pick: (s: NonNullable<typeof em>['perSeed'][number]) => number, scale: number): MetricValue => {
+    if (!em || k === null) return { value: null, status: 'not_available', note: 'No emissions result in this run.' };
+    const ps = em.perSeed.map(s => pick(s) * k * scale);
+    return { value: mean(ps), perSeed: ps, status: 'model_output', note: em.label };
+  };
   const out: Partial<Record<MetricId, MetricValue>> = {
     meanTravelTime: sim(s => s.meanTravelTimeS),
     meanDelay: sim(s => s.meanDelayS),
@@ -78,8 +84,8 @@ export function metricsOfRun(r: RoadAnalysisResult, works: { cost: OrdinalClass 
     maxQueue: { value: r.junctions.length ? Math.max(...r.junctions.map(j => j.maxQueueM)) : null, status: r.junctions.length ? 'model_output' : 'unknown' },
     sectionSpeed: sim(s => (s.sectionTimeS ? (len / s.sectionTimeS) * 3.6 : null)),
     areaVehHours: { value: r.assignment.totalVehHours, status: 'model_output' },
-    fuel: em?.fuelLph !== undefined ? { value: em.fuelLph, status: 'model_output' } : { value: null, status: 'not_available', note: 'No emissions model in this run.' },
-    co2: em?.co2KgPerH !== undefined ? { value: em.co2KgPerH, status: 'model_output' } : { value: null, status: 'not_available', note: 'No emissions model in this run.' },
+    fuel: emVal(s => s.fuelL, 1),
+    co2: emVal(s => s.co2G, 0.001),
   };
   if (!works) {
     out.costClass = { value: 0, status: 'ordinal', note: 'No works.' };
