@@ -82,7 +82,10 @@ Script: `/workspace/work/um-data-run/e2e.py` (scratch, not committed). All data 
 | Import of a 5-row SYNTHETIC CSV (2 bad rows) | mapping suggested from headers; "3 valid · 2 with problems"; Row 5 bad direction, Row 6 unknown road; Import button disabled until "Import only the 3 valid rows" ticked; dataset shows MEASURED + SYNTHETIC badges, file SHA-256 and both rejected rows | BROWSER-VERIFIED |
 | By road | 09:00 towards N 1,510 veh/h / 1,441 PCU/h; towards S 1,334; 10:00 towards N 1,428; the manual 15-min record shown as "15 min" with no veh/h | BROWSER-VERIFIED |
 | Simulate Shivaji Bridge, 09:00 weekday, 2 km (run 137 s, status ready) → Details → Checks against traffic counts | Observed / Routed / GEH / Simulated / GEH: bwd 1,334 / 552 / 25.5 / 221 / 39.9; fwd 1,510 / 1,878 / 8.9 / 1,781 / 6.7; "2 counts not compared" (10:00 count; 15-min manual record) | BROWSER-VERIFIED |
-| "All (kept apart)" with an extra SYNTHETIC Estimated dataset on the same road-direction | see below | BROWSER-VERIFIED if listed below |
+| "All (kept apart)" with an extra SYNTHETIC Estimated dataset (fwd 09:00, total 1,700) on the same road-direction | three rows: measured fwd 1,510 and estimated fwd 1,700 listed separately with their badges (GEH 8.9 vs 4.2 routed), not averaged; "Measured + manual" view shows only the two measured rows | BROWSER-VERIFIED |
+| Re-run in a fresh page | identical routed/simulated values (552, 221, 1,878, 1,781): deterministic for the same network, hour and seeds | BROWSER-VERIFIED |
+
+Note: the imported test dataset was created without ticking "Synthetic" (its name and provider say SYNTHETIC); the badge therefore shows only MEASURED for it. Screens: `/workspace/work/um-data-run/shots/` (scratch).
 
 The GEH values above compare the model with **made-up** counts; they say nothing about model accuracy.
 
