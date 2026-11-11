@@ -10,6 +10,7 @@ import { DEFAULT_ANALYSIS } from '../engine/simulation/analysisJob';
 import { dayRowView, daySummary } from './timeOfDayView';
 import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation/ScenarioComparison';
 import { improvementsFor } from '../engine/simulation/improvements';
+import { ScenarioGeneratorPanel } from './ScenarioGeneratorPanel';
 import { screenlineChecks } from '../engine/calibration/screenlines';
 import { TrafficCountChecks } from './TrafficCountChecks';
 import { OdmeCard, EmissionsCompare } from './OdmeAndEmissions';
@@ -184,6 +185,7 @@ export const ImproveView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => 
       {sim.comparison.showingProposal && <ProposalBadge />}
       <ScenarioTest sim={sim} />
       {out ? <Suggestions r={out.result} sim={sim} /> : <AnalysisGate sim={sim} />}
+      <ScenarioGeneratorPanel />
       <TimesOfDay sim={sim} />
     </div>
   );

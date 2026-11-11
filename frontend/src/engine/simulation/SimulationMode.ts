@@ -1162,6 +1162,20 @@ export class SimulationMode {
       countJunctions: ds ? junctionsIn(ds, corridor.bounds) : undefined };
   }
 
+  /**
+   * Scenario generator (docs/SCENARIO_GENERATOR.md): while a batch of candidate runs uses the analysis worker, the
+   * automatic re-analysis after each scenario switch is not scheduled (the batch runs each candidate through
+   * runComparison on the frozen baseline inputs instead).
+   */
+  public suspendAutoAnalysis = false;
+
+  /** What the generator diagnoses: the analysis on show, the area it ran on and the roads as the analysis saw them. */
+  public generatorContext(): { output: AnalysisOutput; area: StudyArea; roads: Map<string, DrivableObject> } | null {
+    const out = this.state.analysis.output, area = this.state.area;
+    if (!out || !area || this.state.analysis.status !== 'ready' || this.state.analysis.outdated) return null;
+    return { output: out, area, roads: new Map(this.getRoads().map(r => [r.id, r])) };
+  }
+
   /** Seeds every analysis runs (results are their mean, with the spread shown). */
   public analysisSeeds: readonly number[] = DEFAULT_ANALYSIS.seeds;
 
@@ -1180,7 +1194,7 @@ export class SimulationMode {
   private scheduleAnalysis(delayMs = 500) {
     if (this.analysisTimer) clearTimeout(this.analysisTimer);
     this.analysisTimer = null;
-    if (!this.state.active || !this.state.area) return;
+    if (!this.state.active || !this.state.area || this.suspendAutoAnalysis) return;
     this.analysisTimer = setTimeout(() => { this.analysisTimer = null; void this.runAnalysis(); }, delayMs);
   }
 
