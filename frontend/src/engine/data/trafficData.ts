@@ -100,7 +100,12 @@ export const trafficApi = {
 
 /** Error raised with the server's validation detail kept (row/field problems), unlike the generic ApiError text. */
 export class TrafficApiError extends Error {
-  constructor(public status: number, public detail: unknown) { super(typeof detail === 'string' ? detail : (detail as { message?: string })?.message ?? `HTTP ${status}`); }
+  readonly status: number;
+  readonly detail: unknown;
+  constructor(status: number, detail: unknown) {
+    super(typeof detail === 'string' ? detail : (detail as { message?: string })?.message ?? `HTTP ${status}`);
+    this.status = status; this.detail = detail;
+  }
 }
 
 async function apiSend<T>(method: string, path: string, body: unknown): Promise<T> {
@@ -113,7 +118,8 @@ async function apiSend<T>(method: string, path: string, body: unknown): Promise<
 // ── pure helpers (mirrors of backend/traffic_data/core.py) ───────────────────
 
 export class MissingPcuFactorError extends Error {
-  constructor(public classes: string[], setName: string) { super(`PCU factor set '${setName}' has no factor for: ${classes.join(', ')}`); }
+  readonly classes: string[];
+  constructor(classes: string[], setName: string) { super(`PCU factor set '${setName}' has no factor for: ${classes.join(', ')}`); this.classes = classes; }
 }
 
 export const minutesOf = (t: string): number | null => {

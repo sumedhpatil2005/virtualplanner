@@ -7,6 +7,7 @@ import { InfoPanel } from './components/InfoPanel';
 import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { SimulationPanel } from './components/SimulationPanel';
+import { TrafficDataPanel } from './components/TrafficDataPanel';
 import { SimulationHud } from './components/SimulationHud';
 import { ModeBar } from './components/ModeBar';
 import { ConnectionBadge } from './components/ui/ConnectionBadge';
@@ -17,7 +18,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAppMode, useSelectedId } from './hooks/useAppMode';
 import { engineInstance } from './engine/TwinCityEngine';
 import { MapCompass } from './components/MapCompass';
-import { Compass, Layers, X, Keyboard, FolderOpen } from 'lucide-react';
+import { Compass, Layers, X, Keyboard, FolderOpen, Database } from 'lucide-react';
 
 const pillBase = 'h-11 px-4 rounded-full flex items-center gap-2 border border-white/10 shadow-xl cursor-pointer transition text-sm font-semibold backdrop-blur-xl';
 const pillClass = `${pillBase} bg-slate-950/90 text-slate-200 hover:text-white`;
@@ -29,6 +30,9 @@ function App() {
   // View mode's project list can be put away; picking something brings the panel back
   const [isProjectsOpen, setIsProjectsOpen] = useState(true);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  // Traffic data manager (docs/TRAFFIC_DATA.md): a View-mode panel, so roads can be picked on the map
+  const [isDataOpen, setIsDataOpen] = useState(false);
+  const openData = useCallback(() => { engineInstance.setAppMode('view'); setIsDataOpen(true); }, []);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -68,6 +72,7 @@ function App() {
     mode === 'simulate' ? <SimulationPanel />
     : mode === 'build' && selectedId?.startsWith('ljunction:') ? <JunctionPanel />
     : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
+    : isDataOpen ? <TrafficDataPanel onClose={() => setIsDataOpen(false)} />
     : isProjectsOpen || selectedId ? <InfoPanel onClose={() => setIsProjectsOpen(false)} />
     : null;
 
@@ -100,6 +105,11 @@ function App() {
           </div>
         </div>
         <ScenarioSelector />
+        <button onClick={() => (isDataOpen && mode === 'view' ? setIsDataOpen(false) : openData())} aria-pressed={isDataOpen && mode === 'view'}
+          title="Enter, import and manage traffic counts" data-testid="open-traffic-data"
+          className={`${pillBase} h-9 ${isDataOpen && mode === 'view' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-950/90 text-slate-200 hover:text-white'}`}>
+          <Database size={15} /> Traffic data
+        </button>
       </div>
 
       {/* Top centre: mode, and Build's tools */}

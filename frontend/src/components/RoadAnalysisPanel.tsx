@@ -11,6 +11,7 @@ import { dayRowView, daySummary } from './timeOfDayView';
 import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation/ScenarioComparison';
 import { improvementsFor } from '../engine/simulation/improvements';
 import { screenlineChecks } from '../engine/calibration/screenlines';
+import { TrafficCountChecks } from './TrafficCountChecks';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { Button, Notice } from './ui/kit';
 import { Card, Chip, Disclosure, InfoToggle, Meter } from './ui/viz';
@@ -472,6 +473,7 @@ export const CountChecks: React.FC<{ sim: SimulationModeState }> = ({ sim }) => 
   const counts = out?.counts ?? [];
   return (
     <div className="space-y-3 text-xs text-slate-400" data-testid="count-checks">
+      <TrafficCountChecks sim={sim} />
       {checks.length > 0 ? (
         <div>
           <p className="text-slate-300 font-medium">River bridges in the area (both directions, veh/h)</p>
