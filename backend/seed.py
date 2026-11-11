@@ -51,6 +51,7 @@ DEFAULT_SCENARIOS: list[dict] = [
         "name": "Current City (Base)",
         "description": "Existing layout of the city infrastructure.",
         "year": 2026,
+        "kind": "baseline",
     },
 ]
 

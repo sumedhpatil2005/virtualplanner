@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database.connection import get_db
-from models.models import CityObjectEntity, ScenarioEntity, AreaEntity
+from models.models import (CityObjectEntity, ScenarioEntity, AreaEntity, ScenarioObjectChangeEntity,
+                           ScenarioVersionEntity, ScenarioVersionChangeEntity)
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import json
@@ -53,7 +54,9 @@ def save_scenario(scenario: ScenarioSchema, db: Session = Depends(get_db)):
         existing.description = scenario.description
         existing.year = scenario.year
     else:
-        db.add(ScenarioEntity(id=scenario.id, name=scenario.name, description=scenario.description, year=scenario.year))
+        db.add(ScenarioEntity(id=scenario.id, name=scenario.name, description=scenario.description, year=scenario.year,
+                              kind="baseline" if scenario.id == BASE_SCENARIO_ID else "proposal",
+                              baseline_id=None if scenario.id == BASE_SCENARIO_ID else BASE_SCENARIO_ID))
     db.commit()
     return scenario
 
@@ -66,9 +69,23 @@ def delete_scenario(id: str, db: Session = Depends(get_db)):
     if not existing:
         raise HTTPException(status_code=404, detail="Scenario not found")
     removed = db.query(CityObjectEntity).filter(CityObjectEntity.scenario_id == id).delete(synchronize_session=False)
+    # Its change set (modifies/tombstones of base objects) and its versions go with it; base rows are not touched
+    db.query(ScenarioObjectChangeEntity).filter(ScenarioObjectChangeEntity.scenario_id == id).delete(synchronize_session=False)
+    vids = [v.id for v in db.query(ScenarioVersionEntity.id).filter(ScenarioVersionEntity.scenario_id == id)]
+    if vids:
+        db.query(ScenarioVersionChangeEntity).filter(ScenarioVersionChangeEntity.version_id.in_(vids)).delete(synchronize_session=False)
+        db.query(ScenarioVersionEntity).filter(ScenarioVersionEntity.scenario_id == id).delete(synchronize_session=False)
     db.delete(existing)
     db.commit()
     return {"status": "success", "message": f"Scenario deleted with {removed} objects", "deletedObjects": removed}
+
+def _refuse_base_move(existing, obj) -> None:
+    """A row of the baseline is never moved into a proposal by an upsert with the same id (it used to be: the id is
+    the primary key, so the proposal's version replaced the base row). A proposal's version of a base object is a
+    change: POST /api/scenarios/{id}/changes (docs/SCENARIOS_AND_VERSIONING.md)."""
+    if existing is not None and existing.scenario_id != obj.scenarioId:
+        raise HTTPException(status_code=409, detail=f"Object {obj.id} belongs to scenario {existing.scenario_id}; "
+                                                     f"a proposal's version of it is saved through /api/scenarios/{obj.scenarioId}/changes")
 
 @router.get("/objects", response_model=List[CityObjectSchema])
 def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)):
@@ -100,6 +117,7 @@ def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)
 @router.post("/objects", status_code=status.HTTP_201_CREATED)
 def save_object(obj: CityObjectSchema, db: Session = Depends(get_db)):
     existing = db.query(CityObjectEntity).filter(CityObjectEntity.id == obj.id).first()
+    _refuse_base_move(existing, obj)
 
     geom_str = json.dumps(obj.coordinates)
     props_str = json.dumps(obj.properties)
@@ -135,6 +153,8 @@ def save_objects_batch(objs: List[CityObjectSchema], db: Session = Depends(get_d
     for i in range(0, len(ids), 500):
         for row in db.query(CityObjectEntity).filter(CityObjectEntity.id.in_(ids[i:i + 500])):
             saved[row.id] = row
+    for obj in objs:
+        _refuse_base_move(saved.get(obj.id), obj)
     for obj in objs:
         existing = saved.get(obj.id)
         geom_str = json.dumps(obj.coordinates)
