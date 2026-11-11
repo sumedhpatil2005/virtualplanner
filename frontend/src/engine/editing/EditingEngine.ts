@@ -327,7 +327,7 @@ export class EditingEngine {
       if (kind === 'separate') continue;
       if (kind === 'uncertain' || drawn.type !== 'road' || other.type !== 'road') {
         // Through the other road's own end: that end is where it meets the road it continues from, at that level
-        const oe = other.coordinates;
+        const oe = other.coordinates as unknown as [number, number, number][];
         if (planDistM(oe[0], x.point) < END_CLEAR_M || planDistM(oe[oe.length - 1], x.point) < END_CLEAR_M) continue;
         if (!flags.some(f => f.roadId === other.id && planDistM(f.point, x.point) < 1)) {
           flags.push({ roadId: other.id, point: [x.point[0], x.point[1], x.za], otherZ: x.zb, decision: 'unconfirmed', reason });
