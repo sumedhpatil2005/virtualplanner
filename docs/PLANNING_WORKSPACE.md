@@ -137,9 +137,32 @@ approval"), report PDF/DOCX download, audit timeline (newest first, actor and ac
 
 Browser verification: §8.
 
-## 8. Browser verification
+## 8. Browser verification (BROWSER-VERIFIED, 2026-11-11)
 
-(see below; filled in after the run)
+Production build (`vite build`, `VITE_API_BASE=http://127.0.0.1:8308`) served on 127.0.0.1:4508; backend on :8308 with a
+fresh **copy** of `twincity.db` and the local OSM index; headless Chromium (swiftshader). Script:
+`/workspace/work/um-ws-run/e2e/plan_e2e.py` (outside the repo, like earlier harnesses), results `…/e2e/results.json`,
+screenshots `…/shots/plan-panel-full.png`, `plan-map-panel.png`, PDF and its text `…/dl/`.
+
+Set-up (not part of the check): `…/seed.py` created SYNTHETIC records through the existing APIs with `X-Actor: Seeder
+(synthetic)`: proposal "SYNTHETIC Option A" modifying base road `osm_22841323` (speed 30), version v1, a baseline and a
+proposal run record with made-up result summaries (1,200 / 1,150 veh/h), a SYNTHETIC measured dataset with one count
+record, a feasibility assessment from the test fixture, and one "Reviewed — not an approval" review.
+
+| Step (in the panel) | Result |
+|---|---|
+| Planning projects pill → name → New planning project → Create | project created, opens with status DRAFT, "Baseline: unchanged since project created" |
+| Attach scenario, traffic dataset, assessment (type + record selects, Attach) | 3 rows: "SCENARIO SYNTHETIC Option A…", "TRAFFIC DATASET SYNTHETIC Shivaji Bridge counts [measured, synthetic]", "FEASIBILITY ASSESSMENT SYNTHETIC tunnel screening (tunnel)" |
+| Status → Under study | badge UNDER STUDY |
+| Record decision (text, scenario version v1, evidence: the assessment) | card "#1 · Planning decision recorded in tool — not a statutory approval … version ver_… · 1 evidence ref(s)"; badge DECISION RECORDED |
+| Export PDF | download `planning-report-SYNTHETIC_Shivaji_Bridge_corridor_study.pdf`, 41 KB, 4 pages; `pdftotext`: header/disclaimer, "Measured + SYNTHETIC", "model output", "FAIR comparison", 1,200 / 1,150 / -50, certainty labels, "Planning decision recorded in…", "11. Audit trail summary" present; the word "approved" absent. ("Reviewed — not an approval" is present but wrapped across lines in the table, so the flat string check missed it.) |
+| Reload page, reopen project | 3 links, status DECISION RECORDED; audit timeline 16 events: project create/update ×2, 3 attachments, decision, report export (actor "A. Planner (synthetic)", request field / record field), plus the attached records' history from the seed (scenario, scenario edit, version, run, dataset, count record, assessment, review; actor "Seeder (synthetic) [header]" or the records' own who-fields) |
+
+Console errors: only the aborted external requests (`net::ERR_FAILED`); no page errors. Harness notes: Playwright's
+pointer clicks stalled at "scrolling into view" while the Cesium canvas rendered under swiftshader, so buttons were
+pressed with DOM `click()` on the real elements (same React handlers; not pointer events); form fields with
+`page.fill`/`select_option`. The map screenshot taken after reload shows the map and the pill but not the panel (CDP
+surface captured before the panel painted); the panel screenshot is a separate capture.
 
 ## 9. Limits / not done
 
