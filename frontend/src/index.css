@@ -106,12 +106,12 @@ html, body, #root {
   right: 24.25rem !important;
 }
 
-/* The wide (27rem) panels: Simulate and the junction editor */
-.panel-wide-open .cesium-viewer-toolbar {
+/* The wide panels: Simulate, the junction editor and Traffic data (27rem); Feasibility (24rem) takes the same room */
+:is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .cesium-viewer-toolbar {
   right: 29rem !important;
 }
 
-.panel-wide-open .cesium-viewer-fullscreenContainer {
+:is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .cesium-viewer-fullscreenContainer {
   right: 29.25rem !important;
 }
 
@@ -128,25 +128,27 @@ html, body, #root {
   z-index: 9999;
 }
 
-.build-toolbar { top: 4.25rem; left: 50%; transform: translateX(-50%); }
+/* Build's tools. Wide windows: centred under the Mode bar (fixed, so centred on the window although the toolbar
+   lives in the top-left column). Otherwise in the top-left column's own flow, under Traffic data, four tools per row
+   (4 x 4rem fits the column's 18rem), so it can never sit under the scenario box however tall that grows. The
+   centred toolbar (about 57rem) runs under a 22rem panel below 1,680 px and a 27rem panel below 1,810 px. */
+.build-toolbar { position: fixed; top: 4.25rem; left: 50%; transform: translateX(-50%); }
 @media (max-width: 1560px) {
-  .build-toolbar { top: 13rem; }
+  .build-toolbar { position: static; transform: none; }
+  .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
 }
-@media (max-width: 1200px) {
-  .build-toolbar { left: 1rem; transform: none; }
-  .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
-}
-/* With a side panel open, the centred toolbar (about 57rem wide) runs under the panel below these widths
-   (22rem panel: 1,680 px; the junction editor's 27rem panel: 1,810 px): it takes the compact layout under the
-   scenario box instead */
 @media (max-width: 1700px) {
-  .panel-open .build-toolbar { top: 13rem; left: 1rem; transform: none; }
-  .panel-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
+  .panel-open .build-toolbar { position: static; transform: none; }
+  .panel-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
 }
 @media (max-width: 1830px) {
-  .panel-wide-open .build-toolbar { top: 13rem; left: 1rem; transform: none; }
-  .panel-wide-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(6, 4rem); }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .build-toolbar { position: static; transform: none; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
 }
+/* The top-left column (name, scenario, versions, Traffic data, Build's tools) scrolls rather than running off the
+   window or under the Layers button */
+.top-left-dock { max-height: calc(100dvh - 6.5rem); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+
 .simulation-hud { max-width: calc(100vw - 25rem); }
 @media (max-width: 1050px) {
   .simulation-hud > div:nth-child(2) { gap: .65rem; padding: .65rem; }
@@ -156,9 +158,10 @@ html, body, #root {
   .simulation-hud { display: none; }
 }
 
-/* Mode bar (21rem wide): centred while it fits between the top-left box (to 19rem) and the right panel
-   (22rem, or 27rem for Simulate and the junction editor); else just right of the top-left box; else under it
-   (and Build's compact toolbar moves down to make room) */
+/* Mode bar (21rem wide with labels, 9.25rem as icons): centred while it fits between the top-left column (to 19rem)
+   and the right panel (22rem, or 27rem for Simulate, the junction editor and Traffic data); else just right of the
+   top-left column with its labels (to 1,250 px with the 27rem panel, 1,090 px with the 22rem panel, 960 px with
+   none); else right of the column as icons only (down to 920 px; under that see "Narrow windows") */
 .mode-bar-wrap { top: 1rem; left: 50%; transform: translateX(-50%); }
 @media (max-width: 960px) {
   .mode-bar-wrap { left: 19.5rem; transform: none; }
@@ -167,17 +170,65 @@ html, body, #root {
   .panel-open .mode-bar-wrap { left: 19.5rem; transform: none; }
 }
 @media (max-width: 1250px) {
-  .panel-wide-open .mode-bar-wrap { left: 19.5rem; transform: none; }
-}
-@media (max-width: 669px) {
-  .mode-bar-wrap { left: 1rem; top: 12.75rem; }
-  .build-toolbar { top: 16.5rem !important; }
-}
-@media (max-width: 1021px) {
-  .panel-open .mode-bar-wrap { left: 1rem; top: 12.75rem; }
-  .panel-open .build-toolbar { top: 16.5rem; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar-wrap { left: 19.5rem; transform: none; }
 }
 @media (max-width: 1101px) {
-  .panel-wide-open .mode-bar-wrap { left: 1rem; top: 12.75rem; }
-  .panel-wide-open .build-toolbar { top: 16.5rem; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (max-width: 1021px) {
+  .panel-open .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .panel-open .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* ---- Narrow windows (under 920 px: portrait tablets and phones) ----
+   One panel at a time as a bottom sheet across the full width (the panel dock's single child); the Mode bar becomes a
+   column of 44 px icons in the top-right corner with Cesium's buttons (enlarged to 44 px) under it, both above the
+   sheet; Layers and the compass sit just above the sheet, and opening Layers puts the sheet away until Layers closes.
+   Controls in the floating boxes get at least 44 x 44 px (WCAG 2.2 SC 2.5.5 Target Size (Enhanced)). */
+@media (max-width: 919.98px) {
+  :root { --sheet-h: 50dvh; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .mode-bar-wrap { top: 1rem; right: 1rem; left: auto; transform: none; }
+  .mode-bar { flex-direction: column; }
+  .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .cesium-viewer-toolbar {
+    top: 11rem !important; right: 1rem !important; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  }
+  .cesium-viewer-toolbar > * { margin: 0 !important; }
+  .cesium-viewer-toolbar .cesium-toolbar-button, .cesium-viewer-toolbar .cesium-sceneModePicker-wrapper { width: 44px !important; height: 44px !important; }
+  .cesium-viewer-toolbar .cesium-toolbar-button .cesium-svgPath-svg { left: 6px; top: 6px; width: 32px; height: 32px; }
+  .cesium-viewer-toolbar .cesium-baseLayerPicker-selected { width: 100%; height: 100%; }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .cesium-viewer-fullscreenContainer {
+    right: 1rem !important; bottom: 4.5rem !important; width: 44px; height: 44px;
+  }
+  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div).panel-open:not(.layers-open) .cesium-viewer-fullscreenContainer { bottom: calc(var(--sheet-h) + .75rem) !important; }
+
+  .panel-dock { top: auto; bottom: 1rem; right: 1rem; }
+  .panel-open .panel-dock { left: 0; right: 0; bottom: 0; height: var(--sheet-h); align-items: stretch; justify-content: flex-end; }
+  .panel-open .panel-dock > * { width: 100%; max-width: 100%; max-height: 100%; border-radius: 1rem 1rem 0 0; border-bottom-width: 0; }
+  .layers-open .panel-dock { display: none; }
+  /* In the sheet the whole panel scrolls as one (a tall header such as Simulate's would otherwise leave its own
+     scrolling body a few pixels high); a footer after the body stays pinned to the sheet's bottom edge */
+  .panel-open .panel-dock > * { overflow-y: auto; overscroll-behavior: contain; }
+  .panel-open .panel-dock > * > * { flex-shrink: 0; }
+  .panel-open .panel-dock > * > .overflow-y-auto { overflow: visible; flex: none; }
+  .panel-open .panel-dock > * > :last-child:not(:first-child):not(.overflow-y-auto) { position: sticky; bottom: 0; z-index: 2; background: rgb(2 6 23 / .97); }
+
+  .panel-open:not(.layers-open) .layers-dock, .panel-open:not(.layers-open) .compass-dock { bottom: calc(var(--sheet-h) + .75rem); }
+  .layers-dock > .animate-fade-in > * { max-height: calc(100dvh - 22rem); }
+
+  .top-left-dock { width: min(18rem, calc(100vw - 6rem)); max-height: calc(100dvh - 6.5rem); }
+  /* above the compass, which sits on the sheet */
+  .panel-open:not(.layers-open) .top-left-dock { max-height: calc(100dvh - var(--sheet-h) - 6.5rem); }
+
+  .simulation-hud { max-width: calc(100vw - 2rem); }
+  .panel-open .simulation-hud { bottom: calc(var(--sheet-h) + 5.5rem); }
+  .panel-open .toast-dock { bottom: calc(var(--sheet-h) + 1rem); }
+
+  .pointer-events-auto :is(button, select, [role=button], [role=tab], summary),
+  .pointer-events-auto input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height: 44px; min-width: 44px; }
+  .pointer-events-auto label:has(> input[type=checkbox], > input[type=radio]) { min-height: 44px; }
+  .pointer-events-auto :is(button, [role=button], [role=tab]) { min-width: 44px; }
 }

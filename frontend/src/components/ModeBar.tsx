@@ -16,7 +16,7 @@ export const ModeBar: React.FC = () => {
     <nav
       data-coach="mode-switch"
       aria-label="Mode"
-      className="flex items-center gap-1 p-1 rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 pointer-events-auto"
+      className="mode-bar flex items-center gap-1 p-1 rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 pointer-events-auto"
     >
       {MODES.map(m => {
         const Icon = m.icon;
@@ -26,6 +26,7 @@ export const ModeBar: React.FC = () => {
             key={m.id}
             onClick={() => engineInstance.setAppMode(m.id)}
             aria-pressed={active}
+            aria-label={m.label}
             title={m.hint}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer ${
               active
@@ -33,8 +34,8 @@ export const ModeBar: React.FC = () => {
                 : 'text-slate-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <Icon size={16} />
-            {m.label}
+            <Icon size={16} aria-hidden />
+            <span className="mode-label">{m.label}</span>
           </button>
         );
       })}

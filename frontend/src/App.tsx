@@ -75,16 +75,19 @@ function App() {
     : isDataOpen ? <TrafficDataPanel onClose={() => setIsDataOpen(false)} />
     : isProjectsOpen || selectedId ? <InfoPanel onClose={() => setIsProjectsOpen(false)} />
     : null;
+  // The 27rem panels (Simulate, the junction editor, Traffic data): the Mode bar and Cesium's buttons keep clear of them
+  const panelWide = mode === 'simulate' || (mode === 'build' && !!selectedId?.startsWith('ljunction:'))
+    || (mode === 'view' && !isDebugSelection && isDataOpen);
 
   return (
-    <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''} ${mode === 'simulate' || (mode === 'build' && selectedId?.startsWith('ljunction:')) ? 'panel-wide-open' : ''}`}>
+    <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''} ${isLayersOpen ? 'layers-open' : ''} ${panelWide ? 'panel-wide-open' : ''}`}>
       {/* 3D map */}
       <div className="absolute inset-0 w-full h-full z-0 select-none">
         <Viewport3D />
       </div>
 
       {/* Top left: name, connection, scenario */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-2 pointer-events-auto w-72">
+      <div className="top-left-dock absolute top-4 left-4 z-20 flex flex-col items-start gap-2 pointer-events-auto w-72">
         <div className="w-full rounded-2xl px-3 py-2.5 flex items-center justify-between bg-slate-950/90 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-indigo-500/15 text-indigo-300">
@@ -110,16 +113,17 @@ function App() {
           className={`${pillBase} h-9 ${isDataOpen && mode === 'view' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-950/90 text-slate-200 hover:text-white'}`}>
           <Database size={15} /> Traffic data
         </button>
+        {/* Build's tools: centred at the top on wide windows, else in this column's flow (index.css) */}
+        {mode === 'build' && <div className="build-toolbar z-30 flex justify-center pointer-events-none"><Toolbar /></div>}
       </div>
 
       {/* Top centre: mode, and Build's tools */}
       <div className="mode-bar-wrap absolute z-30 flex flex-col items-center gap-2 pointer-events-none">
         <ModeBar />
       </div>
-      {mode === 'build' && <div className="build-toolbar absolute z-30 flex justify-center pointer-events-none"><Toolbar /></div>}
 
-      {/* Right: the panel for the current mode */}
-      <div className="absolute right-4 top-4 bottom-4 z-20 flex flex-col items-end pointer-events-none">
+      {/* Right: the panel for the current mode. Under 900 px wide it is a bottom sheet (index.css, "Narrow windows") */}
+      <div className="panel-dock absolute right-4 top-4 bottom-4 z-20 flex flex-col items-end pointer-events-none">
         {panel ?? (mode === 'view' && (
           <button onClick={() => setIsProjectsOpen(true)} className={`${pillClass} pointer-events-auto`}>
             <FolderOpen size={16} /> Your projects
@@ -129,7 +133,7 @@ function App() {
 
       {/* Bottom left: layers */}
       {mode === 'simulate' && <SimulationHud />}
-      <div className="absolute bottom-4 left-4 z-20 pointer-events-auto flex flex-col items-start gap-2">
+      <div className="layers-dock absolute bottom-4 left-4 z-20 pointer-events-auto flex flex-col items-start gap-2">
         {isLayersOpen && (
           <div className="animate-fade-in mb-1">
             <LayerManager />
@@ -145,11 +149,11 @@ function App() {
         </button>
       </div>
       {/* Bottom left, beside Layers: which way the map faces */}
-      <div className="absolute bottom-4 left-[8.75rem] z-20"><MapCompass /></div>
+      <div className="compass-dock absolute bottom-4 left-[8.75rem] z-20"><MapCompass /></div>
 
       {/* Notifications, bottom centre above the drawing hints */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-10000 pointer-events-auto animate-fade-in" role="status" aria-live="polite">
+        <div className="toast-dock fixed bottom-24 left-1/2 -translate-x-1/2 z-10000 pointer-events-auto animate-fade-in" role="status" aria-live="polite">
           <div className={`px-4 py-3 rounded-2xl border flex items-center gap-3 text-sm shadow-2xl max-w-lg backdrop-blur-xl ${
             toast.type === 'error'
               ? 'border-rose-400/30 text-rose-100 bg-rose-950/90'
