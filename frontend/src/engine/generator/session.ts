@@ -79,6 +79,8 @@ export class GeneratorSession {
     const eng = this.engine;
     const created: CreatedCandidate[] = [];
     this.set({ status: 'creating', progress: { done: 0, of: list.length }, message: null });
+    // Each scenario switch would otherwise schedule a fresh road analysis competing for the worker
+    eng.simMode.setAutoAnalysisSuspended(true);
     for (const c of list) {
       let sid = '';
       try {
@@ -100,6 +102,7 @@ export class GeneratorSession {
       }
       this.set({ created: [...created], progress: { done: created.length, of: list.length } });
     }
+    eng.simMode.setAutoAnalysisSuspended(false);
     this.set({ status: 'created', progress: null });
     return created;
   }
@@ -148,7 +151,7 @@ export class GeneratorSession {
     if (!todo.length) { this.set({ status: 'error', message: 'Create the candidate scenarios first.' }); return []; }
     this.set({ status: 'evaluating', progress: { done: 0, of: todo.length + 1 }, message: null });
     const evaluated: GeneratorState['evaluated'] = [];
-    sm.suspendAutoAnalysis = true;
+    sm.setAutoAnalysisSuspended(true);
     try {
       eng.scenarios.setActiveScenario(BASE_SCENARIO_ID);
       // The baseline run freezes demand and seeds (the existing Compare flow); reuse a baseline already saved for this road
@@ -170,7 +173,7 @@ export class GeneratorSession {
       this.set({ status: 'error', message: err instanceof Error ? err.message : String(err) });
     } finally {
       eng.scenarios.setActiveScenario(BASE_SCENARIO_ID);
-      sm.suspendAutoAnalysis = false;
+      sm.setAutoAnalysisSuspended(false);
     }
     if (!this.baselineSnap) return [];
     const rows = buildRows({ name: 'Existing network (baseline)', output: this.baselineSnap.analysis, inputs: this.baselineSnap.inputs }, evaluated);

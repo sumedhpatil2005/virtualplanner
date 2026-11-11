@@ -1168,6 +1168,11 @@ export class SimulationMode {
    * runComparison on the frozen baseline inputs instead).
    */
   public suspendAutoAnalysis = false;
+  /** Suspends (and cancels any pending or running) automatic road analysis, or resumes it. */
+  public setAutoAnalysisSuspended(on: boolean) {
+    this.suspendAutoAnalysis = on;
+    if (on) this.cancelAnalysis();
+  }
 
   /** What the generator diagnoses: the analysis on show, the area it ran on and the roads as the analysis saw them. */
   public generatorContext(): { output: AnalysisOutput; area: StudyArea; roads: Map<string, DrivableObject> } | null {
