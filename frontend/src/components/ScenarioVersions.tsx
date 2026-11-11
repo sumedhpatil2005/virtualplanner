@@ -18,9 +18,14 @@ export const ScenarioVersions: React.FC<{ scenarioId: string }> = ({ scenarioId 
   const [confirm, setConfirm] = useState<ScenarioVersion | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
+  const seq = React.useRef(0);
   const refresh = useCallback(async () => {
+    const mine = ++seq.current;
     try {
-      setList(await engineInstance.listScenarioVersions(scenarioId));
+      const next = await engineInstance.listScenarioVersions(scenarioId);
+      // A slower, older request must not overwrite a newer answer
+      if (mine !== seq.current) return;
+      setList(next);
       setError(null);
     } catch (e: any) {
       setError(e?.message || 'Could not load versions.');

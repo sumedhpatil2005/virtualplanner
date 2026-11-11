@@ -106,8 +106,22 @@ def _canon(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
+_FINGERPRINTS: Dict[tuple, str] = {}
+
+
 def baseline_fingerprint(db: Session, baseline_id: str = BASE) -> str:
-    """sha256 over the baseline objects' content (id, type, name, layer, geometry, properties), in id order."""
+    """sha256 over the baseline objects' content (id, type, name, layer, geometry, properties), in id order.
+    Cached per (database, baseline, row count, latest updated_at): every API write of a row sets updated_at, so a
+    change through the API always recomputes it (a write made outside the API without updated_at would not)."""
+    sig = db.query(func.count(CityObjectEntity.id), func.max(CityObjectEntity.updated_at)).filter(CityObjectEntity.scenario_id == baseline_id).one()
+    key = (str(db.get_bind().url), baseline_id, sig[0], str(sig[1]))
+    if key in _FINGERPRINTS:
+        return _FINGERPRINTS[key]
+    _FINGERPRINTS[key] = fp = _baseline_fingerprint(db, baseline_id)
+    return fp
+
+
+def _baseline_fingerprint(db: Session, baseline_id: str) -> str:
     h = hashlib.sha256()
     rows = (db.query(CityObjectEntity.id, CityObjectEntity.type, CityObjectEntity.name, CityObjectEntity.layer_id,
                      CityObjectEntity.geometry_geojson, CityObjectEntity.properties_json)
