@@ -222,12 +222,13 @@ def build_model(assessment: dict, meta: dict, inputs: dict, reviews: list[dict],
     b17 += [Block("blank", text="Name / role / organisation:", lines=1), Block("blank", text="Signature and date (acknowledges receipt of this brief only):", lines=1)]
     S.append(b17)
     # 18
+    ev_names = {e["id"]: e["file_name"] for e in evidence}
     b18 = [Block("note", text="Review records are append-only. A review status records who looked at what and with which evidence. NO status in this document means engineering, statutory or any other approval. 'External approval recorded' means a user recorded an outside authority's reference; this tool has not verified it.")]
     if reviews:
         b18.append(Block("table", header=["#", "Date (UTC)", "Reviewer", "Item", "Status", "Evidence", "Notes"], rows=[[
             str(r["seq"]), r["created_at"], f"{r['reviewer_name']} ({r['reviewer_role']})", f"{r['item_type']}{': ' + r['item_id'] if r.get('item_id') else ''}",
             REVIEW_STATUS_LABEL.get(r["status"], r["status"]) + (f" - ref: {r['external_reference']}" if r.get("external_reference") else ""),
-            ", ".join(r.get("evidence_ids", [])) or "none", r.get("notes", "")] for r in reviews]))
+            ", ".join(ev_names.get(e, e) for e in r.get("evidence_ids", [])) or "none", r.get("notes", "")] for r in reviews]))
     else:
         b18.append(Block("para", text="Not started - no review records."))
     b18.append(Block("table", header=["Item", "Value"], rows=[["Assessment created", meta.get("created_at", "")], ["Document generated", generated], ["Engine", a.get("engineVersion", "")], ["Template", TEMPLATE_VERSION]]))
