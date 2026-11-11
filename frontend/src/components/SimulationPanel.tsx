@@ -19,6 +19,7 @@ import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, 
 import { CalibrationPanel } from './CalibrationPanel';
 import { TimeOfDayPanel } from './TimeOfDayPanel';
 import { UnderstandView, ImproveView, DemandEvidence, CountChecks } from './RoadAnalysisPanel';
+import { EmissionsCard } from './OdmeAndEmissions';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -198,6 +199,9 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
       <Advanced title="Checks against traffic counts (screenlines)">
         <CountChecks sim={sim} />
         <CalibrationPanel sim={sim} />
+      </Advanced>
+      <Advanced title="Fuel and emissions (estimated)">
+        <EmissionsCard result={sim.analysis.output?.result} />
       </Advanced>
       <Advanced title="Hourly demand profile">
         <TimeOfDayPanel tod={sim.timeOfDay} />

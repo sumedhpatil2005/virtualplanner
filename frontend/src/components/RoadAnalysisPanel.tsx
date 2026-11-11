@@ -12,6 +12,7 @@ import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation
 import { improvementsFor } from '../engine/simulation/improvements';
 import { screenlineChecks } from '../engine/calibration/screenlines';
 import { TrafficCountChecks } from './TrafficCountChecks';
+import { OdmeCard, EmissionsCompare } from './OdmeAndEmissions';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { Button, Notice } from './ui/kit';
 import { Card, Chip, Disclosure, InfoToggle, Meter } from './ui/viz';
@@ -390,6 +391,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
       )}
       <RoadChanges title="Roads that gain (less loaded)" rows={c.winners} tone="good" />
       <RoadChanges title="Roads that lose (more loaded)" rows={c.losers} tone="bad" />
+      <EmissionsCompare c={c} />
       <Button size="sm" icon={MapIcon} variant={overlay === 'comparison' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'comparison' ? 'none' : 'comparison')}>{overlay === 'comparison' ? 'Hide changes on the map' : 'Show gains and losses on the map'}</Button>
       <div className="space-y-1">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Its neighbourhood (simulated)</p>
@@ -474,6 +476,7 @@ export const CountChecks: React.FC<{ sim: SimulationModeState }> = ({ sim }) => 
   return (
     <div className="space-y-3 text-xs text-slate-400" data-testid="count-checks">
       <TrafficCountChecks sim={sim} />
+      <OdmeCard sim={sim} />
       {checks.length > 0 ? (
         <div>
           <p className="text-slate-300 font-medium">River bridges in the area (both directions, veh/h)</p>

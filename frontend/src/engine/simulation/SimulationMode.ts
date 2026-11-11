@@ -43,6 +43,10 @@ import { applyUrbanSpeeds, type SpeedReport } from './roadParameters';
 import { compareAnalyses, type ComparisonResult, type RunInputs } from './ScenarioComparison';
 import { vcColour, vcText } from './RoadAnalysis';
 import { fetchScreenlines, type ScreenlineFile } from '../calibration/screenlines';
+import { estimateAreaDemand, constraintsToCounts, countsBeforeAfter, type OdmeProvenance } from '../demand/odmeAssignment';
+import { countsToConstraints } from '../data/odmeConstraints';
+import type { EngineCountRow } from '../data/trafficData';
+import type { OdmeFit, OdmeIteration, OdmeOptions } from '../demand/odme';
 
 /**
  * Live view lifecycle: idle (stopped, nothing computing), preparing (waiting
@@ -300,6 +304,30 @@ export interface SimulationModeState {
   notice: string | null;
   /** Counted roads (river bridges, PMC CMP 2008) for checking the model's volumes. */
   screenlines: ScreenlineFile | null;
+  /** Demand estimated from calibration counts (ODME, docs/ODME_AND_EMISSIONS.md): opt-in; the estimate never replaces the baseline demand. */
+  odme: OdmeState;
+}
+
+export interface OdmeState {
+  status: 'idle' | 'running' | 'ready' | 'error';
+  error: string | null;
+  /** The last estimate (a demand version): provenance, fit on the calibration counts, independent check on validation counts. */
+  report: OdmeRunReport | null;
+  /** The user chose to run on the estimated demand (only while it is valid for the current prior and hour). */
+  used: boolean;
+  /** Why an estimate no longer applies (prior demand or hour changed). */
+  staleReason: string | null;
+}
+
+export interface OdmeRunReport {
+  provenance: OdmeProvenance;
+  iterations: OdmeIteration[];
+  /** Calibration counts: before/after on the assignment (fitted, so not independent evidence). */
+  calibration: OdmeFit[];
+  /** Validation (held-out) counts at this hour: before/after on the assignment, never fitted. */
+  validation: OdmeFit[];
+  skipped: { id: string; reason: string }[];
+  elapsedMs: number;
 }
 
 /** Clock for the run: which hour's demand is simulated, from the real Pune hour-of-day profile. */
@@ -373,6 +401,7 @@ export class SimulationMode {
     corridor: null,
     analysis: EMPTY_ANALYSIS,
     demandSettings: { through: true, hypotheticalScale: null },
+    odme: { status: 'idle', error: null, report: null, used: false, staleReason: null },
     timeline: EMPTY_TIMELINE,
     overlay: 'none',
     directionFocus: { hover: null, pinned: null },
@@ -419,6 +448,10 @@ export class SimulationMode {
   private analysisNetworkKey: string | null = null;
   /** Demand fitted to observed counts; used by live traffic while set. */
   private calibratedPlan: DemandPlan | null = null;
+  /** The demand version estimated from counts (ODME) and the content key of the prior it was estimated from. */
+  private odmePlan: DemandPlan | null = null;
+  private planKeys = new WeakMap<DemandPlan, string>();
+  private keyOfPlan(p: DemandPlan) { let k = this.planKeys.get(p); if (!k) { k = contentKey(p); this.planKeys.set(p, k); } return k; }
   private calibrationGeneration = 0;
   private readonly loadCounts: () => Promise<CountDataset>;
 
@@ -1078,7 +1111,7 @@ export class SimulationMode {
    * its edge and through traffic on its main roads) for the land-use peak of
    * the clock hour; the hypothetical multiplier, if set, on top (labelled so).
    */
-  public studyPlan(area: StudyArea | null = this.state.area, landUse: 'AM_Peak' | 'PM_Peak' = this.landUsePeriod()): DemandPlan | null {
+  public studyPlan(area: StudyArea | null = this.state.area, landUse: 'AM_Peak' | 'PM_Peak' = this.landUsePeriod(), raw = false): DemandPlan | null {
     if (!area) return null;
     const settings = this.state.demandSettings;
     let plan: DemandPlan | null;
@@ -1092,7 +1125,10 @@ export class SimulationMode {
       }
       plan = this.planCache.plan;
     }
-    if (!plan) return null;
+    if (!plan || raw) return plan;
+    // The ODME demand version, when the user chose it and it was estimated from this very prior at this hour
+    if (this.state.odme.used && this.odmePlan?.provenance.odme && this.odmePlan.provenance.odme.hour === this.state.timeOfDay.hour
+      && this.odmePlan.provenance.odme.priorKey === this.keyOfPlan(plan)) plan = this.odmePlan;
     const scale = settings.hypotheticalScale;
     if (scale === null || scale === 1) return plan;
     return { trips: plan.trips.map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * scale })),
@@ -1322,6 +1358,7 @@ export class SimulationMode {
     return {
       demandFrozen: this.baselinePlan ? contentKey(this.baselinePlan) : null,
       demandCalibrated: !!this.calibratedPlan, demandSettings: structuredClone(this.state.demandSettings),
+      demandEstimatedFromCounts: this.state.odme.used && this.odmePlan?.provenance.odme ? { priorKey: this.odmePlan.provenance.odme.priorKey, datasets: this.odmePlan.provenance.odme.calibrationDatasetIds, iterations: this.odmePlan.provenance.odme.iterations, hour: this.odmePlan.provenance.odme.hour, createdAt: this.odmePlan.provenance.odme.createdAt, demandKey: contentKey(this.odmePlan) } : null,
       hour: t.hour, day: t.day, countPeak: t.countPeak, seeds: [...this.analysisSeeds],
       warmupS: DEFAULT_ANALYSIS.warmupS, measureS: DEFAULT_ANALYSIS.measureS,
       signalTiming: this.signalTiming, signalSource: this.signalPoints ? 'mapped' : 'estimated',
@@ -1729,6 +1766,79 @@ export class SimulationMode {
       return false;
     }
   }
+
+  // ── Demand estimated from calibration counts (ODME) ────────────────────────
+
+  /** The prior the estimate starts from: the demand the area would run on without the ODME version (hypothetical scale excluded). */
+  private odmePrior(area: StudyArea): DemandPlan | null {
+    return this.studyPlan(area, this.landUsePeriod(), true);
+  }
+
+  /**
+   * Estimates a new demand version from the Traffic Data rows given (docs/ODME_AND_EMISSIONS.md): role "calibration"
+   * rows of the clock hour become constraints; "validation" rows are held out and only checked before/after on the
+   * assignment. Nothing is applied: the user then chooses to use it (useOdmeDemand). Runs on the main thread.
+   */
+  public async estimateDemandFromCounts(rows: readonly EngineCountRow[], opts: { allowEstimated?: boolean; options?: OdmeOptions } = {}): Promise<OdmeRunReport | null> {
+    this.flushPendingRecompute();
+    const area = this.state.area;
+    this.setState({ odme: { ...this.state.odme, status: 'running', error: null } });
+    await new Promise<void>(r => setTimeout(r, 0));
+    try {
+      if (!area) throw new Error('Select a study road first.');
+      if (this.state.timeOfDay.status !== 'ready') await this.ensureTimeProfile();
+      const prior = this.odmePrior(area);
+      if (!prior?.trips.length) throw new Error('This study area has no demand to adjust.');
+      const t0 = Date.now(), hour = this.state.timeOfDay.hour, f = this.state.timeOfDay.factor;
+      const segs = new Set(area.segments.map(x => x.key));
+      const trips = snapDemandPlan(prior, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f }));
+      const edgeIds = [...area.network.edges.keys()].filter(id => segs.has(id.replace(/_(fwd|bwd)$/, '')));
+      const built = countsToConstraints(rows, edgeIds, { hour, allowEstimated: opts.allowEstimated });
+      const calib = built.constraints;
+      if (!calib.length) throw new Error(`No calibration count matches this area at ${String(hour).padStart(2, '0')}:00 (weekday). Set a dataset's role to Calibration in Traffic data.`);
+      const roads = new Map(this.getRoads().map(r => [r.id, r]));
+      const assignment = { signalPoints: this.signalPoints ?? undefined, junctionEdits: splitJunctionObjects(this.getContext().junctions).edits };
+      const r = estimateAreaDemand({ area, roads, plan: prior, trips, constraints: calib, heldOutDatasetIds: built.heldOutDatasetIds, hour, hourFactor: f, assignment, options: opts.options });
+      // Independent check on the held-out (validation) rows of the same hour: assignment before and after, never fitted
+      const valRows = rows.filter(x => x.role === 'validation').map(x => ({ ...x, role: 'calibration' as const }));
+      const val = countsToConstraints(valRows, edgeIds, { hour, allowEstimated: opts.allowEstimated });
+      const valCounts = constraintsToCounts(val.constraints, r.problem.linkIndex).counts;
+      const report: OdmeRunReport = { provenance: r.plan.provenance.odme!, iterations: r.estimate.iterations, calibration: r.estimate.fit,
+        validation: countsBeforeAfter(valCounts, r.estimate.priorLoad, r.estimate.load),
+        skipped: [...r.skipped, ...built.skipped.filter(x => x.row.role === 'calibration').map(x => ({ id: `${x.row.dataset_name}:${x.row.road_id ?? x.row.junction_ref}:${x.row.period}`, reason: x.reason }))],
+        elapsedMs: Date.now() - t0 };
+      this.odmePlan = r.plan;
+      this.setState({ odme: { status: 'ready', error: null, report, used: false, staleReason: null } });
+      return report;
+    } catch (err) {
+      this.setState({ odme: { ...this.state.odme, status: 'error', error: err instanceof Error ? err.message : String(err) } });
+      return null;
+    }
+  }
+
+  /** Runs (or stops running) the analysis on the estimated demand version. The baseline demand is never changed. */
+  public useOdmeDemand(on: boolean) {
+    const area = this.state.area;
+    if (on) {
+      const p = this.odmePlan?.provenance.odme;
+      const prior = area ? this.odmePrior(area) : null;
+      let reason: string | null = null;
+      if (!p || !prior) reason = 'Estimate demand from calibration counts first.';
+      else if (p.hour !== this.state.timeOfDay.hour) reason = `The estimate is for ${String(p.hour).padStart(2, '0')}:00; set the clock back or estimate again.`;
+      else if (p.priorKey !== this.keyOfPlan(prior)) reason = 'The demand it was estimated from has changed (area, land use or settings). Estimate again.';
+      if (reason) { this.setState({ odme: { ...this.state.odme, used: false, staleReason: reason } }); return; }
+    }
+    if (this.state.odme.used === on) return;
+    this.invalidateComparison('The demand changed (estimated from counts on/off). Save a new baseline.');
+    this.setState({ odme: { ...this.state.odme, used: on, staleReason: null } });
+    this.refreshTimelineOutdated();
+    this.stopTraffic();
+    this.analysisStale = true;
+    this.scheduleAnalysis();
+  }
+
+  /** The estimated demand version (for reports). */
+  public getOdmePlan(): DemandPlan | null { return this.odmePlan; }
 
   /** Back to the uncalibrated demand. */
   public clearCalibration() {
