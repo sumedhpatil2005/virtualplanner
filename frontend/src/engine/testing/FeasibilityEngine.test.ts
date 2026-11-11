@@ -187,3 +187,17 @@ describe('proposal-specific investigation requirements', () => {
     expect(tunnel.plan.investigations.find(i => i.id === 'geotechnical_investigation')!.triggeredBy).toEqual(expect.arrayContaining(['R03', 'R14']));
   });
 });
+
+describe('city context hygiene (browser-run regressions)', () => {
+  it('demo sample objects are never treated as evidence about the site', async () => {
+    const { cityContext } = await import('../feasibility/proposal');
+    const sample = { id: 'b2', name: 'Cyber IT Park', type: 'building', coordinates: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 0, 0]] } as never;
+    const real = { id: 'x1', name: 'Real block', type: 'building', coordinates: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 0, 0]] } as never;
+    expect(cityContext([sample, real]).map(o => o.id)).toEqual(['x1']);
+  });
+  it('no grade-separated structure finding when only layer-tagged (non bridge/tunnel) roads are near', () => {
+    const road: OsmElement = { type: 'way', id: 12, tags: { highway: 'service', layer: '1' }, geometry: geom([P(-300, 2), P(300, 2)]) };
+    const a = assessFeasibility(proposal('flyover', 'elevated'), site({ roads: [road] }), []);
+    expect(a.findings.some(f => f.topic === 'structures')).toBe(false);
+  });
+});

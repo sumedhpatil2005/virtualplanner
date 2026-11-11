@@ -4,6 +4,7 @@
  * user choice; the defaults below are only a starting point shown in the UI.
  */
 import type { CityObject } from '../objects/types';
+import { isSampleObject } from '../objects/sampleObjects';
 import type { CityContextObject, ProposalInput, ProposalLevel, ProposalType } from './types';
 
 export const PROPOSAL_TYPES_FOR: Record<'road' | 'flyover' | 'metro_flyover', ProposalType[]> = {
@@ -52,6 +53,7 @@ export function proposalFromObject(o: CityObject, type: ProposalType, opts: { le
 export function cityContext(objects: CityObject[]): CityContextObject[] {
   const out: CityContextObject[] = [];
   for (const o of objects) {
+    if (isSampleObject(o)) continue; // demo objects are not evidence about the real site
     if (o.type === 'building' && o.coordinates.length >= 3) out.push({ id: o.id, type: 'building', name: o.name, coordinates: o.coordinates, osmId: o.osmId });
     else if (o.type === 'road' && o.coordinates.length >= 2) {
       const s = o.sections?.[0];

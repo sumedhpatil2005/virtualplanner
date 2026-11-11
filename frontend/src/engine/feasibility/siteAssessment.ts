@@ -157,8 +157,10 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
       statement: `Road section profile gives a right-of-way of ${[...new Set(rowCtx.map(w => Math.round(w)))].join(', ')} m (confidence: ${ctxRoads.map(x => x.o.rowConfidence ?? 'unknown')[0]}).` });
   }
   const knownRow = [...tagWidths, ...rowCtx];
-  if (!isUnderground && inFootprint.length > 0 && p.proposalType !== 'flyover' && p.proposalType !== 'elevated_corridor') {
-    A.outsideExistingRoW = attr(true, 'inferred', bSrc, 'Mapped buildings inside the drawn footprint imply land outside any road right-of-way.');
+  if (!isUnderground && inFootprint.length > 0) {
+    A.outsideExistingRoW = attr(true, 'inferred', bSrc, p.level === 'elevated'
+      ? 'Mapped buildings under the drawn deck footprint imply the structure leaves any road right-of-way.'
+      : 'Mapped buildings inside the drawn footprint imply land outside any road right-of-way.');
   } else if (!isUnderground && knownRow.length && (p.proposalType === 'road_widening' || p.proposalType === 'additional_lane') && p.widthM > Math.max(...knownRow)) {
     A.outsideExistingRoW = attr(true, 'estimated', 'Drawn width vs OSM width tag / section profile', `Drawn ${p.widthM} m > known ${Math.max(...knownRow)} m.`);
   } else {
@@ -171,7 +173,8 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
       : 'Whether the footprint stays within the legal right-of-way is unknown (no DP road line imported). An empty-looking map does not prove land is available.' });
 
   const near = Math.max(zone, 30);
-  const structs = roadFeats.filter(f => (f.tags.bridge && f.tags.bridge !== 'no') || (f.tags.tunnel && f.tags.tunnel !== 'no') || Number(f.tags.layer) !== 0 && f.tags.layer !== undefined)
+  const isStruct = (t: Record<string, string>) => (!!t.bridge && t.bridge !== 'no') || (!!t.tunnel && t.tunnel !== 'no' && t.tunnel !== 'building_passage');
+  const structs = roadFeats.filter(f => isStruct(f.tags))
     .map(f => ({ f, d: distTo(f, line) })).filter(x => x.d <= near);
   const ctxStructs = ctx.filter(o => o.type === 'flyover' || o.type === 'metro_flyover' || o.tunnel || o.bridge)
     .filter(o => !(o.osmId && structs.some(x => x.f.ref.endsWith(` ${o.osmId}`))))
@@ -196,7 +199,7 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
   if (metroLines.length && metroLines[0].d <= SEARCH_RADIUS_M) {
     A.distanceToMetroM = attr(Math.round(metroLines[0].d * 10) / 10, 'verified_from_available_data', mSrc, 'Distance to mapped alignment centreline, not to the structure edge; MahaMetro records are authoritative.');
     add({ topic: 'metro', kind: metroLines[0].d <= th.metroPlanningAuthorityM.value ? 'constraint' : 'context', certainty: 'verified_from_available_data', source: mSrc, attr: 'distanceToMetroM',
-      statement: `Mapped metro alignment "${metroLines[0].label}" is ${fmtM(metroLines[0].d)} from the proposal centreline (MahaMetro NOC threshold ${th.metroNocM.value} m and planning area ${th.metroPlanningAuthorityM.value} m are ${th.metroNocM.basis.replace('_', ' ')}s to confirm).` });
+      statement: `Mapped metro alignment "${metroLines[0].label}" ${metroLines[0].d === 0 ? 'crosses or touches the proposal centreline' : `is ${fmtM(metroLines[0].d)} from the proposal centreline`} (MahaMetro NOC threshold ${th.metroNocM.value} m and planning area ${th.metroPlanningAuthorityM.value} m are ${th.metroNocM.basis.replace('_', ' ')}s to confirm).` });
   } else {
     A.distanceToMetroM = attr('unknown', 'unknown', mSrc, `No mapped metro within ${SEARCH_RADIUS_M} m; underground metro alignments may be incompletely mapped.`);
     add({ topic: 'metro', kind: 'gap', certainty: 'unknown', source: mSrc, attr: 'distanceToMetroM',
@@ -233,7 +236,7 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
       ? attr(true, 'verified_from_available_data', wSrc)
       : attr(false, 'estimated', wSrc, 'No mapped waterway crosses the footprint; small drains (nallahs) are often unmapped.');
     if (nearest && nearest.d <= SEARCH_RADIUS_M) {
-      const what = nearest.f.label || nearest.f.tags.waterway || nearest.f.tags.water || nearest.f.tags.natural || 'water feature';
+      const what = nearest.f.label || `unnamed ${nearest.f.tags.waterway || nearest.f.tags.water || nearest.f.tags.natural || nearest.f.tags.landuse || 'water feature'}`;
       A.distanceToWaterwayM = attr(Math.round(nearest.d * 10) / 10, 'verified_from_available_data', wSrc, 'Distance to the nearest MAPPED water feature; an unmapped one may be closer.');
       add({ topic: 'water', kind: crosses || nearest.d <= th.waterProximityM.value ? 'constraint' : 'context', certainty: 'verified_from_available_data', source: wSrc, attr: 'distanceToWaterwayM',
         statement: crosses ? `Alignment crosses mapped water feature "${what}".` : `Nearest mapped water feature "${what}" is ${fmtM(nearest.d)} away (screening buffer ${th.waterProximityM.value} m is hypothetical).` });
@@ -260,11 +263,17 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
     A.distanceToAsiProtectedLimitM = attr('unknown', 'unknown', 'ASI protected-limit boundaries not imported',
       asi.length ? `Nearest OSM feature tagged as centrally protected is ${fmtM(asi[0].d)} away; protected limits not in data.` : 'OSM heritage tags do not establish ASI protection status.');
   }
-  const herNear = her.filter(x => x.d <= Math.max(th.heritageProximityM.value, 100));
+  const seenHer = new Set<string>();
+  const herNear = her.filter(x => x.d <= Math.max(th.heritageProximityM.value, 100)).filter(x => {
+    const k = x.f.label || x.f.ref;
+    if (seenHer.has(k)) return false;
+    seenHer.add(k);
+    return true;
+  });
   if (herNear.length) {
     for (const x of herNear.slice(0, 4)) {
       add({ topic: 'heritage', kind: 'constraint', certainty: 'verified_from_available_data', source: `${hSrc}; ${x.f.ref}`,
-        statement: `Mapped historic feature "${x.f.label || x.f.tags.historic || x.f.tags.heritage}" (${x.f.tags.historic ?? 'heritage=' + x.f.tags.heritage}) is ${fmtM(x.d)} from the alignment. Statutory status (ASI / PMC list grade) is not established by OSM.` });
+        statement: `Mapped historic feature "${x.f.label || `unnamed ${x.f.tags.historic ?? 'heritage'}`}" (historic=${x.f.tags.historic ?? '-'}${x.f.tags.heritage ? `, heritage=${x.f.tags.heritage}` : ''}) ${x.d === 0 ? 'lies on the alignment' : `is ${fmtM(x.d)} from the alignment`}. Statutory status (ASI / PMC list grade) is not established by OSM.` });
     }
   }
   // PMC heritage list (S10) is not in the repository: only a restricting value is ever set from OSM.
