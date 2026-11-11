@@ -71,9 +71,20 @@ Import: JSON body with the file as base64 (avoids a multipart dependency). `.csv
 - `frontend/src/engine/testing/TrafficData.test.ts` (11 tests, **UNIT-TESTED**): PCU, refusal, rates, compass labels; road-direction flow lookup (no id-prefix confusion, missing direction = null not 0); observed/routed/simulated/GEH at run hour; measured/estimated kept apart; skip reasons; ODME constraint mapping (calibration only, validation held out, estimated opt-in, pcu/h, turns, Table 5 limits).
 - Browser: see §9.
 
-## 9. Browser verification
+## 9. Browser verification (2026-11-11, headless Chromium + SwiftShader, backend on a copy of twincity.db)
 
-See the report section at the end of this file (filled in after the run).
+Script: `/workspace/work/um-data-run/e2e.py` (scratch, not committed). All data SYNTHETIC. Road: `osm_22841323` (Shivaji Bridge). The road was "picked" by setting the engine selection, which is what a map click does; the Cesium pick itself was not driven headless.
+
+| Step | Result | Label |
+|---|---|---|
+| Manual entry, new Manual dataset, direction "Against (towards S)", 09:00–09:15, 2W 210 / car 100 / auto 30 / bus 5 / other 0 | live and saved: 1,380 veh/h, 1,314 PCU/h, "PCU by IRC:106-1990 Table 1, column per class by the app's default mix (v1)" (hand check: 345 × 4; (157.5+100+60+11) × 4) | BROWSER-VERIFIED |
+| Car "12.5" | rejected before saving ("Not whole numbers") | BROWSER-VERIFIED |
+| Import of a 5-row SYNTHETIC CSV (2 bad rows) | mapping suggested from headers; "3 valid · 2 with problems"; Row 5 bad direction, Row 6 unknown road; Import button disabled until "Import only the 3 valid rows" ticked; dataset shows MEASURED + SYNTHETIC badges, file SHA-256 and both rejected rows | BROWSER-VERIFIED |
+| By road | 09:00 towards N 1,510 veh/h / 1,441 PCU/h; towards S 1,334; 10:00 towards N 1,428; the manual 15-min record shown as "15 min" with no veh/h | BROWSER-VERIFIED |
+| Simulate Shivaji Bridge, 09:00 weekday, 2 km (run 137 s, status ready) → Details → Checks against traffic counts | Observed / Routed / GEH / Simulated / GEH: bwd 1,334 / 552 / 25.5 / 221 / 39.9; fwd 1,510 / 1,878 / 8.9 / 1,781 / 6.7; "2 counts not compared" (10:00 count; 15-min manual record) | BROWSER-VERIFIED |
+| "All (kept apart)" with an extra SYNTHETIC Estimated dataset on the same road-direction | see below | BROWSER-VERIFIED if listed below |
+
+The GEH values above compare the model with **made-up** counts; they say nothing about model accuracy.
 
 ## 10. Not done / limits
 

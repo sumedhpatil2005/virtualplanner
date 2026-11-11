@@ -60,21 +60,25 @@ export const TrafficCountChecks: React.FC<{ sim: SimulationModeState }> = ({ sim
       {res && result && res.rows.length === 0 && <p>No validation count matches this area and hour{res.skipped.length ? ` (${res.skipped.length} not compared, reasons below)` : ''}.</p>}
       {res && res.rows.length > 0 && (
         <>
-          <table className="w-full tabular-nums" data-testid="observed-vs-simulated">
+          <table className="w-full tabular-nums [&_td]:px-1 [&_th]:px-1" data-testid="observed-vs-simulated">
             <thead><tr className="text-slate-500">
-              <th className="text-left font-medium">Count</th><th className="text-right font-medium" title="The dataset's count, veh/h">Observed</th>
+              <th className="text-right font-medium" title="The dataset's count, veh/h">Observed</th>
               <th className="text-right font-medium" title="Demand routed on this road-direction by the area assignment">Routed</th><th className="text-right font-medium" title="GEH of routed vs observed">GEH</th>
               <th className="text-right font-medium" title="Vehicles that got through in the micro-simulation (corridor only)">Simulated</th><th className="text-right font-medium" title="GEH of simulated vs observed">GEH</th>
             </tr></thead>
             <tbody>{res.rows.map((r, i) => (
-              <tr key={i} className="border-t border-white/5 align-top">
-                <td className="py-1 text-slate-300"><span className="block truncate max-w-[9rem]" title={r.count.road_id ?? ''}>{r.count.road_id}</span>
-                  <span className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">{r.count.direction} · {r.count.period}<ProvenanceBadge kind={r.count.kind} synthetic={r.count.synthetic} /></span>
-                  <span className="block text-[10px] text-slate-500 truncate max-w-[9rem]" title={r.count.dataset_name}>{r.count.dataset_name}</span></td>
-                <td className="text-right text-slate-100">{fmt(r.observedVph)}</td>
-                <td className="text-right">{fmt(r.assignedVph)}</td><td className={`text-right ${gehCls(r.gehAssigned)}`}>{r.gehAssigned === null ? '–' : r.gehAssigned.toFixed(1)}</td>
-                <td className="text-right">{fmt(r.simulatedVph)}</td><td className={`text-right ${gehCls(r.gehSimulated)}`}>{r.gehSimulated === null ? '–' : r.gehSimulated.toFixed(1)}</td>
-              </tr>
+              <React.Fragment key={i}>
+                <tr className="border-t border-white/5">
+                  <td colSpan={5} className="pt-1.5 text-slate-300"><span className="flex flex-wrap items-center gap-1.5"><span className="truncate max-w-[12rem]" title={r.count.road_id ?? ''}>{r.count.road_id}</span>
+                    <span className="text-[10px] text-slate-500">{r.count.direction} · {r.count.period}</span><ProvenanceBadge kind={r.count.kind} synthetic={r.count.synthetic} />
+                    <span className="text-[10px] text-slate-500 truncate max-w-[10rem]" title={r.count.dataset_name}>{r.count.dataset_name}</span></span></td>
+                </tr>
+                <tr>
+                  <td className="text-right text-slate-100 pb-1">{fmt(r.observedVph)}</td>
+                  <td className="text-right">{fmt(r.assignedVph)}</td><td className={`text-right ${gehCls(r.gehAssigned)}`}>{r.gehAssigned === null ? '–' : r.gehAssigned.toFixed(1)}</td>
+                  <td className="text-right">{fmt(r.simulatedVph)}</td><td className={`text-right ${gehCls(r.gehSimulated)}`}>{r.gehSimulated === null ? '–' : r.gehSimulated.toFixed(1)}</td>
+                </tr>
+              </React.Fragment>
             ))}</tbody>
           </table>
           <p>GEH &lt; {GEH_PASS}: routed {share(res.assigned)}, simulated {share(res.simulated)}. TAG M3.1 asks for {Math.round(GEH_TARGET_SHARE * 100)}% of counts; {res.simulated.meetsTarget ? 'the simulated flows meet it' : 'not met'}{res.rows.length < 5 ? ' (too few counts to judge)' : ''}.
