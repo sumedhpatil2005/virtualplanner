@@ -1,0 +1,1882 @@
+{
+  "schemaVersion": 1,
+  "id": "investigationRules",
+  "generatedOn": "2026-11-11",
+  "status": "UNTESTED - design data for the implementation agent; not yet consumed by code",
+  "disclaimer": "Planning and decision-support aid only. Output lists investigations and authorities to IDENTIFY AND VERIFY. It is not engineering, legal or statutory approval and does not certify safety, constructibility, land availability or permissions.",
+  "docs": [
+    "docs/INVESTIGATION_REQUIREMENTS.md",
+    "docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md"
+  ],
+  "evaluation": {
+    "tristate": "Each condition evaluates to true, false or unknown. An attribute that is missing, null or 'unknown' makes the condition unknown.",
+    "all": "all-block: false if any condition false; true if all true; otherwise unknown.",
+    "any": "any-block: true if any condition true; false if all false; otherwise unknown.",
+    "emptyWhen": "A rule with an empty 'all' list and no 'any' list matches on proposalType alone.",
+    "firing": "Rule result true -> investigations required, certainty 'requires_field_investigation' (or per investigation). Rule result unknown -> investigations STILL required, plus a data-gap finding with certainty 'unknown' naming the missing attributes. Rule result false -> rule does not fire; the finding that suppressed it keeps the certainty of the data used (e.g. 'verified_from_available_data').",
+    "neverSuppressOnMissingData": true,
+    "dedupe": "Investigations required by several rules are listed once with all triggering rule ids and all sourceRefs.",
+    "thresholdRef": "'threshold' names a key in thresholds; UI must show basis (statutory / authority_statement / hypothetical) next to any value used."
+  },
+  "certaintyLabels": [
+    {
+      "id": "verified_from_available_data",
+      "label": "Verified from available data",
+      "meaning": "A named dataset positively shows the fact (e.g. building polygon intersects footprint). Does not prove the dataset is complete."
+    },
+    {
+      "id": "estimated",
+      "label": "Estimated",
+      "meaning": "Derived by calculation from approximate inputs (e.g. buffer from a monument point instead of its protected limit)."
+    },
+    {
+      "id": "inferred",
+      "label": "Inferred",
+      "meaning": "Reasoned from context, not measured (e.g. CRZ not applicable inland)."
+    },
+    {
+      "id": "unknown",
+      "label": "Unknown",
+      "meaning": "No data. Never treated as clear or feasible."
+    },
+    {
+      "id": "requires_field_investigation",
+      "label": "Requires field investigation",
+      "meaning": "Can only be established by survey/testing on site."
+    },
+    {
+      "id": "requires_professional_assessment",
+      "label": "Requires professional assessment",
+      "meaning": "Needs judgement and sign-off by a qualified professional or the statutory authority."
+    }
+  ],
+  "proposalTypes": {
+    "management": [
+      "signal_optimisation",
+      "signal_coordination",
+      "adaptive_signal_control",
+      "turn_restriction",
+      "one_way_system",
+      "lane_use_management",
+      "access_management",
+      "bus_priority",
+      "parking_loading_management",
+      "freight_time_restriction",
+      "pedestrian_crossing"
+    ],
+    "surface": [
+      "junction_redesign",
+      "road_widening",
+      "additional_lane",
+      "new_road",
+      "bridge"
+    ],
+    "gradeSeparated": [
+      "flyover",
+      "underpass",
+      "elevated_corridor",
+      "interchange",
+      "ramp_link"
+    ],
+    "underground": [
+      "tunnel",
+      "underground_road"
+    ]
+  },
+  "siteAttributes": [
+    {
+      "id": "proposalType",
+      "type": "enum",
+      "description": "Intervention type of the scenario object"
+    },
+    {
+      "id": "hasConstructionFootprint",
+      "type": "boolean",
+      "description": "True for physical types; true for a management measure that includes civil works (kerb realignment, median)"
+    },
+    {
+      "id": "isUnderground",
+      "type": "boolean",
+      "description": "Any part of the proposal is below ground (tunnel, underground road, deep underpass)"
+    },
+    {
+      "id": "excavationDepthM",
+      "type": "number",
+      "unit": "m",
+      "description": "Maximum excavation/foundation depth if known; else unknown"
+    },
+    {
+      "id": "distanceToWaterwayM",
+      "type": "number",
+      "unit": "m",
+      "description": "Min distance from footprint to OSM waterway/water polygon",
+      "dataSource": "OSM waterway=*, natural=water"
+    },
+    {
+      "id": "crossesWaterway",
+      "type": "boolean",
+      "description": "Alignment crosses a waterway"
+    },
+    {
+      "id": "withinBlueLine",
+      "type": "boolean",
+      "description": "Footprint inside WRD blue flood line (prohibitive zone)",
+      "dataSource": "User-imported WRD flood-line layer; unknown if not imported"
+    },
+    {
+      "id": "withinRedLine",
+      "type": "boolean",
+      "description": "Footprint inside red flood line (restrictive zone or prohibitive)",
+      "dataSource": "User-imported WRD flood-line layer"
+    },
+    {
+      "id": "distanceToAsiProtectedLimitM",
+      "type": "number",
+      "unit": "m",
+      "description": "Distance to the limit of a centrally protected monument/area. If only a point/footprint is available, the value is estimated",
+      "dataSource": "ASI list + imported boundaries; OSM heritage=* as locator only"
+    },
+    {
+      "id": "distanceToListedHeritageM",
+      "type": "number",
+      "unit": "m",
+      "description": "Distance to nearest PMC-listed heritage property (Grade I-III)",
+      "dataSource": "PMC heritage list (geocoded by user)"
+    },
+    {
+      "id": "buildingsInInfluenceZone",
+      "type": "number",
+      "description": "Count of building footprints within influenceZoneM of the excavation/foundation footprint",
+      "dataSource": "OSM building=*; absence = unknown, not zero"
+    },
+    {
+      "id": "distanceToMetroM",
+      "type": "number",
+      "unit": "m",
+      "description": "Distance to metro viaduct or tunnel centreline/structure",
+      "dataSource": "OSM railway=subway/light_rail + MahaMetro records"
+    },
+    {
+      "id": "crossesRailway",
+      "type": "boolean",
+      "description": "Alignment crosses/abuts railway land"
+    },
+    {
+      "id": "geotechDataAvailable",
+      "type": "boolean",
+      "description": "Site-specific borehole/geotechnical data has been imported"
+    },
+    {
+      "id": "groundwaterDataAvailable",
+      "type": "boolean",
+      "description": "Site-specific groundwater data has been imported"
+    },
+    {
+      "id": "utilityDataLevel",
+      "type": "enum",
+      "values": [
+        "none",
+        "records",
+        "surveyed"
+      ],
+      "description": "Best available utility information"
+    },
+    {
+      "id": "treesInFootprint",
+      "type": "number",
+      "description": "Trees in footprint from a tree census; OSM natural=tree is indicative only"
+    },
+    {
+      "id": "outsideExistingRoW",
+      "type": "boolean",
+      "description": "Footprint extends beyond verified existing right-of-way",
+      "dataSource": "Imported DP road line / city survey boundary; unknown otherwise"
+    }
+  ],
+  "thresholds": {
+    "asiProhibitedM": {
+      "value": 100,
+      "unit": "m",
+      "basis": "statutory",
+      "note": "AMASR s.20A minimum, measured from protected limit; extendable by notification",
+      "sourceRefs": [
+        "S1",
+        "S2"
+      ]
+    },
+    "asiRegulatedM": {
+      "value": 300,
+      "unit": "m",
+      "basis": "statutory",
+      "note": "100 m prohibited + 200 m regulated (s.20B minimum); extendable",
+      "sourceRefs": [
+        "S1",
+        "S2"
+      ]
+    },
+    "metroNocM": {
+      "value": 20,
+      "unit": "m",
+      "basis": "authority_statement",
+      "note": "Pune Metro public statement (Apr 2026) as reported; confirm with MahaMetro",
+      "sourceRefs": [
+        "S9"
+      ]
+    },
+    "metroPlanningAuthorityM": {
+      "value": 500,
+      "unit": "m",
+      "basis": "authority_statement",
+      "note": "Reported metro planning-authority extent either side of route; confirm",
+      "sourceRefs": [
+        "S9"
+      ]
+    },
+    "waterProximityM": {
+      "value": 50,
+      "unit": "m",
+      "basis": "hypothetical",
+      "note": "Screening only; no statutory basis found. Flood-line layer supersedes it.",
+      "sourceRefs": []
+    },
+    "influenceZoneM": {
+      "value": 30,
+      "unit": "m",
+      "basis": "hypothetical",
+      "note": "Screening default for building-impact buffer; actual zone to be set by geotechnical engineer (depends on depth, ground, method).",
+      "sourceRefs": []
+    },
+    "heritageProximityM": {
+      "value": 50,
+      "unit": "m",
+      "basis": "hypothetical",
+      "note": "Screening buffer for PMC-listed heritage; no statutory buffer found for listed (non-ASI) properties.",
+      "sourceRefs": []
+    },
+    "deepExcavationM": {
+      "value": 3,
+      "unit": "m",
+      "basis": "hypothetical",
+      "note": "Screening depth above which groundwater/dewatering is flagged.",
+      "sourceRefs": []
+    },
+    "stateTreeAuthorityTrees": {
+      "value": 200,
+      "unit": "trees",
+      "basis": "statutory_excerpt",
+      "note": "2021 amendment referral threshold as read in excerpt; verify consolidated text",
+      "sourceRefs": [
+        "S5"
+      ]
+    }
+  },
+  "investigations": {
+    "topographic_survey": {
+      "name": "Topographic and right-of-way survey",
+      "methods": [
+        "DGPS/total-station survey",
+        "drone/LiDAR survey where permitted",
+        "overlay of DP road lines and city survey boundaries"
+      ],
+      "deliverables": [
+        "Surveyed base map with levels",
+        "Existing RoW boundary plan",
+        "Encroachment/obstruction inventory"
+      ],
+      "disciplines": [
+        "Land surveyor",
+        "Highway/civil engineer",
+        "Town planner"
+      ],
+      "standards": [
+        "IRC:86-2018 (road widths, guidance only)"
+      ],
+      "authorities": [
+        "PMC/PCMC/PMRDA town planning (DP road lines)",
+        "Land records (city survey)"
+      ],
+      "sourceRefs": [
+        "S12",
+        "S24"
+      ],
+      "id": "topographic_survey"
+    },
+    "utility_survey": {
+      "name": "Existing utilities investigation",
+      "methods": [
+        "Collect records from all utility owners",
+        "Ground penetrating radar (GPR) and electromagnetic locating",
+        "Trial pits/trenches to confirm depth and type"
+      ],
+      "deliverables": [
+        "Composite utility map with confidence level per line",
+        "Utility diversion/protection proposal",
+        "List of utility owners consulted"
+      ],
+      "disciplines": [
+        "Utility survey specialist",
+        "Civil engineer"
+      ],
+      "standards": [
+        "IRC:98 (accommodation of utilities in urban roads) to identify and verify",
+        "Indian standard for utility quality levels: not found (to identify and verify); ASCE 38 commonly referenced (to identify and verify)"
+      ],
+      "authorities": [
+        "PMC water supply/drainage",
+        "MSEDCL (power)",
+        "MNGL (gas)",
+        "Telecom operators"
+      ],
+      "sourceRefs": [
+        "S23"
+      ],
+      "id": "utility_survey"
+    },
+    "tree_census": {
+      "name": "Tree census and impact survey",
+      "methods": [
+        "Tree-by-tree census in and near footprint: species, girth, age, condition, heritage status",
+        "Options: retain / transplant / fell"
+      ],
+      "deliverables": [
+        "Tree inventory map and table",
+        "Avoidance/transplant plan",
+        "Tree Authority application package (if felling unavoidable)"
+      ],
+      "disciplines": [
+        "Arborist/botanist",
+        "Environmental specialist"
+      ],
+      "standards": [
+        "Maharashtra (Urban Areas) Protection and Preservation of Trees Act 1975, s.8 (permission); 2021 amendment (heritage trees, >200 trees) to identify and verify"
+      ],
+      "authorities": [
+        "PMC Tree Authority / Tree Officer",
+        "Maharashtra State Tree Authority (large applications) to identify and verify"
+      ],
+      "sourceRefs": [
+        "S4",
+        "S5"
+      ],
+      "id": "tree_census"
+    },
+    "construction_traffic_plan": {
+      "name": "Construction staging and traffic diversion study",
+      "methods": [
+        "Simulate diversion scenarios in this tool on frozen baseline demand",
+        "Phasing plan",
+        "Emergency-access check"
+      ],
+      "deliverables": [
+        "Staging drawings",
+        "Diversion plan with modelled impacts (model output, labelled)",
+        "Emergency-service access statement"
+      ],
+      "disciplines": [
+        "Traffic engineer",
+        "Construction planner"
+      ],
+      "standards": [
+        "IRC:SP:43-2022 traffic management techniques to identify and verify"
+      ],
+      "authorities": [
+        "Pune City Traffic Police to identify and verify",
+        "Fire brigade/emergency services to identify and verify"
+      ],
+      "sourceRefs": [
+        "S22"
+      ],
+      "id": "construction_traffic_plan"
+    },
+    "geotechnical_investigation": {
+      "name": "Subsurface (geotechnical) investigation",
+      "methods": [
+        "Boreholes with SPT/sampling in soil and core drilling in rock",
+        "Laboratory tests (index, strength, UCS on rock cores)",
+        "Geophysical survey (e.g. seismic refraction/ERT) to interpolate between boreholes"
+      ],
+      "deliverables": [
+        "Factual geotechnical report (borelogs, test results)",
+        "Interpretative report with design parameters",
+        "Foundation recommendations (by geotechnical engineer)"
+      ],
+      "disciplines": [
+        "Geotechnical engineer",
+        "Engineering geologist"
+      ],
+      "standards": [
+        "IS 1892:2021 subsurface investigation for foundations to identify and verify",
+        "IRC:78 (Part 1)-2024 / (Part 2)-2020 foundations to identify and verify"
+      ],
+      "authorities": [
+        "Project owner's engineer; MahaMetro if within 20 m of metro"
+      ],
+      "sourceRefs": [
+        "S19",
+        "S27",
+        "S16"
+      ],
+      "id": "geotechnical_investigation"
+    },
+    "geological_mapping": {
+      "name": "Geological mapping and rock mass classification",
+      "methods": [
+        "Surface and borehole geological mapping (basalt flow units, vesicular/amygdaloidal zones, red bole, weathering, joints, faults/lineaments)",
+        "Rock mass classification (RMR; Q-system)",
+        "Bhuvan lineament layer as a prompt only"
+      ],
+      "deliverables": [
+        "Geological long-section along alignment",
+        "Rock mass class distribution with uncertainty",
+        "Geotechnical Baseline Report (GBR) input"
+      ],
+      "disciplines": [
+        "Engineering geologist",
+        "Rock mechanics / tunnel engineer"
+      ],
+      "standards": [
+        "IS 13365 (Part 1):2025 RMR to identify and verify",
+        "IS 15026 (Part 1):2022 / (Part 2):2023 to identify and verify",
+        "IRC:SP:91-2019 geotechnical investigations chapter to identify and verify"
+      ],
+      "authorities": [
+        "Project owner's engineer"
+      ],
+      "sourceRefs": [
+        "S19",
+        "S20",
+        "S18",
+        "S16"
+      ],
+      "id": "geological_mapping"
+    },
+    "groundwater_investigation": {
+      "name": "Groundwater investigation",
+      "methods": [
+        "Piezometers with seasonal monitoring",
+        "Packer/permeability tests",
+        "Dewatering and drawdown impact assessment on nearby wells and buildings"
+      ],
+      "deliverables": [
+        "Groundwater level and flow report",
+        "Inflow/dewatering estimate (by specialist)",
+        "Monitoring plan"
+      ],
+      "disciplines": [
+        "Hydrogeologist",
+        "Geotechnical engineer"
+      ],
+      "standards": [
+        "IS 1892:2021 to identify and verify"
+      ],
+      "authorities": [
+        "CGWB/GSDA guidance to identify and verify"
+      ],
+      "sourceRefs": [
+        "S16",
+        "S19"
+      ],
+      "id": "groundwater_investigation"
+    },
+    "seismic_assessment": {
+      "name": "Seismic hazard input",
+      "methods": [
+        "Confirm seismic zone and site class from current IS 1893 edition",
+        "Site-specific study if required by designer"
+      ],
+      "deliverables": [
+        "Seismic design basis note"
+      ],
+      "disciplines": [
+        "Structural/geotechnical engineer"
+      ],
+      "standards": [
+        "IS 1893 (current edition; Pune zone to identify and verify)"
+      ],
+      "authorities": [
+        "Project owner's engineer"
+      ],
+      "sourceRefs": [],
+      "id": "seismic_assessment"
+    },
+    "tunnel_engineering_studies": {
+      "name": "Tunnel engineering studies",
+      "methods": [
+        "Alignment, depth and cross-section options",
+        "Excavation method study (conventional/NATM vs TBM vs cut-and-cover)",
+        "Support and lining concept",
+        "Ventilation and fire-life-safety concept, emergency egress spacing",
+        "Portal drainage and flood protection",
+        "Risk register"
+      ],
+      "deliverables": [
+        "Concept design report",
+        "Fire and life safety strategy",
+        "Ventilation concept",
+        "Risk register and GBR"
+      ],
+      "disciplines": [
+        "Tunnel engineer",
+        "Ventilation/fire engineer",
+        "Drainage engineer",
+        "Structural engineer"
+      ],
+      "standards": [
+        "IRC:SP:91-2019 Guidelines for Road Tunnels to identify and verify",
+        "IS 15026 to identify and verify"
+      ],
+      "authorities": [
+        "PMC/PMRDA (owner)",
+        "Fire brigade to identify and verify"
+      ],
+      "sourceRefs": [
+        "S18",
+        "S20"
+      ],
+      "id": "tunnel_engineering_studies"
+    },
+    "building_condition_survey": {
+      "name": "Building condition and settlement-risk assessment",
+      "methods": [
+        "Pre-construction condition survey of buildings in zone of influence (photos, cracks, foundation type if known)",
+        "Settlement and vibration impact assessment",
+        "Instrumentation and monitoring plan (settlement points, tiltmeters, vibration monitors)"
+      ],
+      "deliverables": [
+        "Condition survey records",
+        "Damage-risk assessment by specialist",
+        "Monitoring plan with trigger levels set by engineer"
+      ],
+      "disciplines": [
+        "Structural engineer",
+        "Geotechnical engineer"
+      ],
+      "standards": [
+        "No Indian code identified for damage categories (to identify and verify)"
+      ],
+      "authorities": [
+        "PMC building permission department to identify and verify"
+      ],
+      "sourceRefs": [],
+      "id": "building_condition_survey"
+    },
+    "metro_interface": {
+      "name": "Metro interface and NOC",
+      "methods": [
+        "Obtain MahaMetro alignment/structure records (depth, lining, viaduct foundations)",
+        "Apply for NOC before any investigation works (boreholes, trial pits) and before construction",
+        "Interface/impact study and monitoring of metro structure"
+      ],
+      "deliverables": [
+        "MahaMetro NOC(s)",
+        "Interface impact assessment",
+        "Metro structure monitoring plan"
+      ],
+      "disciplines": [
+        "Tunnel/structural engineer",
+        "Geotechnical engineer"
+      ],
+      "standards": [
+        "Metro Railways (Construction of Works) Act 1978 and UDCPR provisions as cited by MahaMetro to identify and verify"
+      ],
+      "authorities": [
+        "MahaMetro (Pune Metro) planning department",
+        "PMRDA / Line 3 concessionaire for Line 3 to identify and verify"
+      ],
+      "sourceRefs": [
+        "S9"
+      ],
+      "id": "metro_interface"
+    },
+    "metro_planning_check": {
+      "name": "Metro planning-authority check",
+      "methods": [
+        "Confirm whether the site is within the metro planning-authority area (reported 500 m either side) and what permissions apply"
+      ],
+      "deliverables": [
+        "Written confirmation from MahaMetro"
+      ],
+      "disciplines": [
+        "Town planner"
+      ],
+      "standards": [],
+      "authorities": [
+        "MahaMetro to identify and verify"
+      ],
+      "sourceRefs": [
+        "S9"
+      ],
+      "id": "metro_planning_check"
+    },
+    "hydrology_hydraulics": {
+      "name": "Hydrology and hydraulic study",
+      "methods": [
+        "Design flood estimation",
+        "Hydraulic modelling (water levels, afflux, velocities)",
+        "Scour assessment for piers/abutments",
+        "River morphology"
+      ],
+      "deliverables": [
+        "H&H report",
+        "Afflux and scour assessment",
+        "Effect on blue/red flood lines"
+      ],
+      "disciplines": [
+        "Hydrologist",
+        "Hydraulic engineer"
+      ],
+      "standards": [
+        "IRC bridge codes (IRC:5-2024, IRC:78) to identify and verify",
+        "IRC river training guidance (edition to identify and verify)"
+      ],
+      "authorities": [
+        "Water Resources Department, GoM",
+        "PMC"
+      ],
+      "sourceRefs": [
+        "S6",
+        "S17",
+        "S27"
+      ],
+      "id": "hydrology_hydraulics"
+    },
+    "flood_line_verification": {
+      "name": "Flood-line verification",
+      "methods": [
+        "Obtain certified blue and red flood-line plans from Water Resources Department",
+        "Overlay on proposal; import into this tool as a layer"
+      ],
+      "deliverables": [
+        "Flood-line overlay with source and date",
+        "Statement of zone (prohibitive/restrictive/outside)"
+      ],
+      "disciplines": [
+        "Hydraulic engineer",
+        "Town planner"
+      ],
+      "standards": [
+        "Irrigation Dept circular 21.09.1989; UDCPR reg. 3.1.3 (as quoted by NGT) to identify and verify"
+      ],
+      "authorities": [
+        "Water Resources Department, GoM",
+        "PMC"
+      ],
+      "sourceRefs": [
+        "S6"
+      ],
+      "id": "flood_line_verification"
+    },
+    "heritage_impact_assessment": {
+      "name": "Heritage Impact Assessment",
+      "methods": [
+        "Measure distance from protected-area limit (not centroid)",
+        "Visual, structural and vibration impact on monument/listed building",
+        "Consult heritage bodies"
+      ],
+      "deliverables": [
+        "Heritage Impact Assessment report",
+        "NOC application package (if within regulated area)"
+      ],
+      "disciplines": [
+        "Conservation architect",
+        "Structural engineer"
+      ],
+      "standards": [
+        "AMASR Act 1958 as amended 2010, ss.20A/20B to identify and verify",
+        "UDCPR heritage regulation / DCPR-2017 cl.39 to identify and verify"
+      ],
+      "authorities": [
+        "NMA / ASI Competent Authority (centrally protected)",
+        "PMC Heritage Committee (PMC list)"
+      ],
+      "sourceRefs": [
+        "S1",
+        "S2",
+        "S10"
+      ],
+      "id": "heritage_impact_assessment"
+    },
+    "land_acquisition_social": {
+      "name": "Land requirement, acquisition and social impact",
+      "methods": [
+        "Plot-level land requirement from surveyed footprint",
+        "Affected structures and households census",
+        "Title/ownership verification through land records"
+      ],
+      "deliverables": [
+        "Land plan schedule",
+        "Affected structures inventory",
+        "Social impact and rehabilitation framework (by specialist)"
+      ],
+      "disciplines": [
+        "Land acquisition officer",
+        "Social impact specialist",
+        "Town planner"
+      ],
+      "standards": [
+        "Applicable land acquisition law and DP/TDR mechanisms to identify and verify"
+      ],
+      "authorities": [
+        "PMC/PMRDA land & estate",
+        "District Collector to identify and verify"
+      ],
+      "sourceRefs": [
+        "S12"
+      ],
+      "id": "land_acquisition_social"
+    },
+    "pavement_drainage": {
+      "name": "Pavement and drainage investigation",
+      "methods": [
+        "Pavement condition and subgrade testing",
+        "Storm-water drainage capacity check"
+      ],
+      "deliverables": [
+        "Pavement investigation report",
+        "Drainage design basis"
+      ],
+      "disciplines": [
+        "Pavement engineer",
+        "Drainage engineer"
+      ],
+      "standards": [
+        "IRC pavement and drainage guidelines to identify and verify"
+      ],
+      "authorities": [
+        "PMC road / drainage departments"
+      ],
+      "sourceRefs": [],
+      "id": "pavement_drainage"
+    },
+    "structure_design_basis": {
+      "name": "Structure design basis (bridge/grade separator)",
+      "methods": [
+        "Span arrangement and clearance study",
+        "Load and code basis",
+        "Bearing/foundation concept from geotechnical results"
+      ],
+      "deliverables": [
+        "Design basis report",
+        "General arrangement drawings (concept)"
+      ],
+      "disciplines": [
+        "Bridge/structural engineer"
+      ],
+      "standards": [
+        "IRC:5-2024",
+        "IRC:6-2017",
+        "IRC:78 (Part 1)-2024 / (Part 2)-2020",
+        "IRC:SP:90-2023 (grade separators)",
+        "IRC:92-2017 (interchanges)"
+      ],
+      "authorities": [
+        "Owner's proof consultant to identify and verify"
+      ],
+      "sourceRefs": [
+        "S17",
+        "S27"
+      ],
+      "id": "structure_design_basis"
+    },
+    "geometry_access_study": {
+      "name": "Ramp geometry, clearance and frontage-access study",
+      "methods": [
+        "Vertical clearance and gradient check",
+        "Ramp landing locations vs junctions and frontage access",
+        "Service-road needs"
+      ],
+      "deliverables": [
+        "Geometric concept",
+        "Access impact statement"
+      ],
+      "disciplines": [
+        "Highway/traffic engineer"
+      ],
+      "standards": [
+        "IRC:SP:90-2023",
+        "IRC:92-2017",
+        "IRC:86-2018"
+      ],
+      "authorities": [
+        "PMC/PMRDA",
+        "Traffic Police to identify and verify"
+      ],
+      "sourceRefs": [
+        "S27",
+        "S24"
+      ],
+      "id": "geometry_access_study"
+    },
+    "railway_interface": {
+      "name": "Railway interface",
+      "methods": [
+        "Obtain railway land/structure records",
+        "Crossing design concept and clearance"
+      ],
+      "deliverables": [
+        "Railway approval package to identify and verify"
+      ],
+      "disciplines": [
+        "Bridge engineer"
+      ],
+      "standards": [
+        "Railway standards to identify and verify"
+      ],
+      "authorities": [
+        "Indian Railways (Central Railway, Pune division) to identify and verify"
+      ],
+      "sourceRefs": [],
+      "id": "railway_interface"
+    },
+    "environmental_screening": {
+      "name": "Environmental screening and applicability check",
+      "methods": [
+        "Record facts deciding EIA applicability: road classification, length, additional RoW/land, built-up area, distance to protected/eco-sensitive areas",
+        "Noise, vibration, air-quality and construction-waste baseline"
+      ],
+      "deliverables": [
+        "EIA applicability note for authority confirmation (never a self-determination)",
+        "Environmental baseline/EMP scope"
+      ],
+      "disciplines": [
+        "Environmental specialist"
+      ],
+      "standards": [
+        "EIA Notification 2006 as amended (items 7(f), 8) to identify and verify"
+      ],
+      "authorities": [
+        "SEIAA Maharashtra / MoEFCC to identify and verify",
+        "MPCB to identify and verify"
+      ],
+      "sourceRefs": [
+        "S8"
+      ],
+      "id": "environmental_screening"
+    },
+    "construction_impact": {
+      "name": "Construction disruption, noise and vibration assessment",
+      "methods": [
+        "Sensitive receptor inventory (schools, hospitals, heritage)",
+        "Noise/vibration/air baseline and prediction",
+        "Working-hours and access constraints"
+      ],
+      "deliverables": [
+        "Construction impact assessment",
+        "Mitigation and monitoring plan"
+      ],
+      "disciplines": [
+        "Environmental specialist",
+        "Acoustic/vibration engineer"
+      ],
+      "standards": [
+        "to identify and verify"
+      ],
+      "authorities": [
+        "MPCB to identify and verify",
+        "PMC"
+      ],
+      "sourceRefs": [],
+      "id": "construction_impact"
+    },
+    "traffic_data_collection": {
+      "name": "Traffic evidence for management measures",
+      "methods": [
+        "Classified turning-movement counts (peak and off-peak)",
+        "Saturation flow and queue length observation",
+        "Signal plan inventory",
+        "Bus dwell/bunching, parking accumulation surveys as relevant"
+      ],
+      "deliverables": [
+        "Measured dataset with provenance, imported into the Traffic Data Manager",
+        "Before/after monitoring plan"
+      ],
+      "disciplines": [
+        "Traffic engineer"
+      ],
+      "standards": [
+        "IRC:93-1985 signals to identify and verify",
+        "Indo-HCM 2017 (saturation flow, PCU, control delay LOS) to identify and verify",
+        "IRC:124-2017 / IRC:SP:43-2022 for bus priority to identify and verify"
+      ],
+      "authorities": [
+        "Pune City Traffic Police to identify and verify",
+        "PMPML (bus operator) for bus measures to identify and verify"
+      ],
+      "sourceRefs": [
+        "S17",
+        "S21",
+        "S22"
+      ],
+      "id": "traffic_data_collection"
+    }
+  },
+  "rules": [
+    {
+      "id": "R01",
+      "title": "Any construction footprint: base surveys",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "hasConstructionFootprint",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "require": [
+        "topographic_survey",
+        "utility_survey",
+        "tree_census",
+        "construction_traffic_plan",
+        "environmental_screening"
+      ],
+      "flags": [],
+      "sourceRefs": [
+        "S4",
+        "S8",
+        "S12",
+        "S23"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R02",
+      "title": "Management measure: traffic evidence",
+      "proposalTypes": [
+        "signal_optimisation",
+        "signal_coordination",
+        "adaptive_signal_control",
+        "turn_restriction",
+        "one_way_system",
+        "lane_use_management",
+        "access_management",
+        "bus_priority",
+        "parking_loading_management",
+        "freight_time_restriction",
+        "pedestrian_crossing"
+      ],
+      "when": {
+        "all": []
+      },
+      "require": [
+        "traffic_data_collection"
+      ],
+      "flags": [
+        {
+          "severity": "info",
+          "text": "No physical investigation expected unless civil works are added (then R01 applies). Statutory notification mechanism to verify with Traffic Police."
+        }
+      ],
+      "sourceRefs": [
+        "S21",
+        "S22"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R03",
+      "title": "Underground works: geology, groundwater, tunnel engineering",
+      "proposalTypes": [
+        "tunnel",
+        "underground_road",
+        "underpass"
+      ],
+      "when": {
+        "any": [
+          {
+            "attr": "isUnderground",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "require": [
+        "geological_mapping",
+        "geotechnical_investigation",
+        "groundwater_investigation",
+        "seismic_assessment",
+        "tunnel_engineering_studies"
+      ],
+      "flags": [
+        {
+          "severity": "critical",
+          "text": "Underground conditions are unknown until investigated. The tool cannot state that a tunnel or underground road is safe or constructible."
+        }
+      ],
+      "sourceRefs": [
+        "S16",
+        "S18",
+        "S19",
+        "S20"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R04",
+      "title": "Underground/deep works near buildings",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "isUnderground",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "attr": "buildingsInInfluenceZone",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "require": [
+        "building_condition_survey",
+        "construction_impact"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Buildings within the (hypothetical) influence zone; settlement/vibration risk requires professional assessment."
+        }
+      ],
+      "sourceRefs": [],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R05",
+      "title": "Foundations or excavation near buildings (surface/grade-separated)",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "hasConstructionFootprint",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "attr": "buildingsInInfluenceZone",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "require": [
+        "building_condition_survey",
+        "construction_impact"
+      ],
+      "flags": [],
+      "sourceRefs": [],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R06",
+      "title": "Within 20 m of metro viaduct or tunnel",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "distanceToMetroM",
+            "op": "lte",
+            "threshold": "metroNocM"
+          }
+        ]
+      },
+      "require": [
+        "metro_interface"
+      ],
+      "flags": [
+        {
+          "severity": "critical",
+          "text": "MahaMetro NOC needed before any works, including boreholes/geotechnical study and utility laying (as reported Apr 2026). Sequence: metro NOC -> investigation -> design."
+        }
+      ],
+      "sourceRefs": [
+        "S9"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R07",
+      "title": "Within metro planning-authority area",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "distanceToMetroM",
+            "op": "lte",
+            "threshold": "metroPlanningAuthorityM"
+          }
+        ]
+      },
+      "require": [
+        "metro_planning_check"
+      ],
+      "flags": [],
+      "sourceRefs": [
+        "S9"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R08",
+      "title": "Near or crossing a water body",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "any": [
+          {
+            "attr": "crossesWaterway",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "attr": "distanceToWaterwayM",
+            "op": "lte",
+            "threshold": "waterProximityM"
+          }
+        ]
+      },
+      "require": [
+        "flood_line_verification",
+        "hydrology_hydraulics"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "River corridor: blue/red flood-line status must be obtained from the Water Resources Department."
+        }
+      ],
+      "sourceRefs": [
+        "S6"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R09",
+      "title": "Inside blue flood line (prohibitive zone)",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "withinBlueLine",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "require": [
+        "flood_line_verification",
+        "hydrology_hydraulics",
+        "environmental_screening"
+      ],
+      "flags": [
+        {
+          "severity": "critical",
+          "text": "UDCPR reg. 3.1.3 (as quoted by NGT, Feb 2026) prohibits construction between river bank and blue line except listed uses; applicability to roads/bridges has been argued case-by-case. To verify with WRD and PMC."
+        }
+      ],
+      "sourceRefs": [
+        "S6"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R10",
+      "title": "Between blue and red flood lines (restrictive zone)",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "withinRedLine",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "attr": "withinBlueLine",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "require": [
+        "flood_line_verification",
+        "hydrology_hydraulics"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Restrictive zone: UDCPR 3.1.3 permits construction at 0.45 m above red flood line level (buildings); treatment of roads/structures to verify."
+        }
+      ],
+      "sourceRefs": [
+        "S6"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R11",
+      "title": "Within ASI prohibited area (<=100 m of protected limit)",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "distanceToAsiProtectedLimitM",
+            "op": "lte",
+            "threshold": "asiProhibitedM"
+          }
+        ]
+      },
+      "require": [
+        "heritage_impact_assessment",
+        "building_condition_survey"
+      ],
+      "flags": [
+        {
+          "severity": "critical",
+          "text": "NMA: no construction, including Government/public works, permitted in the prohibited area (AMASR as amended 2010). Prohibited area is understood to extend below ground (to verify) - relevant for tunnels. Consider alternatives."
+        }
+      ],
+      "sourceRefs": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R12",
+      "title": "Within ASI regulated area (100-300 m)",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "distanceToAsiProtectedLimitM",
+            "op": "gt",
+            "threshold": "asiProhibitedM"
+          },
+          {
+            "attr": "distanceToAsiProtectedLimitM",
+            "op": "lte",
+            "threshold": "asiRegulatedM"
+          }
+        ]
+      },
+      "require": [
+        "heritage_impact_assessment"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Permission via ASI/NMA Competent Authority required for construction in regulated area."
+        }
+      ],
+      "sourceRefs": [
+        "S1",
+        "S2"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R13",
+      "title": "Near PMC-listed heritage property",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "distanceToListedHeritageM",
+            "op": "lte",
+            "threshold": "heritageProximityM"
+          }
+        ]
+      },
+      "require": [
+        "heritage_impact_assessment",
+        "building_condition_survey"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "PMC Heritage Committee consultation (DCPR-2017 cl.39 / UDCPR heritage regulation) to verify. Buffer is a hypothetical screening value."
+        }
+      ],
+      "sourceRefs": [
+        "S10",
+        "S11"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R14",
+      "title": "Foundations with no site geotechnical data",
+      "proposalTypes": [
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road",
+        "road_widening",
+        "new_road",
+        "junction_redesign",
+        "additional_lane"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "hasConstructionFootprint",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "attr": "geotechDataAvailable",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "require": [
+        "geotechnical_investigation"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Soil/rock conditions unknown. Pune is broadly Deccan Trap basalt with alluvium near rivers (CGWB) - not site-specific."
+        }
+      ],
+      "sourceRefs": [
+        "S16",
+        "S19"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R15",
+      "title": "Deep excavation with no groundwater data",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "excavationDepthM",
+            "op": "gt",
+            "threshold": "deepExcavationM"
+          },
+          {
+            "attr": "groundwaterDataAvailable",
+            "op": "eq",
+            "value": false
+          }
+        ]
+      },
+      "require": [
+        "groundwater_investigation"
+      ],
+      "flags": [],
+      "sourceRefs": [
+        "S16"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R16",
+      "title": "Trees affected",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "treesInFootprint",
+            "op": "gt",
+            "value": 0
+          }
+        ]
+      },
+      "require": [
+        "tree_census"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Tree Authority permission under s.8 of the 1975 Act applies to government bodies too. Large felling (>200 trees, per 2021 amendment excerpt) referred to State Tree Authority - verify."
+        }
+      ],
+      "sourceRefs": [
+        "S4",
+        "S5"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R17",
+      "title": "Footprint beyond existing right-of-way",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "outsideExistingRoW",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "require": [
+        "topographic_survey",
+        "land_acquisition_social"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Land availability cannot be established from maps. Ownership, acquisition and rehabilitation require land records and professional assessment."
+        }
+      ],
+      "sourceRefs": [
+        "S12"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R18",
+      "title": "Widening / new road",
+      "proposalTypes": [
+        "road_widening",
+        "additional_lane",
+        "new_road"
+      ],
+      "when": {
+        "all": []
+      },
+      "require": [
+        "pavement_drainage",
+        "land_acquisition_social"
+      ],
+      "flags": [
+        {
+          "severity": "info",
+          "text": "Consider whether the diagnosed cause is addressable by management measures first."
+        }
+      ],
+      "sourceRefs": [
+        "S24"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R19",
+      "title": "Bridge",
+      "proposalTypes": [
+        "bridge"
+      ],
+      "when": {
+        "all": []
+      },
+      "require": [
+        "hydrology_hydraulics",
+        "flood_line_verification",
+        "structure_design_basis",
+        "geotechnical_investigation"
+      ],
+      "flags": [],
+      "sourceRefs": [
+        "S6",
+        "S17",
+        "S27"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R20",
+      "title": "Flyover / elevated / interchange / ramp",
+      "proposalTypes": [
+        "flyover",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "underpass"
+      ],
+      "when": {
+        "all": []
+      },
+      "require": [
+        "structure_design_basis",
+        "geometry_access_study",
+        "geotechnical_investigation",
+        "utility_survey",
+        "construction_traffic_plan"
+      ],
+      "flags": [
+        {
+          "severity": "info",
+          "text": "Check whether downstream junctions can absorb the added flow (simulate with frozen demand)."
+        }
+      ],
+      "sourceRefs": [
+        "S17",
+        "S27"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R21",
+      "title": "Crosses railway",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "all": [
+          {
+            "attr": "crossesRailway",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "require": [
+        "railway_interface"
+      ],
+      "flags": [],
+      "sourceRefs": [],
+      "defaultCertainty": "requires_field_investigation"
+    },
+    {
+      "id": "R22",
+      "title": "Utilities known only from records or not at all",
+      "proposalTypes": [
+        "junction_redesign",
+        "road_widening",
+        "additional_lane",
+        "new_road",
+        "bridge",
+        "flyover",
+        "underpass",
+        "elevated_corridor",
+        "interchange",
+        "ramp_link",
+        "tunnel",
+        "underground_road"
+      ],
+      "when": {
+        "any": [
+          {
+            "attr": "utilityDataLevel",
+            "op": "in",
+            "value": [
+              "none",
+              "records"
+            ]
+          }
+        ]
+      },
+      "require": [
+        "utility_survey"
+      ],
+      "flags": [
+        {
+          "severity": "high",
+          "text": "Utility positions are not verified; GPR/EM locating and trial pits required."
+        }
+      ],
+      "sourceRefs": [
+        "S23"
+      ],
+      "defaultCertainty": "requires_field_investigation"
+    }
+  ],
+  "sources": {
+    "S1": {
+      "title": "National Monuments Authority FAQ (AMASR prohibited 100 m / regulated 200 m beyond)",
+      "url": "https://nma.gov.in/show_content.php?lang=1&level=0&lid=9&ls_id=14&nma_type=0",
+      "evidence": "READ"
+    },
+    "S2": {
+      "title": "AMASR Act 1958 as amended 2010, ss.20A/20B",
+      "url": "https://prsindia.org/files/bills_acts/acts_parliament/2010/ancient-monuments-and-archaeological-sites-and-remains-act-2010.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S3": {
+      "title": "PIB 4 Dec 2025: Shaniwarwada, Aga Khan Palace, Pataleshwar are ASI monuments in Pune",
+      "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2198818",
+      "evidence": "EXCERPT"
+    },
+    "S4": {
+      "title": "Maharashtra (Urban Areas) Protection and Preservation of Trees Act 1975, s.8",
+      "url": "https://indiankanoon.org/doc/181710067/",
+      "evidence": "READ"
+    },
+    "S5": {
+      "title": "Trees Act consolidated text (24 Jan 2025) incl. 2021 amendment (heritage tree, State Tree Authority, >200 trees)",
+      "url": "https://bombayhighcourt.gov.in/bhc/libweb/legislation/acts/1975.44.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S6": {
+      "title": "NGT WZ judgment 04.02.2026 quoting Irrigation Dept circular 21.09.1989 (blue/red lines) and UDCPR reg. 3.1.3",
+      "url": "https://www.greentribunal.gov.in/gen_pdf_test.php?filepath=L25ndF9kb2N1bWVudHMvbmd0L2Nhc2Vkb2MvanVkZ2VtZW50cy9QVU5FLzIwMjYtMDItMDQvMTc3MDIwNTY3NzEzNDg0OTg3NjE2OTgzMzFlZGM5OTdlLnBkZg%3D%3D",
+      "evidence": "READ"
+    },
+    "S8": {
+      "title": "EIA Notification 2006 as amended to July 2026, items 7(f) and 8 (quoted by All India Protest guide)",
+      "url": "https://allindiaprotest.com/guides/do-metro-highway-flyover-projects-need-environmental-clearance-india/",
+      "evidence": "SECONDARY"
+    },
+    "S9": {
+      "title": "Indian Express 17 Apr 2026: Pune Metro NOC required within 20 m of elevated/underground route incl. geotechnical study, borewells, utilities; metro planning authority 500 m",
+      "url": "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/",
+      "evidence": "READ"
+    },
+    "S10": {
+      "title": "PMC Heritage List (DCPR-2017 cl.39.2), 251 properties Grade I-III",
+      "url": "https://adc-ecos.enlightcloud.com/1133pmcwebsitev2/s3fs-public/2025-04/The%20heritage%20list%20submitted%20to%20the%20government%20for%20approval%20on%202.4.25..pdf",
+      "evidence": "READ"
+    },
+    "S11": {
+      "title": "UDCPR 2020 (sanctioned 2 Dec 2020)",
+      "url": "https://dtp.maharashtra.gov.in/uploads/Gazette-for-UDCPR-Sanctioned.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S12": {
+      "title": "PMC DCPR-2017 / DP old limits",
+      "url": "https://adc-ecos.enlightcloud.com/1133pmcwebsitev2/s3fs-public/DP-Plan/old-limit/DCR_PUNE_FINAL.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S16": {
+      "title": "CGWB Pune district aquifer report (Deccan Trap basalt, heterogeneous aquifers)",
+      "url": "https://cgwb.gov.in/sites/default/files/2022-11/pune.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S17": {
+      "title": "IRC catalogue Sep 2025 (editions of IRC:5, 6, 78, 92, 93, SP:90, SP:91, 98)",
+      "url": "https://irc.nic.in/WriteReadData/LINKS/Catalogue%20Updated%2011092025f15024ef-3b1b-4a56-aa71-2e01cc92350e.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S18": {
+      "title": "IRC:SP:91 Guidelines for Road Tunnels (2010 contents; 2026 draft amendment: GBR, risk register)",
+      "url": "https://irc.nic.in///admnis/admin/showimg.aspx?ID=3325",
+      "evidence": "EXCERPT"
+    },
+    "S19": {
+      "title": "BIS IS 1892:2021 subsurface investigation; IS 13365 (Part 1):2025 RMR",
+      "url": "https://archive.org/details/gov.in.is.1892.2021",
+      "evidence": "EXCERPT"
+    },
+    "S20": {
+      "title": "BIS IS 15026 tunnelling in rock masses (2002; Part 1:2022; Part 2:2023)",
+      "url": "https://archive.org/details/gov.in.is.15026.1.2022",
+      "evidence": "EXCERPT"
+    },
+    "S21": {
+      "title": "Indo-HCM 2017 (CSIR-CRRI), PIB release 12 Feb 2018",
+      "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=1520312",
+      "evidence": "READ"
+    },
+    "S22": {
+      "title": "IRC:124-2017 BRT; IRC:70-2017; IRC:SP:43-2022 bus priority; UTTIPEC street design",
+      "url": "https://law.resource.org/pub/in/bis/irc/irc.gov.in.124.2017.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S23": {
+      "title": "Draft IRC:98 (2024) utilities in urban roads; GIS mapping + field verification",
+      "url": "https://cdnc.heyzine.com/files/uploaded/20ac93cd57d27de95be942963ed63c37be5134e5-2.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S24": {
+      "title": "IRC:86-2018 Geometric design standards for urban roads and streets",
+      "url": "https://law.resource.org/pub/in/bis/irc/irc.gov.in.086.2018.pdf",
+      "evidence": "EXCERPT"
+    },
+    "S27": {
+      "title": "IRC:SP:90-2023 grade separators; IRC:92-2017 interchanges; IRC:6-2017; IRC:78 Part 1-2024 / Part 2-2020",
+      "url": "https://law.resource.org/pub/in/bis/irc/irc.gov.in.sp.142.2024.pdf",
+      "evidence": "EXCERPT"
+    }
+  }
+}
