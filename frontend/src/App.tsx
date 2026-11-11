@@ -8,6 +8,7 @@ import { LayerManager } from './components/LayerManager';
 import { ScenarioSelector } from './components/ScenarioSelector';
 import { SimulationPanel } from './components/SimulationPanel';
 import { TrafficDataPanel } from './components/TrafficDataPanel';
+import { PlanningPanel } from './components/PlanningPanel';
 import { SimulationHud } from './components/SimulationHud';
 import { ModeBar } from './components/ModeBar';
 import { ConnectionBadge } from './components/ui/ConnectionBadge';
@@ -18,7 +19,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useAppMode, useSelectedId } from './hooks/useAppMode';
 import { engineInstance } from './engine/TwinCityEngine';
 import { MapCompass } from './components/MapCompass';
-import { Compass, Layers, X, Keyboard, FolderOpen, Database } from 'lucide-react';
+import { Compass, Layers, X, Keyboard, FolderOpen, Database, ClipboardList } from 'lucide-react';
 
 const pillBase = 'h-11 px-4 rounded-full flex items-center gap-2 border border-white/10 shadow-xl cursor-pointer transition text-sm font-semibold backdrop-blur-xl';
 const pillClass = `${pillBase} bg-slate-950/90 text-slate-200 hover:text-white`;
@@ -32,7 +33,10 @@ function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   // Traffic data manager (docs/TRAFFIC_DATA.md): a View-mode panel, so roads can be picked on the map
   const [isDataOpen, setIsDataOpen] = useState(false);
-  const openData = useCallback(() => { engineInstance.setAppMode('view'); setIsDataOpen(true); }, []);
+  const openData = useCallback(() => { engineInstance.setAppMode('view'); setIsPlanOpen(false); setIsDataOpen(true); }, []);
+  // Planning & Approval Workspace (docs/PLANNING_WORKSPACE.md): a View-mode panel
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
+  const openPlan = useCallback(() => { engineInstance.setAppMode('view'); setIsDataOpen(false); setIsPlanOpen(true); }, []);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -73,11 +77,12 @@ function App() {
     : mode === 'build' && selectedId?.startsWith('ljunction:') ? <JunctionPanel />
     : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
     : isDataOpen ? <TrafficDataPanel onClose={() => setIsDataOpen(false)} />
+    : isPlanOpen ? <PlanningPanel onClose={() => setIsPlanOpen(false)} />
     : isProjectsOpen || selectedId ? <InfoPanel onClose={() => setIsProjectsOpen(false)} />
     : null;
   // The 27rem panels (Simulate, the junction editor, Traffic data): the Mode bar and Cesium's buttons keep clear of them
   const panelWide = mode === 'simulate' || (mode === 'build' && !!selectedId?.startsWith('ljunction:'))
-    || (mode === 'view' && !isDebugSelection && isDataOpen);
+    || (mode === 'view' && !isDebugSelection && (isDataOpen || isPlanOpen));
 
   return (
     <div className={`fixed inset-0 overflow-hidden bg-[#060913] text-slate-100 z-0 ${panel ? 'panel-open' : ''} ${isLayersOpen ? 'layers-open' : ''} ${panelWide ? 'panel-wide-open' : ''}`}>
@@ -112,6 +117,11 @@ function App() {
           title="Enter, import and manage traffic counts" data-testid="open-traffic-data"
           className={`${pillBase} h-9 ${isDataOpen && mode === 'view' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-950/90 text-slate-200 hover:text-white'}`}>
           <Database size={15} /> Traffic data
+        </button>
+        <button onClick={() => (isPlanOpen && mode === 'view' ? setIsPlanOpen(false) : openPlan())} aria-pressed={isPlanOpen && mode === 'view'}
+          title="Planning projects: attach scenarios, data and assessments; audit timeline; decision record; report" data-testid="open-planning"
+          className={`${pillBase} h-9 ${isPlanOpen && mode === 'view' ? 'bg-violet-400 text-slate-950' : 'bg-slate-950/90 text-slate-200 hover:text-white'}`}>
+          <ClipboardList size={15} /> Planning projects
         </button>
         {/* Build's tools: centred at the top on wide windows, else in this column's flow (index.css) */}
         {mode === 'build' && <div className="build-toolbar z-30 flex justify-center pointer-events-none"><Toolbar /></div>}
