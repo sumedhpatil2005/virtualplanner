@@ -57,12 +57,36 @@ RESULTS_TABLE
 
 ## 4. Root causes fixed
 
-RESULTS_FIXES
+All **UNIT-TESTED** (synthetic fixtures in `TopologyReconstruction.test.ts`, `TopologyScenario.test.ts`) and property-tested on the database export (§3).
+
+1. **At-grade crossing not in the objects** (2c261e7). A drawn road crossing a ground road mid-way was joined only in the derived graph. `EditingEngine.reconstructCrossings` now puts the junction vertex on both roads in the drawing's Undo step. Accounts for the "not split in the objects" rule in every case of the before column.
+2. **Uncertain-level crossings guessed as junctions** (2c261e7). Bridge/tunnel/layer-tagged pieces at ≈ the same modelled height, and ramps 0.5–3 m up, were joined by the builder because the heights matched. They are now flagged (`levelCrossings`, `decision: 'unconfirmed'`) and held apart until the user picks Confirm junction or Keep separate.
+3. **OSM way points joined to a drawn road from up to 6.6 m away** (2c261e7). The builder now joins a point of an unedited OSM way to a drawn or edited road only where the point lies on that road (≤ 0.5 m). The drawn road's own ends keep the tolerance.
+4. **Two crossings within 0.5 m on the drawn road made a sliver segment** (15c737f). They now share one junction point.
+5. **A drawn end lying on a road was not joined when a held-apart crossing was within 8 m** (9a26bae; cross-uncertain sample 122). The builder's guard around held-apart crossings suppressed the end's T-junction. A road's own end lying on the other road (≤ 0.5 m) now always joins.
+6. **Inconsistent flag at an OSM shared node** (dd2bc36; cross-uncertain sample 95, the "3 crossings with a layer=-1 road not flagged"). Cause: the drawn road's ends snapped to both ends of `osm_814906035` (Deccan PMPML Bus Stand Road, `layer=-1`, no tunnel tag), so the road ran along it. Its junction with the ground way `osm_814906036` reused that way's vertex, and that vertex is an OSM node shared with `osm_814906035`. Crossings are found on the line *before* junction points move it, so the touch at the shared node was never classified. A line that crossed there directly *was* flagged, so the behaviour depended on geometry. The shared node is where OSM itself joins the two ways at grade (Key:layer: ways are joined only where they meet), so the right answer is "junction, no flag" either way. `reconstructCrossings` now drops a level flag at a node the crossed road shares exactly with the road the junction is made with. The property-test oracle got the matching exemption, the same as its existing exemption for "through the other road's own end". Verdict: a genuine inconsistency, but harmless in the graph (the node was legitimately shared). Unit test: "crossing a layer=-1 road exactly at the node it shares with a ground road" (fails without the fix: `['osm_11','osm_12']` instead of `['osm_12']`).
+   - Residual, **UNTESTED**: moving the drawn line ≤ 0.5 m onto a reused vertex could make it touch a third, tagged road that does *not* share that node. That crossing would not be classified, and the builder could join it by geometry. This was not seen in the 2,200 database samples.
+7. **`embankment=*` / `cutting=*`** (dd2bc36): read as level evidence (§2). Unit test: an `embankment=yes` or `cutting=yes` road is flagged and not joined; an `embankment=no` road is an ordinary junction.
+8. **Proposals** (dd2bc36, test only, no fix needed). In a proposal, a drawn road crossing one base road and ending on another writes no vertex into the baseline rows. `ObjectManager.update` copies on write, so both base roads get proposal overrides (`modify` change-set writes). The baseline view stays byte-identical, and nothing is posted to `/api/objects`. The proposal's network joins the new road to both. Undo removes the overrides and redo restores them exactly. Confirm junction on an uncertain crossing in a proposal also overrides the crossed base road, not its row. Base objects are deep-frozen in the test, so any in-place write would throw. **UNIT-TESTED** (`TopologyScenario.test.ts`); **UNTESTED** in the browser.
 
 ## 5. Browser checks
 
-BROWSER_RESULTS
+App in Chromium against a copy of the project database (`/workspace/work/um-topo-e2e/`, screenshots in `shots/`). Run by the previous agent on 2c261e7–9a26bae and not repeated for dd2bc36; the dd2bc36 changes are unit-tested only.
+
+| check | result | label |
+|---|---|---|
+| road drawn across `osm_1010245033` at grade | junction vertex on both roads; a route found through the new junction | **BROWSER-VERIFIED** |
+| ground road drawn under the Sangamwadi bridge deck | deck at 6.5 m (estimated), kept separate (no junction) | **BROWSER-VERIFIED** |
+| road end drawn onto a ground-level bridge end | joined at the bridge end | **BROWSER-VERIFIED** |
+| crossing an uncertain ramp piece 0.7 m up (estimated) | flagged; **Confirm junction** joined it | **BROWSER-VERIFIED** |
+| Undo / Redo of each of the above | exact | **BROWSER-VERIFIED** |
 
 ## 6. Not done / limits
 
-LIMITS
+- `GROUND_M = 0.5 m` is a chosen threshold, not a standard (**hypothetical**). All heights are model estimates from tags (6.5 m per deck level, 5 % ramps), not measurements.
+- The network builder change (§4 fix 3) changed the database network for 20 roads and 12 merged nodes (compared with `/workspace/work/um-topo-e2e/net_before.txt` and `net_after.txt`). They were not inspected one by one. Some may have been real junctions that OSM maps without a shared node. Self-loop edges went from 119 to 63.
+- `embankment=*`/`cutting=*` are read as "level unknown" only. No height is modelled for them, and they are not browser-checked.
+- Residual case of §4 fix 6 (a reused vertex making a new touch with an unshared tagged road): **UNTESTED**.
+- Topology in proposals: unit-tested only (§4 item 8).
+- The property test samples random locations; 200 per case is not exhaustive. The pools changed with dd2bc36 (`embankment`/`cutting` segments joined the uncertain pool: 530 → 1274), so the dd2bc36 column samples partly different places from the 9a26bae column.
+- After a drawn road is deleted, the junction vertex it inserted stays on the other road. This is harmless (§1) and kept on purpose: removing it would change a road the user did not touch.

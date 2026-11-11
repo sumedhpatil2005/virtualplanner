@@ -140,6 +140,15 @@ describe('topology reconstruction (synthetic roads)', () => {
     expect(t.sharedNodes(nr.id, 'osm_12')).toEqual([]);
   });
 
+  it('a drawn end on a layer=-1 road 1.1 m from where the drawn road crosses it (held apart): the end still joins it (property test cross-uncertain #110)', () => {
+    const t = setup([row('osm_20', [[-100, 0], [100, 0]], 0, { layer: '-1', tunnel: 'yes' })]);
+    // Down across osm_20 at x ≈ -1.33, then back up onto it at x = -0.2
+    const nr = t.draw([[0, 40, 0], [-2, -20, 0], [-0.2, 0, 0]]);
+    expect(nr.levelCrossings?.map(f => [f.roadId, f.decision])).toEqual([['osm_20', 'unconfirmed']]);
+    expect((t.om.getById('osm_20') as RoadObject).coordinates).toHaveLength(3); // the end's T-junction vertex
+    expect(t.sharedNodes(nr.id, 'osm_20')).toHaveLength(1);
+  });
+
   it('an OSM road end 5 m from a drawn road is not joined to it; a drawn end 5 m short of a road still is', () => {
     // osm_5 ends 5 m east of where the drawn road passes (x = 0); before, the 6.6 m join tolerance joined them
     const t = setup([row('osm_5', [[5, 0], [100, 0]], 0), row('osm_6', [[-100, 80], [100, 80]], 0)]);

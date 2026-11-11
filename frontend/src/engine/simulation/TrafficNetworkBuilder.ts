@@ -98,6 +98,8 @@ export const GRADE_SEPARATION_M = 3.0;
 /** A point this close to a road lies on it (in degrees, ~0.5 m; EditingEngine ON_ROAD_M). */
 const ON_ROAD_DEG = 0.0000045;
 const isEndOf = (r: RoadObject, pt: readonly number[]) => pt === r.coordinates[0] || pt === r.coordinates[r.coordinates.length - 1];
+/** pt is (within ON_ROAD_DEG of) an end of r: e.g. the other road's vertex put at a drawn road's end (T-junction). */
+const atEndOf = (r: RoadObject, pt: readonly number[]) => [r.coordinates[0], r.coordinates[r.coordinates.length - 1]].some(e => Math.hypot(e[0] - pt[0], e[1] - pt[1]) <= ON_ROAD_DEG);
 
 export class TrafficNetworkBuilder {
   private readonly spatialTolerance = JOIN_TOLERANCE_DEG;
@@ -335,8 +337,9 @@ export class TrafficNetworkBuilder {
             const res = pointToSegmentDistance(ptA[0], ptA[1], pB1[0], pB1[1], pB2[0], pB2[1]);
             // A point of an OSM way as mapped joins a drawn or edited road only where it lies on it: OSM says where the
             // way ends and what it meets; the join tolerance is for ends the user drew short (docs/TOPOLOGY_RECONSTRUCTION.md)
-            // (a road's own end that lies on the other road is a T-junction the user drew, whatever crossing is near)
-            if (res.distance < this.spatialTolerance && !(isHeldApart(ptA, FLAG_GUARD_M) && !(isEndOf(roadA, ptA) && res.distance <= ON_ROAD_DEG)) && !(osmTopology.get(roadA.id) && res.distance > ON_ROAD_DEG)) {
+            // (a road's own end that lies on the other road is a T-junction the user drew, whatever crossing is near; so is the
+            // other road's vertex put at that end, which is what splits the other road there)
+            if (res.distance < this.spatialTolerance && !(isHeldApart(ptA, FLAG_GUARD_M) && !((isEndOf(roadA, ptA) || atEndOf(roadB, ptA)) && res.distance <= ON_ROAD_DEG)) && !(osmTopology.get(roadA.id) && res.distance > ON_ROAD_DEG)) {
               const dxB = pB2[0] - pB1[0];
               const dyB = pB2[1] - pB1[1];
               const ub = dxB !== 0 ? (res.closestPt[0] - pB1[0]) / dxB : (res.closestPt[1] - pB1[1]) / (dyB || 1);
@@ -370,7 +373,7 @@ export class TrafficNetworkBuilder {
             const pA2 = roadA.coordinates[sA + 1];
 
             const res = pointToSegmentDistance(ptB[0], ptB[1], pA1[0], pA1[1], pA2[0], pA2[1]);
-            if (res.distance < this.spatialTolerance && !(isHeldApart(ptB, FLAG_GUARD_M) && !(isEndOf(roadB, ptB) && res.distance <= ON_ROAD_DEG)) && !(osmTopology.get(roadB.id) && res.distance > ON_ROAD_DEG)) {
+            if (res.distance < this.spatialTolerance && !(isHeldApart(ptB, FLAG_GUARD_M) && !((isEndOf(roadB, ptB) || atEndOf(roadA, ptB)) && res.distance <= ON_ROAD_DEG)) && !(osmTopology.get(roadB.id) && res.distance > ON_ROAD_DEG)) {
               const dxA = pA2[0] - pA1[0];
               const dyA = pA2[1] - pA1[1];
               const ua = dxA !== 0 ? (res.closestPt[0] - pA1[0]) / dxA : (res.closestPt[1] - pA1[1]) / (dyA || 1);
