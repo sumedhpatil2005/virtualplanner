@@ -240,3 +240,14 @@ def test_site_data_reports_missing_layers_as_unavailable(client, monkeypatch):
     L = r.json()["layers"]
     for k in ("water", "heritage", "trees", "railway"):
         assert L[k]["available"] is False and "reason" in L[k]
+
+
+def test_pdf_renders_long_real_world_tables():
+    """Regression (browser run 2026-11-11): a long finding next to a short id column made fpdf2 fail."""
+    long = "Alignment overlaps or touches 23 mapped road way(s): " + "; ".join(f"Road {i} width=12 lanes=4" for i in range(12))
+    findings = [{"id": f"F{i:02d}", "topic": "existing_roads", "kind": "context", "statement": long, "certainty": "verified_from_available_data", "source": "OSM highway=* (western-zone-latest.osm.pbf, data Mon 2026-11-02 2:51 AM IST)"} for i in range(1, 20)]
+    a = _assessment(findings=findings)
+    a["proposal"]["line"] = [[73.85 + i * 1e-4, 18.52] for i in range(120)]
+    m = docgen.build_model(a, {"id": "x", "scenario_id": "base", "proposal_object_ids": ["o"]}, {}, [], [])
+    assert docgen.render_pdf(m).startswith(b"%PDF")
+    assert docgen.render_docx(m)[:2] == b"PK"

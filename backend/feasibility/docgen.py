@@ -413,12 +413,19 @@ def render_pdf(m: DocModel) -> bytes:
     return bytes(pdf.output())
 
 
-def _col_widths(b: Block, W: float) -> tuple[float, ...]:
+def _col_widths(b: Block, W: float, min_mm: float = 14.0) -> tuple[float, ...]:
+    """Column widths proportional to content length, each at least `min_mm` (a too-narrow column cannot hold one glyph)."""
     n = len(b.header)
     lens = [max([len(b.header[i])] + [len(str(r[i])) if i < len(r) else 0 for r in b.rows]) for i in range(n)]
     lens = [min(max(L, 4), 80) for L in lens]
     tot = sum(lens)
-    return tuple(W * L / tot for L in lens)
+    raw = [W * L / tot for L in lens]
+    small = [i for i, w in enumerate(raw) if w < min_mm]
+    if small and len(small) < n:
+        free = W - min_mm * len(small)
+        big_tot = sum(raw[i] for i in range(n) if i not in small)
+        raw = [min_mm if i in small else raw[i] * free / big_tot for i in range(n)]
+    return tuple(raw)
 
 
 def render(m: DocModel, fmt: str) -> bytes:
