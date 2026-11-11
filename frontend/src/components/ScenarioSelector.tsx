@@ -5,6 +5,7 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import type { Scenario } from '../engine/scenarios/ScenarioManager';
 import { compareScenario } from '../engine/scenarios/scenarioComparison';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { ScenarioVersions } from './ScenarioVersions';
 
 const signed = (n: number, digits = 0) => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: digits })}`;
 
@@ -35,7 +36,7 @@ export const ScenarioSelector: React.FC = () => {
   const isProposal = !!activeScenario && !activeScenario.isBase;
 
   // Recomputed on every render; objectsVersion changes trigger a render when objects change
-  const comparison = compareMode && isProposal ? compareScenario(engineInstance.objects.getAll(), activeId) : null;
+  const comparison = compareMode && isProposal ? compareScenario(engineInstance.objects.viewOf('base'), engineInstance.objects.viewOf(activeId)) : null;
 
   const handleDelete = useCallback(async () => {
     const target = confirmDelete;
@@ -122,11 +123,12 @@ export const ScenarioSelector: React.FC = () => {
       {comparison && (
         <div className="bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-3 space-y-2 animate-fade-in">
           <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-1 border-b border-indigo-500/10 pb-1.5">
-            <Activity size={11} /> What this proposal adds
+            <Activity size={11} /> What this proposal changes
           </div>
 
           <div className="space-y-1.5 text-xs">
-            <Row label="New road capacity" value={`${comparison.newRoadLaneKm.toFixed(2)} lane-km`} />
+            <Row label="Road capacity change" value={`${signed(comparison.newRoadLaneKm, 2)} lane-km`} />
+            <Row label="Existing objects changed / removed" value={`${comparison.changedExisting} / ${comparison.removedExisting}`} />
             <Row label="New flyover length" value={`${comparison.newFlyoverKm.toFixed(2)} km`} />
             <Row label="New metro track" value={`${comparison.newMetroKm.toFixed(2)} km`} />
             <Row label="New stations / buildings" value={`${comparison.newStations} / ${comparison.newBuildings}`} />
@@ -141,6 +143,8 @@ export const ScenarioSelector: React.FC = () => {
         </div>
       )}
 
+      {isProposal && <ScenarioVersions key={activeId} scenarioId={activeId} />}
+
       {form && (
         <ScenarioForm
           mode={form}
@@ -151,7 +155,7 @@ export const ScenarioSelector: React.FC = () => {
       <ConfirmDialog
         isOpen={!!confirmDelete}
         title="Delete Scenario"
-        message={`Delete "${confirmDelete?.name}" and every object drawn in it? This cannot be undone.`}
+        message={`Delete "${confirmDelete?.name}", every object drawn in it, its changes to existing roads and its saved versions? The base city is not affected. This cannot be undone.`}
         confirmText="Delete scenario"
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
@@ -217,7 +221,7 @@ const ScenarioForm: React.FC<{ mode: FormMode; onClose: () => void }> = ({ mode,
           <p className="text-sm text-slate-400">
             {mode.source.isBase
               ? 'The base city is shared by every proposal, so this starts an empty proposal on top of it.'
-              : `Copies every object drawn in "${mode.source.name}".`}
+              : `Copies "${mode.source.name}": every object drawn in it, and its changes and deletions of existing roads.`}
           </p>
         )}
         <label className="flex flex-col gap-1 text-xs text-slate-400 uppercase font-semibold">

@@ -47,8 +47,24 @@ export interface HistoryState {
 }
 
 export class HistoryManager {
-  private undoStack: HistoryDiff[] = [];
-  private redoStack: HistoryDiff[] = [];
+  /**
+   * Undo and Redo per scenario (docs/SCENARIOS_AND_VERSIONING.md): a diff recorded in a proposal is undone only in
+   * that proposal, never against the baseline or another proposal after switching. The scope is the object
+   * manager's active scenario ('base' without one).
+   */
+  private stacks = new Map<string, { undo: HistoryDiff[]; redo: HistoryDiff[] }>();
+  private scope(): { undo: HistoryDiff[]; redo: HistoryDiff[] } {
+    const id = (this.objectManager as any)?.getActiveScenarioId?.() ?? 'base';
+    let s = this.stacks.get(id);
+    if (!s) this.stacks.set(id, (s = { undo: [], redo: [] }));
+    if (id !== this.lastScope) { this.lastScope = id; this.lastCoalesceKey = null; }
+    return s;
+  }
+  private lastScope = 'base';
+  private get undoStack(): HistoryDiff[] { return this.scope().undo; }
+  private set undoStack(v: HistoryDiff[]) { this.scope().undo = v; }
+  private get redoStack(): HistoryDiff[] { return this.scope().redo; }
+  private set redoStack(v: HistoryDiff[]) { this.scope().redo = v; }
   private maxDepth: number = 100;
   private onChangeListeners: (() => void)[] = [];
   private objectManager: ObjectManager | null = null;
@@ -301,9 +317,21 @@ export class HistoryManager {
     return this.redoStack.length;
   }
 
+  /** Forgets one scenario's Undo and Redo (it was deleted, or restored to a saved version). */
+  public clearScope(scenarioId: string) {
+    this.stacks.delete(scenarioId);
+    this.lastCoalesceKey = null;
+    this.notify();
+  }
+
+  /** Tells listeners the active scenario changed (Undo and Redo now act on its own history). */
+  public scopeChanged() {
+    this.lastCoalesceKey = null;
+    this.notify();
+  }
+
   public clear() {
-    this.undoStack = [];
-    this.redoStack = [];
+    this.stacks.clear();
     this.lastSnapshot = null;
     this.lastCoalesceKey = null;
     this.notify();

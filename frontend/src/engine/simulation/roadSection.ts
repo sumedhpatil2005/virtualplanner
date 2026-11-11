@@ -205,7 +205,11 @@ export function carriagewayRun(roads: readonly DrivableObject[], roadId: string,
   const keys = roadKeys(sel);
   if (keys.size === 0) return [start];
   const oneWay = (r: DrivableObject) => r.type === 'road' && r.isOneWay;
-  const pool = roads.filter(r => r.type === 'road' && r.scenarioId === sel.scenarioId && r.coordinates.length >= 2);
+  // `roads` is one scenario's view (ObjectManager.getAll: baseline ⊕ the active proposal's changes). A proposal's
+  // version of a base piece carries the proposal's id, so base pieces and the proposal's pieces make one carriageway
+  // (docs/SCENARIOS_AND_VERSIONING.md); pieces of two different proposals never do.
+  const sameView = (r: DrivableObject) => r.scenarioId === sel.scenarioId || r.scenarioId === 'base' || sel.scenarioId === 'base';
+  const pool = roads.filter(r => r.type === 'road' && sameView(r) && r.coordinates.length >= 2);
   const byNode = new Map<string, DrivableObject[]>(), atVertex = new Map<string, DrivableObject[]>();
   for (const r of pool) {
     for (const p of [r.coordinates[0], r.coordinates[r.coordinates.length - 1]]) {

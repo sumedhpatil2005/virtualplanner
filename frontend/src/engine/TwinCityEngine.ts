@@ -33,6 +33,8 @@ import { SelectionEngine } from './selection/SelectionEngine';
 import { LayerManager, resolveLayerId } from './layers/LayerManager';
 import { filterObjectsForScenario } from './scenarios/scenarioFilter';
 import { ScenarioManager, BASE_SCENARIO_ID, type Scenario } from './scenarios/ScenarioManager';
+import type { ScenarioChange } from './objects/ObjectManager';
+import type { ScenarioVersion, ScenarioVersionList } from './scenarios/versions';
 import { SimulationManager } from './simulation/SimulationManager';
 import { SimulationMode, type SimulationContext } from './simulation/SimulationMode';
 import type { TimePeriod } from './objects/demandTypes';
@@ -50,7 +52,7 @@ import type { NonDrivableRoad } from './editing/osmDrivability';
 import { HistoryManager, deleteWithHistory } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
-import { apiGet } from '../lib/api';
+import { apiGet, apiPost } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
 import { RoadHighlight, type RoadHighlightKind } from './rendering/renderers/RoadHighlight';
 import { JunctionHighlight, cutPath, ARM_DRAW_M } from './rendering/renderers/JunctionHighlight';
@@ -141,6 +143,11 @@ export class TwinCityEngine {
       (this.signalSource = new TrafficSignalSource(localOsm)),
       () => this.getSimulationContext()
     );
+    // Each baseline and proposal run's frozen inputs are kept with the scenario state it ran on (POST /api/runs)
+    this.simMode.runRecorder = async ({ scenarioId, inputs, results }) =>
+      (await apiPost<{ id: string }>('/api/runs', { scenarioId, inputs, results }))?.id ?? null;
+    // The object store shows the active scenario (baseline ⊕ its changes) and copies base edits on write into it
+    this.objects.setScenarioSource(() => this.scenarios.getActiveScenarioId());
     this.history = new HistoryManager(this.objects);
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
     // Placing a gateway snaps it to the city-wide graph
@@ -174,6 +181,9 @@ export class TwinCityEngine {
       this.syncZonesAndGatewaysWithCesium();
     });
     this.scenarios.onChange(() => {
+      // Undo and Redo follow the active scenario (each has its own history)
+      this.history.scopeChanged();
+      this.queueTrafficRebuild();
       this.selection.clearSelection();
       this.simMode.networkChanged();
       renderManagerInstance.reconcile(this.getFilteredObjects());
@@ -1071,35 +1081,62 @@ export class TwinCityEngine {
   }
 
   /**
-   * Creates a new proposal scenario. When `sourceId` is a proposal, its objects
-   * are copied into the new scenario (base objects are shared by every scenario
-   * already). The new scenario becomes active.
+   * Creates a new proposal scenario. When `sourceId` is a proposal, its change set (its own objects, and its
+   * changes and tombstones of base objects, keyed by the base ids) is copied by the backend; the baseline is
+   * shared by every proposal. The new scenario becomes active.
    */
   public async createScenarioFrom(sourceId: string | null, input: { name: string; description?: string; year: number }): Promise<Scenario> {
-    const scenario = await this.scenarios.createScenario(input);
     if (sourceId && sourceId !== BASE_SCENARIO_ID) {
-      const copies = this.objects.getAll()
-        .filter(o => o.scenarioId === sourceId)
-        .map(o => ({
-          ...(JSON.parse(JSON.stringify(o)) as CityObject),
-          // Keep the original id stem (some ids carry a type prefix) and make it unique
-          id: `${o.id.split('__')[0]}__${scenario.id}`,
-          scenarioId: scenario.id,
-        }));
-      if (copies.length > 0) this.objects.addMultiple(copies);
+      const { scenario, changes } = await this.scenarios.forkScenario(sourceId, input);
+      this.objects.replaceScenarioState(scenario.id, changes);
+      this.scenarios.setActiveScenario(scenario.id);
+      return scenario;
     }
+    const scenario = await this.scenarios.createScenario(input);
     this.scenarios.setActiveScenario(scenario.id);
     return scenario;
   }
 
-  /** Deletes a proposal and its objects. Undo history is cleared since it may reference them. */
+  /** Deletes a proposal, its objects and its changes. Its Undo history goes too (other scenarios keep theirs). */
   public async deleteScenario(id: string): Promise<number> {
     await this.scenarios.deleteScenario(id);
-    const own = this.objects.getAll().filter(o => o.scenarioId === id);
-    // The backend already removed these rows, so don't sync the deletion again
-    if (own.length > 0) this.objects.deleteMultiple(own, true);
-    this.history.clear();
-    return own.length;
+    // The backend already removed these rows, so nothing is synced again
+    const n = this.objects.dropScenario(id);
+    this.history.clearScope(id);
+    return n;
+  }
+
+  // ── Scenario versions (docs/SCENARIOS_AND_VERSIONING.md) ──────────────────
+
+  /** Assumptions a version records with the change set: the simulation settings in force now. */
+  public scenarioAssumptions(): Record<string, unknown> {
+    return this.simMode.frozenAssumptions();
+  }
+
+  /** Saves the active proposal's change set as a new immutable version. */
+  public async saveScenarioVersion(label: string, note = ''): Promise<ScenarioVersion> {
+    const id = this.scenarios.getActiveScenarioId();
+    if (id === BASE_SCENARIO_ID) throw new Error('Versions are kept for proposals; the baseline is what they change.');
+    return apiPost<ScenarioVersion>(`/api/scenarios/${encodeURIComponent(id)}/versions`, { label, note, assumptions: this.scenarioAssumptions() });
+  }
+
+  public async listScenarioVersions(id = this.scenarios.getActiveScenarioId()): Promise<ScenarioVersionList | null> {
+    if (id === BASE_SCENARIO_ID) return null;
+    return apiGet<ScenarioVersionList>(`/api/scenarios/${encodeURIComponent(id)}/versions`);
+  }
+
+  /**
+   * Restores a version: the backend saves unsaved work as a version first, makes the version's change set the
+   * proposal's head and records the restore as a new version (history is never rewritten). The proposal's Undo
+   * history is cleared, since it refers to the state before the restore.
+   */
+  public async restoreScenarioVersion(versionId: string): Promise<{ autoSaved: ScenarioVersion | null; version: ScenarioVersion }> {
+    const res = await apiPost<{ autoSaved: ScenarioVersion | null; version: ScenarioVersion; changes: ScenarioChange[] }>(
+      `/api/scenario-versions/${encodeURIComponent(versionId)}/restore`, { assumptions: this.scenarioAssumptions() });
+    this.objects.replaceScenarioState(res.version.scenarioId, res.changes);
+    this.history.clearScope(res.version.scenarioId);
+    this.selection.clearSelection();
+    return { autoSaved: res.autoSaved, version: res.version };
   }
 
   /** Rotates a metro station by `deltaDeg` (switching it to manual heading), recorded for Undo. */
@@ -1599,6 +1636,13 @@ export class TwinCityEngine {
         });
 
         this.objects.liftBridges();
+        // Proposals' changes to base objects (modify / tombstone), kept apart from the baseline rows
+        try {
+          this.objects.loadChanges(await apiGet<ScenarioChange[]>('/api/scenario-changes'));
+        } catch (e) {
+          console.warn('[STARTUP] scenario changes not loaded:', e);
+          (window as any).showToast?.('Could not load the proposals\' changes to existing roads from the backend.', 'error');
+        }
         console.log('[STARTUP] ObjectManager load END');
 
         if (!hasBuildings || !hasZones) {

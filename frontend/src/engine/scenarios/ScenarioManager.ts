@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost } from '../../lib/api';
+import type { ScenarioChange } from '../objects/ObjectManager';
 
 export interface Scenario {
   id: string;
@@ -118,6 +119,25 @@ export class ScenarioManager {
     await apiPost('/api/scenarios', this.toRecord(updated));
     this.scenarios.set(id, updated);
     this.notify();
+  }
+
+  /**
+   * A new proposal with a copy of `sourceId`'s change set, made by the backend (POST /api/scenarios/{id}/fork):
+   * changes to base objects keep the base ids, the source's own objects get new ids. Returns the new change set.
+   */
+  public async forkScenario(sourceId: string, input: { name: string; description?: string; year: number }): Promise<{ scenario: Scenario; changes: ScenarioChange[] }> {
+    const scenario: Scenario = {
+      id: `scn_${Math.random().toString(36).slice(2, 10)}`,
+      name: input.name.trim(),
+      description: (input.description ?? '').trim(),
+      year: input.year,
+      isBase: false,
+    };
+    this.validate(scenario);
+    const res = await apiPost<{ changes: ScenarioChange[] }>(`/api/scenarios/${encodeURIComponent(sourceId)}/fork`, this.toRecord(scenario));
+    this.scenarios.set(scenario.id, scenario);
+    this.notify();
+    return { scenario, changes: res?.changes ?? [] };
   }
 
   /** Deletes a proposal on the backend (which also deletes its objects). */

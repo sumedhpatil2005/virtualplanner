@@ -59,17 +59,42 @@ export interface RunInputs {
   /** Seeds the analysis actually ran, in order. */
   seeds: number[];
   measureS: number;
+  // Frozen with every run since docs/SCENARIOS_AND_VERSIONING.md (absent on older snapshots: then not compared)
+  warmupS?: number;
+  day?: string;
+  signalTiming?: string;
+  /** 'mapped': OSM traffic_signals from the local index; 'estimated': signals placed by road class. */
+  signalSource?: string;
+  networkCorrections?: boolean;
+  demandLevel?: number;
+  engineVersion?: string;
 }
-export interface InputCheck { before: RunInputs; after: RunInputs; matched: boolean; mismatches: ('demand' | 'hour' | 'seeds' | 'duration')[] }
+export type InputMismatch = 'demand' | 'hour' | 'seeds' | 'duration' | 'warm-up' | 'day type' | 'signal timing' | 'signal locations' | 'network corrections' | 'demand level' | 'engine version';
+/** One input that differs between the two runs, with both values as shown to the user. */
+export interface InputDifference { input: InputMismatch; before: string; after: string }
+export interface InputCheck { before: RunInputs; after: RunInputs; matched: boolean; mismatches: InputMismatch[]; differences: InputDifference[] }
 
-/** Whether two runs used the same demand, hour, seeds and duration. `newDemand`: a development scenario, where the demand is meant to differ. */
+const showValue = (v: unknown) => (v === undefined || v === null ? '—' : Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? String(Math.round(v * 1e4) / 1e4) : String(v));
+
+/**
+ * Whether two runs used the same frozen inputs: demand, hour, seeds and duration, and (when both runs recorded
+ * them) warm-up, day type, signal timing mode, signal locations, network corrections, demand level and engine
+ * build. `newDemand`: a development scenario, where the demand is meant to differ. Every difference is listed with
+ * both values so the comparison can show it (mission §13 "clearly display any differences in assumptions").
+ */
 export function checkRunInputs(before: RunInputs, after: RunInputs, newDemand = false): InputCheck {
-  const mismatches: InputCheck['mismatches'] = [];
-  if (!newDemand && (before.demandKey !== after.demandKey || before.trips !== after.trips || Math.abs(before.plannedVph - after.plannedVph) > 1e-6)) mismatches.push('demand');
-  if (before.hour !== after.hour || Math.abs(before.hourFactor - after.hourFactor) > 1e-9) mismatches.push('hour');
-  if (before.seeds.length !== after.seeds.length || before.seeds.some((x, i) => x !== after.seeds[i])) mismatches.push('seeds');
-  if (before.measureS !== after.measureS) mismatches.push('duration');
-  return { before, after, matched: mismatches.length === 0, mismatches };
+  const differences: InputDifference[] = [];
+  const add = (input: InputMismatch, b: unknown, a: unknown) => differences.push({ input, before: showValue(b), after: showValue(a) });
+  if (!newDemand && (before.demandKey !== after.demandKey || before.trips !== after.trips || Math.abs(before.plannedVph - after.plannedVph) > 1e-6))
+    add('demand', `${before.trips} trips, ${Math.round(before.plannedVph)} veh/h`, `${after.trips} trips, ${Math.round(after.plannedVph)} veh/h`);
+  if (before.hour !== after.hour || Math.abs(before.hourFactor - after.hourFactor) > 1e-9) add('hour', `${before.hour}:00 ×${showValue(before.hourFactor)}`, `${after.hour}:00 ×${showValue(after.hourFactor)}`);
+  if (before.seeds.length !== after.seeds.length || before.seeds.some((x, i) => x !== after.seeds[i])) add('seeds', before.seeds, after.seeds);
+  if (before.measureS !== after.measureS) add('duration', `${before.measureS} s`, `${after.measureS} s`);
+  const optional: [InputMismatch, keyof RunInputs][] = [['warm-up', 'warmupS'], ['day type', 'day'], ['signal timing', 'signalTiming'], ['signal locations', 'signalSource'],
+    ['network corrections', 'networkCorrections'], ['demand level', 'demandLevel'], ['engine version', 'engineVersion']];
+  for (const [input, k] of optional) if (before[k] !== undefined && after[k] !== undefined && before[k] !== after[k]) add(input, before[k], after[k]);
+  const mismatches = differences.map(d => d.input);
+  return { before, after, matched: mismatches.length === 0, mismatches, differences };
 }
 
 /**
@@ -273,6 +298,11 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     confidence.level = 'low';
     confidence.text = `The two runs did not use the same ${inputCheck.mismatches.join(', ')}, so the differences are not the network's doing alone.`;
     caveats.push(`Not like with like: the existing city and the proposal differ in ${inputCheck.mismatches.join(', ')}.`);
+    for (const d of inputCheck.differences) caveats.push(`Assumption differs: ${d.input}: existing city ${d.before}; proposal ${d.after}.`);
+  }
+  if (inputCheck?.matched) {
+    const i = inputCheck.before;
+    caveats.push(`Frozen inputs of both runs: demand ${i.trips} trips (${Math.round(i.plannedVph)} veh/h before the hour factor), ${i.hour}:00${i.day ? ` ${i.day}` : ''}, seeds ${i.seeds.join(', ')}, ${i.warmupS !== undefined ? `warm-up ${i.warmupS} s, ` : ''}measured ${i.measureS} s${i.signalTiming ? `, signal timing ${i.signalTiming}` : ''}${i.signalSource ? `, signals ${i.signalSource}` : ''}${i.networkCorrections !== undefined ? `, network corrections ${i.networkCorrections ? 'on' : 'off'}` : ''}.`);
   }
   if (kind === 'development') caveats.push(`Land use changed too: demand went from ${Math.round(demand.before).toLocaleString()} to ${Math.round(demand.after).toLocaleString()} veh/h, so differences mix the new demand with any road changes.`);
   if (!inputCheck || inputCheck.matched) caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);

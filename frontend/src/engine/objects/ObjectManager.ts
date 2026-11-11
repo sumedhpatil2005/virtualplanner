@@ -5,14 +5,47 @@ import { remapRoadSections, repairRoadSections } from './roadSections';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
+
+/** One entry of a proposal's change set as the backend returns it (docs/SCENARIOS_AND_VERSIONING.md). */
+export interface ScenarioChange {
+  objectId: string;
+  op: 'add' | 'modify' | 'delete';
+  scenarioId?: string;
+  seq?: number;
+  object?: { id: string; type: string; name: string; layerId: string; scenarioId?: string; coordinates: any; properties: Record<string, any> };
+}
+/** A write to a proposal's change set: its version of a base object, a tombstone, or back to the baseline's. */
+export interface ChangeWrite { objectId: string; op: 'modify' | 'delete' | 'revert'; object?: ReturnType<ObjectManager['schemaOf']> }
+
+/** Content of an object for comparing with the baseline's (its edit times and owning scenario left out). */
+function contentKey(o: CityObject): string {
+  return JSON.stringify(o, function (this: any, k, v) {
+    if ((k === 'updatedAt' || k === 'scenarioId') && this && typeof this === 'object' && 'type' in this) return undefined;
+    if (v && typeof v === 'object' && !Array.isArray(v)) return Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]]));
+    return v;
+  });
+}
+const ownerOf = (o: CityObject) => o.scenarioId ?? BASE_SCENARIO_ID;
 import { BridgeFeasibilityEngine } from '../simulation/BridgeFeasibilityEngine';
 
 /** Objects per save request, and requests in flight at once, when saving many objects. */
 const SAVE_CHUNK = 1000;
 const SAVES_AT_ONCE = 3;
 
+/**
+ * The city's objects, and the scenarios layered on them (docs/SCENARIOS_AND_VERSIONING.md).
+ *
+ * `objects` holds the baseline ('base') and every proposal's own objects (its adds), keyed by id, as stored in
+ * city_objects. `overlays` holds each proposal's changes to baseline objects, keyed by the base id: its version
+ * of the object (modify) or null (delete, a tombstone). The baseline rows are never changed while a proposal is
+ * active: an edit of a base object there is copied on write into the proposal's overlay.
+ *
+ * getAll()/getById() show the active scenario's materialised view: baseline ⊕ the active proposal's changes.
+ */
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
+  private overlays: Map<string, Map<string, CityObject | null>> = new Map();
+  private scenarioSource: () => string = () => BASE_SCENARIO_ID;
   private onChangeListener: ((changedTypes: Set<string>) => void)[] = [];
   /**
    * OpenStreetMap roads the user deleted, kept on this device so that filling
@@ -22,6 +55,13 @@ export class ObjectManager {
   private deletedOsmLoad: Promise<Set<string>> | null = null;
 
   constructor() {}
+
+  /** Where the active scenario comes from (the engine's ScenarioManager); tests set one with setActiveScenario. */
+  public setScenarioSource(source: () => string) { this.scenarioSource = source; }
+  public setActiveScenario(id: string) { this.scenarioSource = () => id; this.notify(); }
+  public getActiveScenarioId(): string { return this.scenarioSource() || BASE_SCENARIO_ID; }
+
+  public schemaOf(obj: CityObject) { return this.mapToSchema(obj); }
 
   private mapToSchema(obj: CityObject) {
     const { id, type, name, layerId, scenarioId, coordinates, ...rest } = obj;
@@ -38,6 +78,12 @@ export class ObjectManager {
 
   public async syncPost(obj: CityObject) {
     await apiPost('/api/objects', this.mapToSchema(obj));
+  }
+
+  /** Writes changes of a proposal to base objects (POST /api/scenarios/{id}/changes). Base rows are not written. */
+  public async syncChanges(scenarioId: string, changes: ChangeWrite[]) {
+    if (changes.length === 0) return;
+    await apiPost(`/api/scenarios/${encodeURIComponent(scenarioId)}/changes`, changes);
   }
 
   public async syncDelete(id: string) {
@@ -124,16 +170,150 @@ export class ObjectManager {
     return ids;
   }
 
+  /** The active scenario's objects: the baseline with the active proposal's changes applied, and its own objects. */
   public getAll(): CityObject[] {
+    return this.viewOf(this.getActiveScenarioId());
+  }
+
+  /** What a scenario shows (baseline ⊕ its change set), whichever scenario is active. */
+  public viewOf(scenarioId: string): CityObject[] {
+    const out: CityObject[] = [];
+    if (scenarioId === BASE_SCENARIO_ID) {
+      for (const o of this.objects.values()) if (ownerOf(o) === BASE_SCENARIO_ID) out.push(o);
+      return out;
+    }
+    const overlay = this.overlays.get(scenarioId);
+    for (const o of this.objects.values()) {
+      const owner = ownerOf(o);
+      if (owner === scenarioId) out.push(o);
+      else if (owner === BASE_SCENARIO_ID) {
+        const ov = overlay?.get(o.id);
+        if (ov === undefined) out.push(o);
+        else if (ov !== null) out.push(ov);
+      }
+    }
+    return out;
+  }
+
+  /** Every stored object of every scenario (the baseline, and each proposal's own objects), without overlays. */
+  public getAllStored(): CityObject[] {
     return Array.from(this.objects.values());
   }
 
+  /** The object with this id as the active scenario shows it (undefined when it is another proposal's or deleted here). */
   public getById(id: string): CityObject | undefined {
-    return this.objects.get(id);
+    const o = this.objects.get(id);
+    if (!o) return undefined;
+    const active = this.getActiveScenarioId(), owner = ownerOf(o);
+    if (active === BASE_SCENARIO_ID) return owner === BASE_SCENARIO_ID ? o : undefined;
+    if (owner === active) return o;
+    if (owner !== BASE_SCENARIO_ID) return undefined;
+    const ov = this.overlays.get(active)?.get(id);
+    return ov === undefined ? o : ov ?? undefined;
   }
 
   public getByScenario(scenarioId: string): CityObject[] {
-    return this.getAll().filter(obj => obj.scenarioId === scenarioId);
+    return this.getAllStored().filter(obj => obj.scenarioId === scenarioId);
+  }
+
+  /** The proposal's changes to baseline objects: id → its version, or null for a tombstone. */
+  public overlayOf(scenarioId: string): ReadonlyMap<string, CityObject | null> {
+    return this.overlays.get(scenarioId) ?? new Map();
+  }
+
+  /** Whether a change to this id in the active scenario is a change to a baseline object inside a proposal. */
+  private copyOnWrite(id: string): string | null {
+    const active = this.getActiveScenarioId();
+    if (active === BASE_SCENARIO_ID) return null;
+    const o = this.objects.get(id);
+    return o && ownerOf(o) === BASE_SCENARIO_ID ? active : null;
+  }
+
+  private overlayFor(scenarioId: string) {
+    let m = this.overlays.get(scenarioId);
+    if (!m) this.overlays.set(scenarioId, (m = new Map()));
+    return m;
+  }
+
+  /**
+   * The proposal's version of a base object. An object with the baseline's content (Undo back to it, or an edit
+   * undone by hand) drops the change, so the proposal shows the baseline object itself again.
+   */
+  private putOverride(scenarioId: string, obj: CityObject, skipSync: boolean): CityObject {
+    const base = this.objects.get(obj.id)!;
+    const overlay = this.overlayFor(scenarioId);
+    let shown: CityObject;
+    let write: ChangeWrite;
+    if (contentKey(obj) === contentKey(base)) {
+      overlay.delete(obj.id);
+      shown = base;
+      write = { objectId: obj.id, op: 'revert' };
+    } else {
+      shown = { ...obj, scenarioId } as CityObject;
+      overlay.set(obj.id, shown);
+      write = { objectId: obj.id, op: 'modify', object: this.mapToSchema(shown) };
+    }
+    if (!skipSync) this.reportSync(this.syncChanges(scenarioId, [write]), 'Save failed: Unable to sync the proposal\'s change with backend server');
+    return shown;
+  }
+
+  private putTombstones(scenarioId: string, ids: string[], skipSync: boolean) {
+    const overlay = this.overlayFor(scenarioId);
+    for (const id of ids) overlay.set(id, null);
+    if (!skipSync && ids.length) this.reportSync(this.syncChanges(scenarioId, ids.map(objectId => ({ objectId, op: 'delete' as const }))), 'Delete failed: Unable to sync the proposal\'s change with backend server');
+  }
+
+  private reportSync(p: Promise<unknown>, message: string) {
+    p.catch((e) => {
+      console.warn('[ObjectManager] scenario change sync failed:', e);
+      (globalThis as any).window?.showToast?.(message, 'error');
+    });
+  }
+
+  /** Puts in the changes of proposals loaded from the backend (GET /api/scenario-changes); nothing is saved. */
+  public loadChanges(changes: readonly ScenarioChange[]) {
+    for (const c of changes) {
+      const sid = c.scenarioId;
+      if (!sid || sid === BASE_SCENARIO_ID) continue;
+      if (c.op === 'delete') this.overlayFor(sid).set(c.objectId, null);
+      else if (c.op === 'modify' && c.object) this.overlayFor(sid).set(c.objectId, this.unpack(c.object, sid));
+    }
+  }
+
+  /** A stored row (id, type, name, layerId, coordinates, properties) as an object of `scenarioId`. */
+  public unpack(row: NonNullable<ScenarioChange['object']>, scenarioId: string): CityObject {
+    const now = new Date().toISOString();
+    const o = { createdAt: now, updatedAt: now, ...row.properties, id: row.id, type: row.type, name: row.name, layerId: row.layerId, scenarioId, coordinates: row.coordinates } as CityObject;
+    if (o.type === 'road') this.syncRoadProperties(o as RoadObject);
+    return o;
+  }
+
+  /**
+   * Makes a proposal's state exactly `changes` (after a restore or a duplicate made by the backend): its own
+   * objects and its overlay are replaced; the baseline is untouched. Nothing is saved (the backend already has it).
+   */
+  public replaceScenarioState(scenarioId: string, changes: readonly ScenarioChange[]) {
+    if (scenarioId === BASE_SCENARIO_ID) throw new Error('The baseline has no change set');
+    const types = new Set<string>();
+    for (const o of [...this.objects.values()]) if (o.scenarioId === scenarioId) { this.objects.delete(o.id); types.add(o.type); }
+    for (const o of this.overlays.get(scenarioId)?.values() ?? []) if (o) types.add(o.type);
+    this.overlays.delete(scenarioId);
+    for (const c of changes) {
+      if (c.op === 'add' && c.object) { const o = this.unpack(c.object, scenarioId); this.objects.set(o.id, o); types.add(o.type); }
+      else if (c.op === 'modify' && c.object) { const o = this.unpack(c.object, scenarioId); this.overlayFor(scenarioId).set(o.id, o); types.add(o.type); }
+      else if (c.op === 'delete') { this.overlayFor(scenarioId).set(c.objectId, null); const b = this.objects.get(c.objectId); if (b) types.add(b.type); }
+    }
+    this.notify(types.size ? types : undefined);
+  }
+
+  /** Forgets a deleted proposal's objects and changes (the backend already removed them). */
+  public dropScenario(scenarioId: string): number {
+    const own = this.getAllStored().filter(o => o.scenarioId === scenarioId);
+    const n = own.length + (this.overlays.get(scenarioId)?.size ?? 0);
+    this.overlays.delete(scenarioId);
+    if (own.length) this.deleteMultiple(own, true);
+    else this.notify();
+    return n;
   }
 
   public syncRoadProperties(road: RoadObject) {
@@ -285,6 +465,7 @@ export class ObjectManager {
   }
 
   public add(obj: CityObject, skipSync = false) {
+    const cow = this.copyOnWrite(obj.id);
     let fresh = {
       ...obj,
       createdAt: obj.createdAt || new Date().toISOString(),
@@ -301,6 +482,12 @@ export class ObjectManager {
       if (!(fresh as any).feasibilityResult) Object.assign(fresh, this.flyoverFeasibility(fresh).flyover);
     }
 
+    if (cow) {
+      // Putting a base object back in a proposal (Undo of a delete there), or the proposal's version of it
+      this.putOverride(cow, fresh, skipSync);
+      this.notify(new Set([fresh.type]));
+      return;
+    }
     this.objects.set(obj.id, fresh);
     if (this.deletedOsm?.has(obj.id)) this.noteOsmDeletions([obj.id], false);
     this.notify(new Set([fresh.type]));
@@ -328,6 +515,22 @@ export class ObjectManager {
       return fresh;
     });
 
+    const overridden: CityObject[] = [];
+    const stored = freshObjs.filter(obj => {
+      const cow = this.copyOnWrite(obj.id);
+      if (cow) { overridden.push(this.putOverride(cow, obj, skipSync)); return false; }
+      return true;
+    });
+    if (stored.length < freshObjs.length) {
+      stored.forEach(obj => this.objects.set(obj.id, obj));
+      if (stored.some(o => o.type === 'road' && o.osmProvenance)) this.liftBridges();
+      this.notify(new Set(freshObjs.map(o => o.type)));
+      if (!skipSync && stored.length > 0) this.syncPostMultiple(stored.map(obj => this.objects.get(obj.id)!)).catch((e) => {
+        console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
+        (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
+      });
+      return;
+    }
     freshObjs.forEach(obj => {
       this.objects.set(obj.id, obj);
     });
@@ -350,7 +553,8 @@ export class ObjectManager {
    * did not have go too (merged, a field an edit added, such as a flyover's impact on a road, stayed after Undo).
    */
   public update(id: string, updates: Partial<CityObject>, skipSync = false, replace = false) {
-    const existing = this.objects.get(id);
+    const cow = this.copyOnWrite(id);
+    const existing = cow ? this.getById(id) : this.objects.get(id);
     if (!existing) return;
 
     let updated = {
@@ -370,6 +574,12 @@ export class ObjectManager {
       applyFlyoverElevationProfile(updated);
     }
 
+    if (cow) {
+      // A base object edited in a proposal: copied on write into the proposal, the baseline row stays as it is
+      this.putOverride(cow, updated, skipSync);
+      this.notify(new Set([updated.type]));
+      return;
+    }
     this.objects.set(id, updated);
     this.notify(new Set([updated.type]));
     if (!skipSync) {
@@ -381,6 +591,15 @@ export class ObjectManager {
   }
 
   public delete(id: string, skipSync = false) {
+    const cow = this.copyOnWrite(id);
+    if (cow) {
+      // A base object deleted in a proposal: a tombstone there; the baseline and the device's OSM deletion list keep it
+      const shown = this.getById(id);
+      if (!shown) return;
+      this.putTombstones(cow, [id], skipSync);
+      this.notify(new Set([shown.type]));
+      return;
+    }
     const existing = this.objects.get(id);
     if (existing) {
       this.objects.delete(id);
@@ -404,6 +623,20 @@ export class ObjectManager {
   public deleteMultiple(objs: CityObject[], skipSync = false, recordOsmDeletion = true) {
     let changed = false;
     const idsToSync: string[] = [];
+    const active = this.getActiveScenarioId();
+    if (active !== BASE_SCENARIO_ID) {
+      // Base objects are never removed from the store inside a proposal: the visible ones get tombstones there
+      const baseOwned = objs.filter(o => this.copyOnWrite(o.id));
+      if (baseOwned.length) {
+        const tomb = baseOwned.filter(o => this.getById(o.id));
+        if (tomb.length) this.putTombstones(active, tomb.map(o => o.id), skipSync);
+        const ids = new Set(baseOwned.map(o => o.id));
+        const rest = objs.filter(o => !ids.has(o.id));
+        if (rest.length) this.deleteMultiple(rest, skipSync, recordOsmDeletion);
+        else if (tomb.length) this.notify(new Set(tomb.map(o => o.type)));
+        return;
+      }
+    }
 
     objs.forEach(obj => {
       if (this.objects.has(obj.id)) {
@@ -431,6 +664,7 @@ export class ObjectManager {
 
   public clear() {
     this.objects.clear();
+    this.overlays.clear();
     this.notify(new Set(['road', 'building', 'junction', 'flyover', 'utility', 'metro_line', 'metro_station', 'zone', 'gateway', 'metro_flyover']));
   }
 

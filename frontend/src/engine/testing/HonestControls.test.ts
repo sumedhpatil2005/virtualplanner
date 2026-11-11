@@ -162,7 +162,8 @@ describe('Honest metrics (items 21, cross-cutting)', () => {
       id: 'r', type: 'road', name: 'r', layerId: 'roads', scenarioId: 'p1', laneCount: 4,
       coordinates: [[73.70, 18.5, 0], [73.71, 18.5, 0]],
     } as unknown as CityObject;
-    const c = compareScenario([road, building({ scenarioId: 'p1', population: 300 })], 'p1');
+    // Base view empty; the proposal view (baseline ⊕ changes) holds its new road and building
+    const c = compareScenario([], [road, building({ scenarioId: 'p1', population: 300 })]);
     // ~1.055 km × 4 lanes
     expect(c.newRoadLaneKm).toBeGreaterThan(4.1);
     expect(c.newRoadLaneKm).toBeLessThan(4.3);

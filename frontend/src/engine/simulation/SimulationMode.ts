@@ -141,7 +141,13 @@ export interface TrafficRunSnapshot {
   inputs: RunInputs;
   /** Edits of imported junctions the run had in force (docs/OVERHAUL.md §23); absent on older snapshots. */
   junctionEdits?: JunctionEditSpec[];
+  /** Id of the backend record of this run's frozen inputs (POST /api/runs), when it was saved. */
+  runId?: string | null;
 }
+/** Saves a run's frozen inputs with the scenario it ran on (the engine posts it to /api/runs); resolves to its id. */
+export type RunRecorder = (run: { scenarioId: string; inputs: RunInputs; results: Record<string, unknown> }) => Promise<string | null>;
+/** Build of the engine a run used (VITE_GIT_SHA when the build sets it; 'unknown' otherwise). */
+export const ENGINE_VERSION: string = ((import.meta as any).env?.VITE_GIT_SHA as string | undefined) ?? 'unknown';
 export interface TrafficComparisonState {
   baseline: TrafficRunSnapshot | null;
   current: TrafficRunSnapshot | null;
@@ -1265,7 +1271,9 @@ export class SimulationMode {
       demandKey: contentKey(plan), networkKey: this.currentNetworkKey(),
       metrics: output.result.network, demandVph: plan.provenance.vehiclesPerHour * this.state.timeOfDay.factor, analysis: output,
       inputs: { demandKey: contentKey(plan), trips: plan.trips.length, plannedVph: plan.provenance.vehiclesPerHour, hour: this.state.timeOfDay.hour, hourFactor: this.state.timeOfDay.factor,
-        seeds: output.result.perSeed.map(s => s.seed), measureS },
+        seeds: output.result.perSeed.map(s => s.seed), measureS, warmupS: DEFAULT_ANALYSIS.warmupS, day: this.state.timeOfDay.day,
+        signalTiming: this.signalTiming, signalSource: this.signalPoints ? 'mapped' : 'estimated', networkCorrections: this.correctionsEnabled,
+        demandLevel: traffic.demandLevel, engineVersion: ENGINE_VERSION },
       junctionEdits: structuredClone(splitJunctionObjects(context.junctions).edits) };
   }
 
@@ -1288,6 +1296,37 @@ export class SimulationMode {
       if (deltas) out.push({ junctionId: id, label: edit.label, edit, deltas });
     }
     return out;
+  }
+
+  /** Records each baseline and proposal run's frozen inputs (set by the engine; null: not recorded). */
+  public runRecorder: RunRecorder | null = null;
+
+  private async recordRun(snap: TrafficRunSnapshot): Promise<void> {
+    if (!this.runRecorder) return;
+    try {
+      const r = snap.analysis.result;
+      snap.runId = await this.runRecorder({ scenarioId: snap.scenarioId, inputs: snap.inputs,
+        results: { totalVph: r.totalVph, meanTravelTimeS: r.network.meanTravelTimeS, meanDelayS: r.network.meanDelayS, completedTrips: r.network.completedTrips } });
+    } catch (e) {
+      console.warn('[SimulationMode] run inputs not recorded:', e);
+    }
+  }
+
+  /**
+   * The assumptions a scenario version records (docs/SCENARIOS_AND_VERSIONING.md): the frozen baseline demand (its
+   * content key, when a baseline was saved), demand settings, clock hour and day, seeds, warm-up and measured
+   * period, signal timing mode and where signals come from, network corrections, demand level, engine build.
+   */
+  public frozenAssumptions(): Record<string, unknown> {
+    const t = this.state.timeOfDay, traffic = this.state.traffic;
+    return {
+      demandFrozen: this.baselinePlan ? contentKey(this.baselinePlan) : null,
+      demandCalibrated: !!this.calibratedPlan, demandSettings: structuredClone(this.state.demandSettings),
+      hour: t.hour, day: t.day, countPeak: t.countPeak, seeds: [...this.analysisSeeds],
+      warmupS: DEFAULT_ANALYSIS.warmupS, measureS: DEFAULT_ANALYSIS.measureS,
+      signalTiming: this.signalTiming, signalSource: this.signalPoints ? 'mapped' : 'estimated',
+      networkCorrections: this.correctionsEnabled, demandLevel: traffic.demandLevel, trafficSeed: traffic.seed, engineVersion: ENGINE_VERSION,
+    };
   }
 
   private currentNetworkKey() {
@@ -1336,6 +1375,7 @@ export class SimulationMode {
       const output = await this.runJob(plan, duration, generation);
       if (generation !== this.comparisonGeneration) return null;
       const baseline = this.snapshotOf(output, plan, duration);
+      void this.recordRun(baseline);
       this.baselinePlan = structuredClone(plan);
       this.baselineRoads = new Map(structuredClone(this.getRoads()).map(r => [r.id, r]));
       this.baselineContextKey = contextKey;
@@ -1377,6 +1417,7 @@ export class SimulationMode {
       const output = await this.runJob(plan, baseline!.durationS, generation, baseline!.inputs?.seeds);
       if (generation !== this.comparisonGeneration) return null;
       const current = this.snapshotOf(output, plan, baseline!.durationS);
+      void this.recordRun(current);
       const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
         { before: baseline!.demandVph, after: current.demandVph }, baseline!.inputs ? { before: baseline!.inputs, after: current.inputs, newDemand: !!opts.withNewDemand && demandChanged } : undefined);
       if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
