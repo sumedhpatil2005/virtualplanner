@@ -51,7 +51,7 @@ Seeded sets, all citing IRC:106-1990 *Guidelines for Capacity of Urban Roads in 
 - Data choice: "Measured + manual", "Estimated", or "All (kept apart)". With All, measured and estimated rows of the same road appear as separate rows with their badges; nothing is averaged. The API needs an explicit `kinds=` list to return estimated data at all.
 - Nothing is fitted to these counts.
 
-## 5. ODME interface (not implemented)
+## 5. ODME interface (estimator now implemented: docs/ODME_AND_EMISSIONS.md)
 
 `engine/data/odmeConstraints.ts`: `countsToConstraints(rows, edgeIds, {hour, dayTypes, unit, allowEstimated})` → `LinkCountConstraint` / `TurnCountConstraint` with dataset id and kind; only role **Calibration** datasets become constraints; Validation datasets are returned as `heldOutDatasetIds` and must be refused by an estimator (TAG M3.1 §3.3.8); estimated data only with `allowEstimated`; PCU/h only where convertible. `OdmeEstimator.estimate({prior, constraints, limits, heldOutDatasetIds})` must return the fit per constraint and TAG M3.1 Table 5 change statistics with pass/fail (`TAG_M31_TABLE5`), never hiding a breach. **UNIT-TESTED** (mapping only).
 
@@ -91,7 +91,7 @@ The GEH values above compare the model with **made-up** counts; they say nothing
 
 ## 10. Not done / limits
 
-- No ODME estimator (interface only). No calibration use of counts in the existing IPF calibration (that still reads the curated junction-count files).
+- ODME estimator: implemented (docs/ODME_AND_EMISSIONS.md); turning-count constraints still not used by it. No calibration use of counts in the existing IPF calibration (that still reads the curated junction-count files).
 - Junction-approach and turning counts are stored, validated, shown per road, and mapped to ODME constraints, but not compared with the model.
 - Counts are not shown on the 3D map (no layer).
 - No authentication: `entered_by` is what the user types.
