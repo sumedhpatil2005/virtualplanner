@@ -161,6 +161,12 @@ describe('scenario comparison on frozen demand', () => {
     const same = compareAnalyses(before, again, { before: roadMap, after: roadMap }, { before: plan.provenance.vehiclesPerHour, after: plan.provenance.vehiclesPerHour });
     expect(same.kind).toBe('infrastructure');
     expect(same.verdict).toMatchObject({ section: 'no_change', network: 'no_change', area: 'no_change', overall: 'no_change' });
+    // Fuel and emissions (docs/ODME_AND_EMISSIONS.md): present, idling counted, identical on a re-run
+    expect(before.result.emissions!.total.fuelL).toBeGreaterThan(0);
+    expect(before.result.emissions!.total.idleS).toBeGreaterThanOrEqual(0);
+    expect(before.result.emissions!.perSeed.map(s => s.seed)).toEqual([42, 7]);
+    expect(before.result.areaEmissions!.co2KgPerHour).toBeGreaterThan(0);
+    expect(same.emissions!.deltas.every(d => d.change === 0)).toBe(true);
     // Close the crossing collector north of the main road: same demand, a different network
     const closedRoads = roads.filter(r => r.id !== 'cross2');
     const closedMap = new Map(closedRoads.map(r => [r.id, r]));

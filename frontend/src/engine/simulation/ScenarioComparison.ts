@@ -49,6 +49,11 @@ export interface ComparisonResult {
   caveats: string[];
   /** The two runs' demand, hour, seeds and duration, and whether they match (absent when the caller passed none). */
   inputs?: InputCheck;
+  /**
+   * Fuel and emissions of the corridor simulation (SUMO HBEFA4, speed and acceleration, idling included), per hour,
+   * same frozen demand and seeds; absent when either run has none. Shown apart: never part of the verdict.
+   */
+  emissions?: { deltas: Delta[]; model: string; source: string; note: string };
 }
 
 /** What a run's figures depend on besides the network. A comparison holds these fixed, so a difference is the network's doing. */
@@ -307,7 +312,25 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   if (kind === 'development') caveats.push(`Land use changed too: demand went from ${Math.round(demand.before).toLocaleString()} to ${Math.round(demand.after).toLocaleString()} veh/h, so differences mix the new demand with any road changes.`);
   if (!inputCheck || inputCheck.matched) caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
-  return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange,
+  const emissions = emissionDeltas(a, b, sameSeeds);
+  return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange, ...(emissions ? { emissions } : {}),
     laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks),
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
+}
+
+/** Corridor fuel and emissions before and after (per hour of the measured window), with seed agreement. */
+function emissionDeltas(a: RoadAnalysisResult, b: RoadAnalysisResult, sameSeeds: boolean): ComparisonResult['emissions'] | undefined {
+  const x = a.emissions, y = b.emissions;
+  if (!x || !y) return undefined;
+  const hx = x.windowS > 0 ? 3600 / x.windowS : 0, hy = y.windowS > 0 ? 3600 / y.windowS : 0;
+  const seeds = (k: 'fuelL' | 'co2G' | 'noxG' | 'pmG') => sameSeeds && x.perSeed.length === y.perSeed.length ? { before: x.perSeed.map(s => s[k] * hx), after: y.perSeed.map(s => s[k] * hy) } : undefined;
+  const deltas = [
+    delta('Fuel burnt in the neighbourhood', x.perHour.fuelL, y.perHour.fuelL, 'L/h', true, 0.03, seeds('fuelL')),
+    delta('CO₂', x.perHour.co2G / 1000, y.perHour.co2G / 1000, 'kg/h', true, 0.03, seeds('co2G')),
+    delta('NOx', x.perHour.noxG, y.perHour.noxG, 'g/h', true, 0.03, seeds('noxG')),
+    delta('PM (exhaust + non-exhaust)', x.perHour.pmG, y.perHour.pmG, 'g/h', true, 0.03, seeds('pmG')),
+    delta('Time vehicles stood still (engine idling)', x.perHour.idleS / 3600, y.perHour.idleS / 3600, 'veh·h per h', true, 0.05),
+  ];
+  return { deltas, model: x.model.model, source: x.model.url,
+    note: 'ESTIMATED from simulated speed and acceleration of every vehicle in the neighbourhood (European HBEFA classes as stand-ins; two-wheelers and auto-rickshaws especially uncertain). Same frozen demand and seeds on both sides, so the difference is more reliable than either total. Not part of the verdict.' };
 }

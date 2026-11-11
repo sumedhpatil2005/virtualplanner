@@ -5,6 +5,8 @@ import { countChecks, sectionDirections, readCorridorRun, areaContext, combineAn
 import type { RoadSection } from './roadSection';
 import type { CountJunction } from '../calibration/observedCounts';
 import { assignTraffic, subareaDemand } from './staticAssignment';
+import { summarizeEmissions, araiAreaEstimate, type EmissionAccumulator } from '../emissions/emissions';
+import type { VehicleKind } from './TrafficMicroSim';
 
 /**
  * One repeatable analysis of a selected road (docs/OVERHAUL.md §9):
@@ -95,6 +97,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
     }
   };
   const runs: CorridorRun[] = [];
+  const emissionRuns: { seed: number; acc: EmissionAccumulator }[] = [];
   let counts: CountCheck[] = [];
   const t1 = Date.now();
   for (const seed of job.seeds) {
@@ -106,10 +109,28 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
     sim.startAnalysis();
     for (let i = warm; i < runSteps; i++) { sim.step(); await tick(); }
     runs.push(readCorridorRun(sim, seed, job.corridor, job.roads, job.section, dirs, corridorPlan.provenance.vehiclesPerHour));
+    const acc = sim.emissionAccumulator();
+    if (acc) emissionRuns.push({ seed, acc });
     if (layouts.length) counts = countChecks(sim, layouts, job.countJunctions!);
   }
   const result = combineAnalysis(ctx, runs, dirs, job.section, { roads: new Set(job.corridor.segments.map(s => s.roadId)).size, demandVph: corridorPlan.provenance.vehiclesPerHour, rangeM: job.corridor.rangeMeters }, job.plan.provenance);
+  result.emissions = summarizeEmissions(emissionRuns);
+  result.areaEmissions = araiAreaEstimate(vkmByKind(assignment));
   onProgress?.(1);
   const routedVph = trips.reduce((n, t) => n + t.vehiclesPerHour, 0) - assignment.unroutedVeh;
   return { result, counts, corridorPlan, routedVph, unroutedVph: assignment.unroutedVeh, timings: { assignmentMs, simulationMs: Date.now() - t1 }, elapsedMs: Date.now() - t0 };
+}
+
+/** Vehicle-km per hour by class over the whole area assignment (stored path flows × path length × class share of each OD). */
+export function vkmByKind(a: ReturnType<typeof assignTraffic>): Map<VehicleKind, number> {
+  const out = new Map<VehicleKind, number>();
+  const pathKm = a.paths.map(p => { let m = 0; for (const li of p) m += a.links[li].lengthM; return m / 1000; });
+  a.odPaths.forEach((ps, oi) => {
+    const od = a.ods[oi];
+    let km = 0;
+    for (const { pathId, share } of ps) km += share * pathKm[pathId];
+    if (km <= 0 || od.veh <= 0) return;
+    od.kinds.forEach((v, k) => out.set(k, (out.get(k) ?? 0) + v * km));
+  });
+  return out;
 }

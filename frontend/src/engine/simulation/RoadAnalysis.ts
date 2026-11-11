@@ -1,3 +1,4 @@
+import type { EmissionsSummary, AraiAreaEstimate } from '../emissions/emissions';
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import { MAX_VEHICLES, STEP_S, GRIDLOCK_S, type TrafficMicroSim, type MicroSimMetrics, type AnalysisLinkCounts, type HoldCause, type VehicleAccounting, type GridlockSite } from './TrafficMicroSim';
 import { isGenericRoadName, carriagewayRun, type RoadSection } from './roadSection';
@@ -258,6 +259,10 @@ export interface RoadAnalysisResult {
     /** Junctions with vehicles standing gridlocked at the end of the run, worst first (at most 3). */
     gridlockSites?: GridlockSite[] }[];
   evidence: { demand: DemandProvenance | null; notes: string[] };
+  /** Fuel and emissions of the corridor simulation (speed- and acceleration-based, idling included); absent on older results. */
+  emissions?: EmissionsSummary | null;
+  /** ARAI (2007) distance-based estimate over the whole area assignment: a cross-check only; absent on older results. */
+  areaEmissions?: AraiAreaEstimate | null;
 }
 
 /** Map colour for a volume/capacity ratio (shared with the panel legend). */

@@ -10,6 +10,7 @@ import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, ty
 import type { Cardinal } from '../calibration/observedCounts';
 import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, defaultEdit, type JunctionEditSpec, type TurnBans } from './junctionControl';
 import { groupJunctions } from './junctionGroups';
+import { EmissionAccumulator } from '../emissions/emissions';
 
 /**
  * Microscopic traffic simulation on a study area.
@@ -1863,8 +1864,16 @@ export class TrafficMicroSim {
     return out;
   }
 
+  /** Per-vehicle fuel and emissions since startAnalysis() (null before it). */
+  private emissions: EmissionAccumulator | null = null;
+  public emissionAccumulator(): EmissionAccumulator | null {
+    if (this.emissions && this.analysis) this.emissions.windowS = this.t - this.analysis.fromT;
+    return this.emissions;
+  }
+
   /** Starts (or restarts) the road-analysis counters: link volumes, select-link volumes and origins/destinations. */
   public startAnalysis() {
+    this.emissions = new EmissionAccumulator();
     // Junction delay and queues over the same window
     this.junctionPerf.forEach(p => { p.controlDelayS = 0; p.vehicles = 0; p.pcu = 0; p.queueSumM = 0; p.queueMaxM = 0; p.samples = 0; });
     this.startCounting();
@@ -2736,6 +2745,8 @@ export class TrafficMicroSim {
             if (pos > limit) v = 0;
           }
           if (pos > limit) pos = Math.max(veh.pos, limit);
+          // Fuel and emissions from this step's speed and actual acceleration (measured window only; docs/ODME_AND_EMISSIONS.md)
+          if (this.emissions) this.emissions.add(veh.type.kind, v, (v - veh.v) / dt, dt);
           veh.v = v;
           veh.odo += pos - veh.pos;
           veh.pos = pos;
