@@ -53,7 +53,7 @@ def sha256_file(path: str) -> str:
 def _parse_date(s: str | None) -> datetime.datetime | None:
     if not s:
         return None
-    m = re.match(r"(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?", str(s).strip())
+    m = re.search(r"(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?", str(s).strip())  # ISO or "Mon 2026-11-02 2:51 AM IST"
     if not m:
         return None
     y, mo, d = int(m.group(1)), int(m.group(2) or 12), int(m.group(3) or 28)

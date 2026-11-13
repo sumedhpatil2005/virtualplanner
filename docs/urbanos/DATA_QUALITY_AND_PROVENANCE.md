@@ -79,7 +79,8 @@ Status = registry on a copy of `twincity.db` with `/workspace/work/urbanos-data`
 | **Population** (population.exposure) | census / ward population; ward boundaries | screening | **blocked**: no population data (zones synthetic); ward boundaries registered but unclassified (datameet = inferred). |
 | **Coordination** (conflict_detection, heritage_permission) | project elements; base roads; OSM metro; utilities; ASI limits | screening; clearances engineering | detection **ready (screening)** with depths UNKNOWN; heritage permission **blocked** (no limits). |
 
-Totals on that run: 7 ready · 7 partial · 8 blocked (22 features); 83 datasets: 58 available, 1 synthetic, 24 not acquired.
+Totals on the final run: 7 ready · 7 partial · 8 blocked (22 features); 89 datasets: 64 available, 1 synthetic, 24 not acquired.
+Staleness of human-formatted dates ("Mon 2026-11-02 2:51 AM IST") was read as UNKNOWN in that run; fixed afterwards (UNIT-TESTED), not re-run in the browser.
 
 ## 7. API (`/api/datasets`, `backend/api/datasets_router.py`)
 
@@ -97,10 +98,10 @@ files, processing, quality, update checks, used by features) · `POST ""` · `PA
   footprint against the Pune study box, quality-check table, re-run checks, update check, version history with processing runs,
   files and review (activate/reject). Features grouped by capability with dependencies, state, the fails-validation TrustBadge and
   the not-wired chip. Uses DataStatus and TrustBadge.
-- **UNIT-TESTED**: `backend/tests/test_datasets.py` (14); `frontend/src/engine/testing/DataCatalogueModel.test.ts` (14).
+- **UNIT-TESTED**: `backend/tests/test_datasets.py` (15); `frontend/src/engine/testing/DataCatalogueModel.test.ts` (14).
 - **BROWSER-VERIFIED** (1440×900, Chromium/SwiftShader, backend :8321 on a copy of `twincity.db` + import, static :4521; harness
-  `/workspace/work/uos-dsi-run/data_check.py`, results `/workspace/work/uos-dsi-run/results.json`): summary 83 datasets; overlay
-  lists 83 rows in 3 groups; Copernicus-derived DEM card shows licence as stated, CRS EPSG:4326, 100 % Pune coverage, 13 files
+  `/workspace/work/uos-dsi-run/data_check.py`, results `/workspace/work/uos-dsi-run/results.json`): summary 89 datasets (second run, after more manifests landed); overlay
+  lists 89 rows in 3 groups; Copernicus-derived DEM card shows licence as stated, CRS EPSG:4326, 100 % Pune coverage, 13 files
   sha256 match, geometry validity of the derived streams; OSM card shows data date 2026-11-01T21:21:36Z; demo seed chip SYNTHETIC;
   22 features rendered (10 not-wired chips, 3 fails-validation badges); no horizontal overflow. Screenshots
   `/workspace/work/urbanos/shots/p2/data-{catalogue-dem,catalogue-osm,features,features-scrolled}-1440x900.png`. Console: imagery 401

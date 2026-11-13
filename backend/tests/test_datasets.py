@@ -288,3 +288,9 @@ def test_patch_dataset_metadata_not_versions(client):
     from datasets.vocab import guess_theme
     assert guess_theme("pmc_stormwater_drains") == "drainage_network" and guess_theme("water_bodies_census_pune_2023") == "water_features"
     assert guess_theme("pmc_sewage_pipelines") == "utilities" and guess_theme("rainfall_chirps_boxavg") == "rainfall"
+
+
+def test_staleness_reads_human_ist_dates():
+    from datasets.quality import _parse_date
+    assert _parse_date("Mon 2026-11-02 2:51 AM IST (UTC+05:30)").date().isoformat() == "2026-11-02"
+    assert _parse_date("2008").year == 2008 and _parse_date(None) is None

@@ -123,7 +123,7 @@ Errors and sources with no machine-checkable endpoint are recorded as such. No s
 | `DATABASE_URL` | `sqlite:///./twincity.db` | all tables incl. `ds_*` |
 
 ## 7. Verification
-- `backend/tests/test_datasets.py` — 14 tests, **UNIT-TESTED** (full backend suite 128 passed, 3 skipped).
+- `backend/tests/test_datasets.py` — 15 tests, **UNIT-TESTED** (full backend suite 130 passed, 3 skipped).
 - **HEADLESS-RUN** 2026-11-13 ~21:35 IST: `python -m datasets.importer` on a copy of `twincity.db` against
-  `/workspace/work/urbanos-data` → 44 directories registered, re-run → 44 unchanged.
+  `/workspace/work/urbanos-data` → 48 directories registered; a later re-run → 47 unchanged + 3 new (other agents still writing).
 - Browser check: see DATA_QUALITY_AND_PROVENANCE §8.
