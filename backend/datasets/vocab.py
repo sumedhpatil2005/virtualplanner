@@ -58,6 +58,8 @@ THEMES = {
     "emission_factors": "Emission factors",
     "demo_seed": "Demonstration seed objects",
     "satellite_imagery": "Satellite imagery and derived indices",
+    "transit": "Public transport (stops, depots, routes)",
+    "amenities": "Public facilities and amenities",
     "other": "Other",
 }
 
@@ -84,14 +86,20 @@ def norm_theme(t: str | None) -> str:
 
 
 # keywords looked for in a dataset / source id when a manifest names no theme (first match wins)
-THEME_KEYWORDS = [("dem", "dem"), ("elevation", "dem"), ("nasadem", "dem"), ("worldcover", "land_cover"), ("landcover", "land_cover"),
-                  ("land_cover", "land_cover"), ("building", "buildings"), ("ward", "admin_boundaries"), ("boundar", "admin_boundaries"),
-                  ("gsw", "water_features"), ("surface_water", "water_features"), ("sentinel", "satellite_imagery"),
-                  ("landsat", "land_surface_temperature"), ("census", "population"), ("worldpop", "population"), ("flood", "flood_lines"),
-                  ("rain", "rainfall"), ("imd", "rainfall"), ("aqi", "air_quality"), ("caaqms", "air_quality"), ("cpcb", "air_quality"),
-                  ("groundwater", "groundwater"), ("cgwb", "groundwater"), ("geolog", "geology"), ("borehole", "boreholes"),
-                  ("tree", "tree_census"), ("osm", "osm_extract"), ("traffic", "traffic_counts"), ("count", "traffic_counts"),
-                  ("metro", "metro_alignment"), ("drain", "drainage_network"), ("seismic", "seismic_zone"), ("soil", "soil")]
+THEME_KEYWORDS = [("water_bod", "water_features"), ("nalla", "water_features"), ("river", "water_features"), ("gsw", "water_features"),
+                  ("surface_water", "water_features"), ("swd", "drainage_network"), ("stormwater", "drainage_network"),
+                  ("drain", "drainage_network"), ("sewage", "utilities"), ("sewer", "utilities"), ("pipeline", "utilities"),
+                  ("water_supply", "utilities"), ("chirps", "rainfall"), ("rainfall", "rainfall"), ("imd", "rainfall"),
+                  ("dem", "dem"), ("elevation", "dem"), ("nasadem", "dem"), ("worldcover", "land_cover"), ("landcover", "land_cover"),
+                  ("land_cover", "land_cover"), ("building", "buildings"), ("ward", "admin_boundaries"), ("prabhag", "admin_boundaries"),
+                  ("boundar", "admin_boundaries"), ("revenue", "admin_boundaries"), ("_zones", "admin_boundaries"),
+                  ("sentinel", "satellite_imagery"), ("landsat", "land_surface_temperature"), ("census", "population"),
+                  ("worldpop", "population"), ("flood", "flood_lines"), ("aqi", "air_quality"), ("caaqms", "air_quality"),
+                  ("cpcb", "air_quality"), ("groundwater", "groundwater"), ("cgwb", "groundwater"), ("geolog", "geology"),
+                  ("borehole", "boreholes"), ("tree", "tree_census"), ("road", "road_network"), ("osm", "osm_extract"),
+                  ("traffic", "traffic_counts"), ("metro", "metro_alignment"), ("bus", "transit"), ("pmpml", "transit"),
+                  ("seismic", "seismic_zone"), ("soil", "soil"), ("park", "amenities"), ("toilet", "amenities"), ("fire_station", "amenities"),
+                  ("librar", "amenities"), ("cremator", "amenities"), ("stp", "utilities")]
 
 
 def guess_theme(*ids: str | None) -> str:

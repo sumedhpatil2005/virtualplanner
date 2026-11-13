@@ -216,6 +216,38 @@ def register_version(dataset_id: str, body: VersionBody, db: Session = Depends(g
     return registry.version_dict(db, v, full=True)
 
 
+class DatasetPatch(BaseModel):
+    edited_by: str
+    title: Optional[str] = None
+    theme: Optional[str] = None
+    description: Optional[str] = None
+    limitations: Optional[str] = None
+    max_age_days: Optional[int] = None
+    update_check: Optional[dict] = None
+
+
+@router.patch("/{dataset_id}")
+def patch_dataset(dataset_id: str, body: DatasetPatch, db: Session = Depends(get_db)):
+    """Dataset-level metadata only (audited). Versions are immutable; nothing here touches them."""
+    import json as _json
+    d = db.get(DsDatasetEntity, dataset_id)
+    if d is None:
+        raise HTTPException(404, "dataset not found")
+    if not body.edited_by.strip():
+        raise HTTPException(400, "edited_by is required")
+    if body.theme is not None and norm_theme(body.theme) != body.theme:
+        raise HTTPException(400, f"unknown theme '{body.theme}'")
+    with acting_as(body.edited_by):
+        for k in ("title", "theme", "description", "limitations", "max_age_days"):
+            v = getattr(body, k)
+            if v is not None:
+                setattr(d, k, v)
+        if body.update_check is not None:
+            d.update_check_json = _json.dumps(body.update_check)
+        db.commit()
+    return registry.dataset_dict(db, d, full=True)
+
+
 class UpdateBody(BaseModel):
     checked_by: str = "anonymous"
 

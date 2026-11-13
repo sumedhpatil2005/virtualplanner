@@ -278,3 +278,13 @@ def test_manifest_shapes_written_by_acquisition_agents(client, root):
     assert der["theme"] == "dem" and dv["crs"].startswith("EPSG:32643") and dv["coverage_bbox"] == [73.7, 18.4, 74.05, 18.7]
     assert dv["processing_runs"][0]["finished_at"].startswith("Fri 2026-11-13 9:11") and dv["stats"]["validation"]["nan_stat"] is None
     assert {c["check"]: c["status"] for c in dv["quality_checks"]}["crs"] == "pass"
+
+
+def test_patch_dataset_metadata_not_versions(client):
+    client.post("/api/datasets", json={"id": "test_patch", "title": "SYNTHETIC", "theme": "other", "created_by": "T"})
+    r = client.patch("/api/datasets/test_patch", json={"edited_by": "T", "theme": "drainage_network"})
+    assert r.status_code == 200 and r.json()["theme"] == "drainage_network"
+    assert client.patch("/api/datasets/test_patch", json={"edited_by": "T", "theme": "nonsense"}).status_code == 400
+    from datasets.vocab import guess_theme
+    assert guess_theme("pmc_stormwater_drains") == "drainage_network" and guess_theme("water_bodies_census_pune_2023") == "water_features"
+    assert guess_theme("pmc_sewage_pipelines") == "utilities" and guess_theme("rainfall_chirps_boxavg") == "rainfall"

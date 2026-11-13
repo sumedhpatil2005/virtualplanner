@@ -222,6 +222,8 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
 
     t = _first(m, "theme", "category", "domain")
     theme = norm_theme(t) if t else guess_theme(dataset_id, source_id)
+    if not t:
+        warnings.append(f"theme not stated; guessed '{theme}' from the id (correct with PATCH /api/datasets/{{id}})")
     title = _first(m, "title", "name") or (m["dataset"] if isinstance(m.get("dataset"), str) else None) or dataset_id
     ensure_dataset(db, dataset_id, title=str(title), theme=theme,
                    description=str(_first(m, "description", default="")), source_id=source_id,
