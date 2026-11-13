@@ -96,6 +96,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
         {/* crossings with model objects */}
         {L.crossings.map((c, i) => {
           const x = scale(L.x, c.chainageM);
+          const showLabel = i === 0 || x - scale(L.x, L.crossings[i - 1].chainageM) > 70;
           const top = c.extent.topDepthM, bot = c.extent.bottomDepthM;
           const yt = top === null ? y0 : Math.max(L.box.top, scale(L.y, top));
           return (
@@ -105,7 +106,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
                 ? <rect x={x - 3} y={yt} width={6} height={Math.max(2, scale(L.y, bot) - yt)} fill={C.cross} fillOpacity={0.8} />
                 : <line x1={x} x2={x} y1={yt} y2={bottomY} stroke={C.cross} strokeWidth={2} strokeDasharray="1 4" />}
               <circle cx={x} cy={yt} r={3} fill={C.cross} />
-              <text x={x + 4} y={L.box.top + 8 + (i % 3) * 10} fontSize={9} fill={C.text}>{(TYPE_LABEL[c.objectType] ?? c.objectType)}{bot === null ? ' · bottom ?' : ''}</text>
+              {showLabel && <text x={x + 3} y={bottomY - 4} fontSize={9} fill={C.text}>{(TYPE_LABEL[c.objectType] ?? c.objectType)}{bot === null ? ' · depth ?' : ''}</text>}
             </g>
           );
         })}
@@ -184,7 +185,7 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
                     <rect x={x - halfW} y={yt - 2} width={halfW * 2} height={4} fill={C.cross} />
                     <line x1={x} x2={x} y1={yt} y2={H - L.box.bottom} stroke={C.cross} strokeWidth={2} strokeDasharray="1 4" />
                   </>}
-              <text x={x} y={L.box.top + 8 + (i % 3) * 10} fontSize={9} textAnchor="middle" fill={C.text}>{TYPE_LABEL[it.objectType] ?? it.objectType}{bot === null ? ' · depth ?' : ''}</text>
+              <text x={x} y={H - L.box.bottom - 4 - (i % 2) * 10} fontSize={9} textAnchor="middle" fill={C.text}>{TYPE_LABEL[it.objectType] ?? it.objectType}{bot === null ? ' · depth ?' : ''}</text>
             </g>
           );
         })}

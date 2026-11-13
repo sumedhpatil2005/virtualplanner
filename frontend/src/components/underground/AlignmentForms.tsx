@@ -7,6 +7,7 @@ import { ALIGNMENT_KINDS, cleanDepth, withAllDepths, withKind, withSection, with
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { CERTAINTY_OPTIONS, commitAlignment, field, input, inputStyle, lbl, labelStyle, note } from './common';
 
+const cell: React.CSSProperties = { padding: '4px 3px' };
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 
 /** Section shape + dimension inputs; a blank dimension is UNKNOWN (null), never 0. */
@@ -46,7 +47,7 @@ export const SectionFields: React.FC<{ section: UndergroundSection; onChange: (s
 );
 
 const CertaintySelect: React.FC<{ value: Certainty; onChange: (c: Certainty) => void; id: string; label: string; testId?: string; short?: boolean }> = ({ value, onChange, id, label, testId, short }) => (
-  <select id={id} aria-label={label} data-testid={testId} className={input} style={short ? { ...inputStyle, width: 92 } : inputStyle} value={value} onChange={e => onChange(e.target.value as Certainty)}>
+  <select id={id} aria-label={label} data-testid={testId} className={input} style={short ? { ...inputStyle, width: 100, fontSize: 12 } : inputStyle} value={value} onChange={e => onChange(e.target.value as Certainty)}>
     {CERTAINTY_OPTIONS.filter(o => !short || o.value !== 'unknown').map(o => <option key={o.value} value={o.value}>{short ? o.label.split(' ')[0] : o.label}</option>)}
   </select>
 );
@@ -119,26 +120,26 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
           <button type="button" className="uos-btn uos-btn-sm" data-testid="ug-apply-all-depth" disabled={allDepth.trim() === '' || cleanDepth(Number(allDepth)) === null}
             onClick={() => { commitAlignment(a, withAllDepths(a, Number(allDepth), 'hypothetical'), 'Set all depths'); setAllDepth(''); }}>Apply</button>
         </div>
-        <table className="uos-table" data-testid="ug-vertex-table">
-          <thead><tr><th>#</th><th className="num">Chainage</th><th>Crown depth (m)</th><th>Certainty</th><th className="num">Grade</th></tr></thead>
+        <table className="uos-table ug-vertex-table" data-testid="ug-vertex-table">
+          <thead><tr><th style={cell}>#</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Crown (m)</th><th style={cell}>Certainty</th></tr></thead>
           <tbody>
             {p.vertices.map((v, i) => (
               <tr key={i}>
-                <td>{i + 1}</td>
-                <td className="num">{Math.round(v.chainageM)} m</td>
-                <td>
-                  <input aria-label={`Crown depth at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="Unknown"
-                    className={input} style={{ ...inputStyle, width: 76 }} value={v.crownDepthM ?? ''}
+                <td style={cell}>{i + 1}</td>
+                <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next vertex; + = getting deeper">
+                  {Math.round(v.chainageM)} m
+                  {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
+                </td>
+                <td style={cell}>
+                  <input aria-label={`Crown depth at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="Unknown" title="Blank = Unknown"
+                    className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
                     onChange={e => commitAlignment(a, withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
                 </td>
-                <td>
-                  {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" compact note="No depth entered" /> : (
+                <td style={cell}>
+                  {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
                     <CertaintySelect id={`ug-cert-${i}`} label={`Depth certainty at vertex ${i + 1}`} testId={`ug-cert-${i}`} short value={v.certainty}
                       onChange={c => commitAlignment(a, withVertexDepth(a, i, { certainty: c }), `Depth certainty at vertex ${i + 1}`)} />
                   )}
-                </td>
-                <td className="num" title="Δcrown / Δchainage to the next vertex; + = getting deeper">
-                  {i < p.gradientsPct.length ? (p.gradientsPct[i] === null ? '—' : `${(p.gradientsPct[i] as number).toFixed(2)} %`) : ''}
                 </td>
               </tr>
             ))}

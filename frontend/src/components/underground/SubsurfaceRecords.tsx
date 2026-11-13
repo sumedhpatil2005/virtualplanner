@@ -66,7 +66,7 @@ export const SubsurfaceRecords: React.FC = () => {
               <div className="text-body text-text-1">{d.name} <span className="text-text-3">· {d.record_type} · {d.format.toUpperCase()} · {d.record_count} record{d.record_count === 1 ? '' : 's'}</span></div>
               <div>Publisher {d.publisher || 'Unknown'} · licence {d.licence || 'UNKNOWN'} · data date {d.data_date ?? 'Unknown'}</div>
               <div>Coverage: {d.coverage_label}</div>
-              <div className="truncate" title={d.file_sha256 ?? ''}>Imported by {d.imported_by} · sha256 {d.file_sha256 ? d.file_sha256.slice(0, 12) + '…' : 'n/a'}</div>
+              <div className="truncate" title={d.file_sha256 ?? ''}>Imported by {d.imported_by} · sha256 {d.file_sha256 ? d.file_sha256.replace(/^sha256:/, '').slice(0, 12) + '…' : 'n/a'}</div>
               {d.warnings.length > 0 && <div className="text-warn">{d.warnings.length} warning{d.warnings.length > 1 ? 's' : ''}: {d.warnings.slice(0, 2).join('; ')}</div>}
             </li>
           ))}
