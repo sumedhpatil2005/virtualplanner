@@ -17,14 +17,15 @@ import numpy as np
 from ._common import (DERIVED_DIR, ENGINEERING_EPSG, PUNE_BBOX, download, file_entry, now_ist,
                       one_degree_tiles, raw_dir, today_ist, write_manifest, write_processing)
 from . import _hydro as H
-from ._raster import diff_stats, hillshade, priority_flood_epsilon, raster_check, slope_degrees, write_cog
+from ._raster import diff_stats, hillshade, priority_flood_epsilon, raster_check, slope_degrees, snap_bounds, write_cog
 from .licences import licence_block
 
 COP_URL = ("https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N{lat:02d}_00_E{lon:03d}_00_DEM/"
            "Copernicus_DSM_COG_10_N{lat:02d}_00_E{lon:03d}_00_DEM.tif")
 NASADEM_URL = "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n{lat:02d}e{lon:03d}.tif"
 NASADEM_TOKEN = "https://planetarycomputer.microsoft.com/api/sas/v1/token/nasademeuwest/nasadem-cog"
-VERSION = "v2"              # v2: own numpy D8 hydrology (pysheds removed); v1 kept on disk (pysheds 0.5)
+VERSION = "v3"              # v3: mosaic on source-pixel-snapped bounds (v1/v2 were shifted ~0.5 px = ~15 m N/E by
+#                             rasterio.merge on unsnapped bounds); v2: own numpy D8 hydrology; v1: pysheds 0.5. All kept on disk.
 PYSHEDS_VERSION = "v1"
 STREAM_THRESHOLD_KM2 = 1.0      # contributing area that starts a mapped stream
 OUTLET_THRESHOLD_KM2 = 10.0     # edge outlets whose catchments are delineated
@@ -181,7 +182,7 @@ def process() -> Path:
     out = DERIVED_DIR / "elevation_copdem30" / VERSION
     out.mkdir(parents=True, exist_ok=True)
     srcs = [rasterio.open(t) for t in tiles]
-    mosaic, mtr = merge(srcs, bounds=PUNE_BBOX, nodata=-32767.0)
+    mosaic, mtr = merge(srcs, bounds=snap_bounds(PUNE_BBOX, srcs[0].transform), nodata=-32767.0)
     prof4326 = srcs[0].profile.copy()
     for s in srcs:
         s.close()
@@ -265,7 +266,7 @@ def process() -> Path:
         nraw = _latest("nasadem_pc")
         nd_tiles = sorted(nraw.glob("NASADEM_*.tif"))
         nsrcs = [rasterio.open(t) for t in nd_tiles]
-        nm, ntr = merge(nsrcs, bounds=PUNE_BBOX)
+        nm, ntr = merge(nsrcs, bounds=snap_bounds(PUNE_BBOX, nsrcs[0].transform))
         nnod = nsrcs[0].nodata
         for s in nsrcs:
             s.close()
@@ -290,7 +291,8 @@ def process() -> Path:
                   "depression_fill_max_m": float(np.nanmax(filled - demf))}
     write_processing(out, pipeline="datasets.pipelines.elevation", inputs=tiles, parameters={
         "bbox": PUNE_BBOX, "utm_res_m": UTM_RES, "resampling": "bilinear", "hydro_conditioning": "Priority-Flood+epsilon (Barnes 2014), eps=%g m" % EPSILON_M, "hydro_lib": "own numpy D8 (datasets/pipelines/_hydro.py; replaces GPL pysheds used in v1)",
-        "supersedes_for_hydrology": PYSHEDS_VERSION,
+        "supersedes_for_hydrology": PYSHEDS_VERSION, "supersedes": "v2 (half-pixel mosaic shift fixed: merge on snapped bounds)",
+        "mosaic_bounds_snapped": [round(v, 9) for v in (mtr.c, mtr.f + dem4326.shape[0] * mtr.e, mtr.c + dem4326.shape[1] * mtr.a, mtr.f)],
         "stream_threshold_km2": STREAM_THRESHOLD_KM2, "outlet_threshold_km2": OUTLET_THRESHOLD_KM2},
         outputs=outputs, validation=validation, suitability="screening",
         notes="DSM (buildings/trees included): flow paths in dense urban fabric follow rooftops/tree canopy, not drains. "

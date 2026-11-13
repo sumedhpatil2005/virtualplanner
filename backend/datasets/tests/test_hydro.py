@@ -72,3 +72,31 @@ def test_pysheds_not_required():
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 names = [a.name for a in node.names] + [getattr(node, "module", "") or ""]
                 assert not any(n.startswith("pysheds") for n in names), f
+
+
+def test_snap_bounds_keeps_pixel_is_point_tiles_unshifted():
+    """Copernicus/SRTM tiles have edges at +/-0.5 arc-second; merging on unsnapped bounds shifted data ~15 m (DEM v1/v2)."""
+    import numpy as np
+    import rasterio
+    from rasterio.io import MemoryFile
+    from rasterio.merge import merge
+    from rasterio.transform import Affine
+
+    from datasets.pipelines._raster import snap_bounds
+    res = 1 / 3600
+    tr = Affine(res, 0, 73 - res / 2, 0, -res, 19 + res / 2)
+    arr = np.arange(400 * 400, dtype="float32").reshape(400, 400)
+    with MemoryFile() as mf:
+        with mf.open(driver="GTiff", width=400, height=400, count=1, dtype="float32", crs="EPSG:4326", transform=tr) as ds:
+            ds.write(arr, 1)
+        with mf.open() as src:
+            b = (73.05, 18.92, 73.08, 18.95)
+            sb = snap_bounds(b, src.transform)
+            assert sb[0] <= b[0] and sb[1] <= b[1] and sb[2] >= b[2] and sb[3] >= b[3]
+            m, mtr = merge([src], bounds=sb)
+            # the mosaic's first pixel centre is exactly a source pixel centre and carries that pixel's value
+            lon, lat = mtr * (0.5, 0.5)
+            r, c = src.index(lon, lat)
+            assert abs((tr * (c + 0.5, r + 0.5))[0] - lon) < 1e-9 and abs((tr * (c + 0.5, r + 0.5))[1] - lat) < 1e-9
+            assert m[0, 0, 0] == arr[r, c]
+            _ = rasterio

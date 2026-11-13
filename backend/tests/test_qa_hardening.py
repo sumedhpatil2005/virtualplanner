@@ -214,3 +214,23 @@ def test_registered_file_paths_confined_and_update_url_ssrf(client):
     for url in ("file:///etc/passwd", "http://127.0.0.1:8000/x", "http://169.254.169.254/latest", "ftp://example.org/x"):
         r = client.patch(f"/api/datasets/{did}", json={"edited_by": "qa", "update_check": {"method": "http_head", "url": url}})
         assert r.status_code == 400, (url, r.text)
+
+
+def test_boreholes_one_bad_record_does_not_hide_the_others():
+    import json as _json
+    from types import SimpleNamespace
+
+    from terrain import evidence as EV
+
+    def rec(i, geom):
+        return SimpleNamespace(id=f"b{i}", external_id=f"BH{i}", dataset_id="d", geometry_geojson=geom, final_depth_m=10.0,
+                               ground_level_m=None)
+
+    class DB:
+        def scalars(self, _stmt):
+            return [rec(1, "{not json"), rec(2, None),
+                    rec(3, _json.dumps({"type": "Point", "coordinates": [73.8571, 18.5205]}))]
+    al = EV.Alignment([[73.8560, 18.5200], [73.8580, 18.5210]])
+    out = EV.boreholes(al, 1.0, db=DB())
+    assert out["status"] == "ok" and [r["external_id"] for r in out["records"]] == ["BH3"]
+    assert out["n_skipped"] == 2

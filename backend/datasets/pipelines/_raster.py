@@ -6,6 +6,21 @@ from pathlib import Path
 import numpy as np
 
 
+def snap_bounds(bounds, transform) -> tuple[float, float, float, float]:
+    """Expand (west, south, east, north) outward to whole source pixels of a north-up grid. rasterio.merge(bounds=...)
+    builds its output grid with edges exactly at `bounds`; when the source edges sit elsewhere (Copernicus/SRTM tiles are
+    pixel-is-point: edges at +/-0.5 arc-second) it copies pixels into cells offset by up to half a pixel - a silent
+    ~15 m georeferencing shift. Merging on snapped bounds keeps every source pixel at its true location."""
+    import math
+    a, c, e, f = transform.a, transform.c, transform.e, transform.f
+    eps = 1e-9
+    col0 = math.floor((bounds[0] - c) / a + eps)
+    col1 = math.ceil((bounds[2] - c) / a - eps)
+    row0 = math.floor((bounds[3] - f) / e + eps)   # north edge (e < 0)
+    row1 = math.ceil((bounds[1] - f) / e - eps)
+    return (c + col0 * a, f + row1 * e, c + col1 * a, f + row0 * e)
+
+
 def slope_degrees(dem: np.ndarray, xres: float, yres: float) -> np.ndarray:
     """Horn-free simple central-difference slope in degrees (edges via np.gradient)."""
     dzdy, dzdx = np.gradient(dem.astype("float64"), abs(yres), abs(xres))

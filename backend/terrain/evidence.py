@@ -178,6 +178,8 @@ def sewers(al: Alignment, near_m: float, dem=None) -> dict:
     datum_diffs = []
     near = []
     for row in df.itertuples(index=False):
+        if row.geometry is None or row.geometry.is_empty:
+            continue
         g = al.to_utm(row.geometry)
         if not g.intersects(zone):
             continue
@@ -189,7 +191,7 @@ def sewers(al: Alignment, near_m: float, dem=None) -> dict:
                 "start_top_level_m": ts, "end_top_level_m": te, "sewer_district": row.sd_name,
                 "quality_level": "QL-D", "certainty": "design/unverified"}
         if dem is not None and ts is not None:
-            sx, sy = g.coords[0]
+            sx, sy = (g.geoms[0] if hasattr(g, "geoms") else g).coords[0][:2]  # start manhole (Multi* safe)
             z, stt = dem.sample_xy(sx, sy)
             if z is not None:
                 datum_diffs.append(z - ts)
@@ -236,26 +238,30 @@ def boreholes(al: Alignment, radius_km: float, db=None) -> dict:
     from shapely.geometry import shape
 
     recs = []
+    skipped: list[str] = []
     if db is not None:
-        try:
-            from sqlalchemy import select
+        from sqlalchemy import select
 
-            from coordination.models import SubsurfaceRecordEntity as R
-            for r in db.scalars(select(R).where(R.record_type == "borehole")):
-                if not r.geometry_geojson:
-                    continue
+        from coordination.models import SubsurfaceRecordEntity as R
+        for r in db.scalars(select(R).where(R.record_type == "borehole")):
+            if not r.geometry_geojson:
+                skipped.append(f"{r.external_id or r.id}: no location")
+                continue
+            try:  # one malformed record must not hide the others (previously any error -> "No borehole records")
                 g = shape(json.loads(r.geometry_geojson))
                 gu = al.to_utm(g)
                 dist = gu.distance(al.line)
-                if dist <= radius_km * 1000:
-                    recs.append({"id": r.id, "external_id": r.external_id, "dataset_id": r.dataset_id, "distance_m": round(dist, 1),
-                                 "final_depth_m": r.final_depth_m, "ground_level_m": r.ground_level_m,
-                                 "nearest_chainage_m_utm": round(al.line.project(gu.centroid), 1)})
-        except Exception:  # pragma: no cover
-            pass
+            except Exception as e:  # noqa: BLE001
+                skipped.append(f"{r.external_id or r.id}: unreadable geometry ({type(e).__name__})")
+                continue
+            if dist <= radius_km * 1000:
+                recs.append({"id": r.id, "external_id": r.external_id, "dataset_id": r.dataset_id, "distance_m": round(dist, 1),
+                             "final_depth_m": r.final_depth_m, "ground_level_m": r.ground_level_m,
+                             "nearest_chainage_m_utm": round(al.line.project(gu.centroid), 1)})
     recs.sort(key=lambda r: r["distance_m"])
     out = {"records": recs, "radius_km": radius_km,
-           "source": "Borehole records imported in Underground → Subsurface records (AGS4 / CSV / JSON). No open Pune borehole dataset exists in the registry."}
+           "source": "Borehole records imported in Underground → Subsurface records (AGS4 / CSV / JSON). No open Pune borehole dataset exists in the registry.",
+           "skipped": skipped[:20], "n_skipped": len(skipped)}
     if not recs:
         out["status"] = "none"
         out["message"] = "No borehole records — required: site investigation"
