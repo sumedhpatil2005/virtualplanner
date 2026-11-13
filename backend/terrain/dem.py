@@ -1,7 +1,7 @@
 """Copernicus DEM GLO-30 sampling (point / polyline) from the derived UTM COG.
 
 Data: $URBANOS_DATA_DIR/derived/elevation_copdem30/<version>/dem_copglo30_epsg32643_30m.tif (EPSG:32643, 30 m, float32,
-nodata NaN), produced by datasets.pipelines.elevation. Version pinned by env URBANOS_DEM_VERSION (default v2; falls back to
+nodata NaN), produced by datasets.pipelines.elevation. Version pinned by env URBANOS_DEM_VERSION (default v3 = v2 with the half-pixel mosaic shift fixed; falls back to
 the latest version on disk). Bilinear interpolation of the four surrounding cell centres; a sample whose four cells are
 not all valid is reported as nodata (never filled), a sample outside the raster as outside_coverage.
 
@@ -21,7 +21,7 @@ from datasets import paths
 
 DATASET_ID = "elevation_copdem30"
 DEM_FILE = "dem_copglo30_epsg32643_30m.tif"
-DEFAULT_VERSION = "v2"
+DEFAULT_VERSION = "v3"
 RAW_SOURCE = "copernicus_dem_glo30"
 DSM_WARNING = "DSM: includes buildings/trees — screening only"
 VERTICAL_DATUM = "EGM2008 geoid (EPSG:3855), metres — as the product states"

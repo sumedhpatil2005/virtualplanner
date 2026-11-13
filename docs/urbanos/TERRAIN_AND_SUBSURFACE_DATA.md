@@ -16,8 +16,20 @@ Every value here is **screening** grade. Missing = UNKNOWN, never 0, never inter
 | 4 | `/workspace/work/urbanos-data` | if the directory exists (raw data is never committed, so this sandbox store is where real data lives) |
 | 5 | `backend/data/urbanos` | repo fallback (empty in a fresh clone) |
 
-`URBANOS_RAW_DIR` / `URBANOS_DERIVED_DIR` override the sub-roots. `URBANOS_DEM_VERSION` (default `v2`) pins the DEM the API
+`URBANOS_RAW_DIR` / `URBANOS_DERIVED_DIR` override the sub-roots. `URBANOS_DEM_VERSION` (default `v3`) pins the DEM the API
 samples. Tests: `backend/tests/test_data_paths.py` (UNIT-TESTED).
+
+## 2a. Elevation v3: half-pixel georeferencing shift fixed (QA, 2026-11-13 23:4x IST)
+- Defect: v1 and v2 built the EPSG:4326 mosaic with `rasterio.merge(bounds=PUNE_BBOX)`. Copernicus (and NASADEM) tiles are
+  pixel-is-point (pixel edges at ±0.5″), so merge copied every pixel into a cell offset by half a pixel: v1/v2 data sit
+  ~14.6 m east and ~15.4 m north of their true position. Found by sampling the API at 800 random points against bilinear
+  interpolation of the raw tile: RMSE 1.81 m at zero offset, 1.17–1.51 m when the query was shifted +15 m E/N.
+- Fix: `_raster.snap_bounds()` expands the bounds to whole source pixels before merging (`datasets/tests/test_hydro.py::
+  test_snap_bounds_keeps_pixel_is_point_tiles_unshifted`, UNIT-TESTED). v3 = v2 code + this fix (HEADLESS-RUN; processing.json
+  pins the commit; mosaic bounds recorded as `parameters.mosaic_bounds_snapped`).
+- Result: API vs raw-tile bilinear RMSE **0.42 m**, mean +0.005 m, best at zero offset; COP − NASADEM RMSE 3.93 → 2.77 m
+  (LE90 5.93 → 4.38 m). Hydrology re-derived on the corrected grid: 702 stream segments (v2 705), 5 edge-outlet catchments
+  ≥ 10 km² (v2 6). The API, Explore streams/catchments and the registry feature notes now use v3; v1/v2 stay on disk unchanged.
 
 ## 2. Elevation pipeline v2: pysheds (GPL-3.0) removed
 - `python -m datasets.pipelines.elevation process` → `derived/elevation_copdem30/v2/` (HEADLESS-RUN 2026-11-13 22:1x IST, git
