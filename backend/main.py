@@ -19,6 +19,7 @@ from api.coordination_router import router as coordination_router  # coordinatio
 from coordination.seed import seed_coordination
 from api.datasets_router import router as datasets_router  # ds_* dataset registry tables (additive)
 from datasets.seed import seed_registry
+from api.terrain_router import router as terrain_router  # DEM sampling + subsurface evidence (read-only, no tables)
 
 # Initialize database tables and the mandatory base scenario
 Base.metadata.create_all(bind=engine)
@@ -69,6 +70,7 @@ app.include_router(feasibility_router, prefix="/api")
 app.include_router(planning_router, prefix="/api")
 app.include_router(coordination_router, prefix="/api")
 app.include_router(datasets_router, prefix="/api")
+app.include_router(terrain_router, prefix="/api")
 
 @app.get("/")
 def read_root():
