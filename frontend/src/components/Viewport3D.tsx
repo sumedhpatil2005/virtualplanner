@@ -91,8 +91,8 @@ export const Viewport3D: React.FC = () => {
 
       {imageryError && (
         <div role="status" data-testid="base-imagery-notice"
-          className="absolute bottom-2 z-10 rounded px-2 py-1 text-[11px] leading-snug pointer-events-none"
-          style={{ left: 84, maxWidth: 'min(340px, calc(100% - 150px))', background: 'rgba(15,20,28,0.85)', color: 'var(--text-2, #a9b3c1)', border: '1px solid var(--border, #2a3340)' }}>
+          className="uos-imagery-notice rounded px-2 py-1 text-[11px] leading-snug pointer-events-none"
+          style={{ background: 'rgba(15,20,28,0.85)', color: 'var(--text-2, #a9b3c1)', border: '1px solid var(--border, #2a3340)' }}>
           {imageryError}
         </div>
       )}

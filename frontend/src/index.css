@@ -150,6 +150,11 @@ html, body, #root {
 .uos-compass { position: absolute; left: var(--sp-3); bottom: var(--sp-3); z-index: 20; }
 .uos-shell:has(.uos-drawer) .uos-compass { bottom: calc(40px + var(--sp-3)); }
 .uos-shell:has(.uos-drawer.is-open) .uos-compass { bottom: calc(var(--drawer-h) + var(--sp-3)); }
+/* The "No base imagery" notice sits right of the compass and, like it, above the bottom drawer (it is persistent, so
+   it must never end up hidden behind the drawer or an overlay panel) */
+.uos-imagery-notice { position: absolute; z-index: 10; left: 84px; bottom: 8px; max-width: min(340px, calc(100% - 150px)); }
+.uos-shell:has(.uos-drawer) .uos-imagery-notice { bottom: calc(40px + 8px); }
+.uos-shell:has(.uos-drawer.is-open) .uos-imagery-notice { bottom: calc(var(--drawer-h) + 8px); }
 .uos-reopen {
   position: absolute; left: var(--sp-3); top: var(--sp-3); z-index: 20; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
   border-radius: var(--r-lg); background: var(--map-scrim); border: 1px solid var(--border); color: var(--text-1); font-size: var(--fs-label); font-weight: 500;
@@ -333,6 +338,13 @@ button.uos-row:hover { background: var(--surface-2); }
   .uos-shell[data-inspector=open][data-context=open] .cesium-viewer-toolbar { left: calc(var(--ctx-tablet-w) + var(--sp-3)) !important; }
   .uos-shell[data-inspector=open][data-context=open] .cesium-viewer-fullscreenContainer { left: calc(var(--ctx-tablet-w) + 88px) !important; }
   .uos-shell[data-context=open] .uos-compass { left: calc(var(--ctx-tablet-w) + var(--sp-3)); }
+  /* Imagery notice: right of the compass past the context overlay; with the inspector open (Cesium's fullscreen button
+     then sits right of the compass) it moves above the compass, inside the visible strip of map */
+  .uos-shell[data-context=open] .uos-imagery-notice { left: calc(var(--ctx-tablet-w) + 84px); max-width: min(340px, calc(100% - var(--ctx-tablet-w) - 150px)); }
+  .uos-shell[data-inspector=open] .uos-imagery-notice { left: var(--sp-3); bottom: calc(var(--sp-3) + 76px); max-width: min(340px, calc(100% - 2 * var(--sp-3))); }
+  .uos-shell[data-inspector=open]:has(.uos-drawer) .uos-imagery-notice { bottom: calc(40px + var(--sp-3) + 76px); }
+  .uos-shell[data-inspector=open]:has(.uos-drawer.is-open) .uos-imagery-notice { bottom: calc(var(--drawer-h) + var(--sp-3) + 76px); }
+  .uos-shell[data-inspector=open][data-context=open] .uos-imagery-notice { left: calc(var(--ctx-tablet-w) + var(--sp-3)); max-width: 256px; }
   /* Both overlays: narrower context, inspector capped so ≥ 280 px of map stays visible between them */
   .uos-shell[data-dual] { --context-w: 296px; }
   .uos-shell[data-dual][data-context=open] .uos-inspector { max-width: calc(100vw - 72px - var(--ctx-tablet-w) - 280px); }
