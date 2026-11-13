@@ -51,7 +51,7 @@ def acquire() -> list[Path]:
     d = raw_dir("esa_worldcover_2021_v200")
     ents = [download(WC_URL.format(tile=t), d, timeout=600, note="whole original 3x3 deg tile") for t in tiles]
     write_manifest(d, {"source_id": "esa_worldcover_2021_v200", "licence": licence_block("esa_worldcover_2021_v200"),
-                       "classification": "derived (classifier on Sentinel-1/2 2021)",
+                       "classification": "inferred (ML classifier output on Sentinel-1/2 2021)",
                        "accuracy_note": "publisher validation reports global overall accuracy (see PUM v2.0); "
                                         "no Pune-specific accuracy available"}, ents)
     w = raw_dir("datameet_municipal_wards")
@@ -134,8 +134,9 @@ def process() -> Path:
     write_processing(out, pipeline="datasets.pipelines.landcover", inputs=tiles + sorted(wraw.glob("*.geojson")),
                      parameters={"bbox": PUNE_BBOX, "utm_resampling": "nearest 10 m",
                                  "area_method": "pixel count x 100 m2 in EPSG:32643"},
-                     outputs=[f4326, f32643, out / "class_areas.json"], validation=validation, suitability="screening",
-                     notes="Classes are model output (derived). PMC/PCMC zones are INFERRED from community-traced ward maps, "
+                     outputs=[f4326, f32643, out / "class_areas.json"], validation=validation, classification="inferred",
+                     suitability="screening",
+                     notes="Classes are ML classifier output (inferred; a nearest-neighbour clip/reprojection keeps them inferred). PMC/PCMC zones are INFERRED from community-traced ward maps, "
                            "not official municipal limits; parts outside the study bbox are not counted. "
                            "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium.")
     return out

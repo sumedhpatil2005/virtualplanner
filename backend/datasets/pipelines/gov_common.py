@@ -73,6 +73,16 @@ def git_commit() -> str:
         return "UNKNOWN"
 
 
+def git_dirty() -> bool | None:
+    """True if backend/datasets has uncommitted changes (then git_commit cannot pin the exact pipeline code); None if
+    git is unavailable. Same rule and key (`git_dirty_datasets`) as the geo pipelines' writer (_common.py)."""
+    try:
+        out = subprocess.check_output(["git", "status", "--porcelain", "--", "."], cwd=Path(__file__).parents[1], text=True)
+        return bool(out.strip())
+    except Exception:  # pragma: no cover
+        return None
+
+
 def raw_dir(source_id: str, date: str | None = None) -> Path:
     d = raw_root() / source_id / (date or today_ist())
     d.mkdir(parents=True, exist_ok=True)
@@ -156,6 +166,7 @@ def write_processing(directory: Path, *, pipeline: str, inputs: list[dict], para
     doc = {
         "pipeline": pipeline,
         "git_commit": git_commit(),
+        "git_dirty_datasets": git_dirty(),
         "run_at": now_ist(),
         "inputs": inputs,
         "parameters": parameters,

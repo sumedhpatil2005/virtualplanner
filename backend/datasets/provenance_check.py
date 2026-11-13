@@ -6,7 +6,9 @@ For every derived/<dataset>/<version>/processing.json:
   * each input's recorded sha256 must equal the sha256 the raw manifest (raw/<source>/<date>/manifest.json) or the
     producing derived processing.json recorded for that file -> match | MISMATCH | unregistered (no manifest lists it)
   * --hash: the file on disk is re-hashed (inputs and outputs) -> disk_mismatch / missing
-  * git_commit must be a commit in this repository (git cat-file) and git_dirty_datasets must not be true
+  * git_commit must be a commit in this repository (git cat-file) and git_dirty_datasets must not be true. A
+    processing.json without the key (gov pipelines before 2026-11-13: the writer did not record it) reports
+    git_dirty_datasets "UNKNOWN (not recorded)" - not a problem, and never rewritten into the old file.
 Read-only: never modifies raw or derived files. Exit status 1 when any MISMATCH / disk_mismatch / bad commit is found.
 """
 from __future__ import annotations
@@ -74,7 +76,8 @@ def check(root: Path | None = None, hash_files: bool = False, max_hash_bytes: in
     for pj in sorted((root / "derived").glob("*/*/processing.json")):
         doc = json.loads(pj.read_text())
         did = f"{pj.parent.parent.name}/{pj.parent.name}"
-        commit, dirty = doc.get("git_commit"), doc.get("git_dirty_datasets")
+        commit = doc.get("git_commit")
+        dirty = doc["git_dirty_datasets"] if "git_dirty_datasets" in doc else "UNKNOWN (not recorded)"
         r = {"derived": did, "pipeline": doc.get("pipeline"), "git_commit": commit, "commit_in_repo": _commit_ok(commit),
              "git_dirty_datasets": dirty, "inputs": [], "outputs": []}
         if not r["commit_in_repo"]:

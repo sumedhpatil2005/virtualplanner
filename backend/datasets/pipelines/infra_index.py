@@ -34,7 +34,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from .gov_common import derived_root, git_commit, now_ist, sha256_file
+from .gov_common import derived_root, git_commit, git_dirty, now_ist, sha256_file
 
 OPENCITY_LICENCE_NOTE = ("Licence statements conflict (docs/urbanos/catalogue/india.md): CKAN licence field as quoted; OpenCity FAQ "
                          "'All our data is under ODbL… credit OpenCity'; OpenCity site terms 'non-commercial and / or personal use only'. "
@@ -366,7 +366,7 @@ def run(version: str = "v1", only: list[str] | None = None, skip_buildings: bool
     in_by_path = {i["path"]: i for i in (prev.get("inputs") or [])}
     in_by_path.update({i["path"]: i for i in inputs})
     doc = {
-        "pipeline": "datasets.pipelines.infra_index", "git_commit": git_commit(), "run_at": now_ist(),
+        "pipeline": "datasets.pipelines.infra_index", "git_commit": git_commit(), "git_dirty_datasets": git_dirty(), "run_at": now_ist(),
         "dataset_id": "infra_index", "title": "Municipal infrastructure + merged buildings spatial index (SQLite R*Tree)",
         "theme": "utilities", "data_class": "derived", "suitability": "screening", "crs": "EPSG:4326",
         "coverage_bbox": [73.70, 18.40, 74.05, 18.70],
