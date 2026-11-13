@@ -131,9 +131,17 @@ async function load(id: string): Promise<void> {
   } catch (e) {
     if (seq.get(id) === n && sources.has(id)) {
       clearDrawn(id);
+      removeSource(id);   // an errored layer is off: camera moves do not retry it behind the user's back
       st.set(id, { status: 'error', error: `Could not load features: ${e instanceof Error ? e.message : String(e)}. Nothing drawn for this layer.` });
     }
   }
+}
+
+function removeSource(id: string): void {
+  const ds = sources.get(id);
+  const v = viewer();
+  if (ds && v) v.dataSources.remove(ds, true);
+  sources.delete(id);
 }
 
 function clearDrawn(id: string): void {
@@ -149,9 +157,7 @@ export async function setMuniLayerVisible(layer: InfraLayer, visible: boolean): 
   metaById.set(layer.id, layer);
   if (!visible) {
     seq.set(layer.id, (seq.get(layer.id) ?? 0) + 1);   // a response still in flight is discarded
-    const ds = sources.get(layer.id);
-    if (ds && v) v.dataSources.remove(ds, true);
-    sources.delete(layer.id);
+    removeSource(layer.id);
     for (const k of [...props.keys()]) if (k.startsWith(`${layer.id}:`)) props.delete(k);
     if (st.inspected?.layer.id === layer.id) st.inspect(null);
     st.set(layer.id, OFF);
