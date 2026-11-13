@@ -26,7 +26,9 @@ from sqlalchemy.orm import Session
 from .models import DsDatasetVersionEntity, DsFileEntity, DsProcessingRunEntity
 from .quality import run_checks
 from .registry import add_version, ensure_dataset, ensure_source, find_version_by_fingerprint, fingerprint, new_id
-from .vocab import ACCESS_METHODS, data_root, norm_theme
+import re
+
+from .vocab import ACCESS_METHODS, DATA_CLASSES, data_root, guess_theme, norm_theme
 
 MANIFEST = "manifest.json"
 PROCESSING = "processing.json"
@@ -44,7 +46,9 @@ def _licence(m: dict) -> tuple[str, str]:
     url = _first(m, "licence_url", "license_url", default="")
     if isinstance(lic, dict):
         url = url or _first(lic, "url", "href", default="")
-        lic = _first(lic, "text", "name", "as_stated", "title", "id")
+        name = _first(lic, "text", "name", "licence_name", "license_name", "as_stated", "title", "id")
+        quote = _first(lic, "quote")
+        lic = f'{name or "UNKNOWN"} — as stated: "{quote}"' if quote else name
     return (str(lic) if lic else "UNKNOWN"), str(url or "")
 
 
@@ -53,6 +57,9 @@ def _bbox(m: dict):
     cov = m.get("coverage") if isinstance(m.get("coverage"), dict) else None
     if b is None and cov:
         b = _first(cov, "bbox", "coverage_bbox")
+    params = _first(m, "parameters", "params", default={})
+    if b is None and isinstance(params, dict):
+        b = _first(params, "bbox", "clip_bbox", "coverage_bbox")
     if isinstance(b, dict):
         b = [b.get(k) for k in ("min_lon", "min_lat", "max_lon", "max_lat")] if "min_lon" in b else [b.get(k) for k in ("west", "south", "east", "north")]
     if isinstance(b, (list, tuple)) and len(b) == 4:
@@ -81,14 +88,15 @@ def _files(m: dict, d: str) -> list[dict]:
             f = {"path": f}
         if not isinstance(f, dict):
             continue
-        name = _first(f, "path", "name", "filename", "file")
+        name = _first(f, "path", "filename", "name", "file")
         if not name:
             continue
         p = name if os.path.isabs(name) else os.path.join(d, name)
         out.append({"path": p, "sha256": _first(f, "sha256", "sha256sum", "checksum"),
                     "size_bytes": _int(_first(f, "size", "size_bytes", "bytes")),
                     "format": _first(f, "format", "type", default=os.path.splitext(name)[1].lstrip(".") or None),
-                    "url": _first(f, "url", "source_url")})
+                    "url": _first(f, "url", "source_url"), "_retrieved_at": _first(f, "retrieved_at", "downloaded_at"),
+                    "_http": _first(f, "http_headers", "headers", default={})})
     if not out:
         name = _first(m, "filename", "file", "original_filename", "file_name")
         if name:
@@ -122,7 +130,36 @@ def _read_json(path: str) -> tuple[dict | None, str | None, str | None]:
     return doc, hashlib.sha256(raw).hexdigest(), None
 
 
-KNOWN = {"dataset_id", "dataset", "source_id", "source", "title", "name", "description", "publisher", "provider", "url",
+def _class(m: dict, warnings: list[str]) -> str | None:
+    raw = _first(m, "data_class", "classification", "class")
+    if raw is None:
+        return None
+    word = re.match(r"\s*([A-Za-z]+)", str(raw))
+    w = word.group(1).lower() if word else ""
+    if w in DATA_CLASSES:
+        if str(raw).strip().lower() != w:
+            warnings.append(f"data class taken from '{raw}'")
+        return w
+    warnings.append(f"classification '{raw}' not in the vocabulary; left unclassified")
+    return None
+
+
+def _crs(m: dict, files: list[dict]) -> str | None:
+    c = _first(m, "crs", "source_crs")
+    val = m.get("validation") if isinstance(m.get("validation"), dict) else {}
+    if not c and val:
+        c = val.get("crs")
+        if not c and isinstance(val.get("rasters"), list) and val["rasters"] and isinstance(val["rasters"][0], dict):
+            c = val["rasters"][0].get("crs")
+    if not c:
+        for f in files:
+            mm = re.search(r"epsg[_:]?(\d{4,5})", os.path.basename(f.get("path", "")).lower())
+            if mm:
+                return f"EPSG:{mm.group(1)} (from file name)"
+    return c if isinstance(c, str) else (json.dumps(c) if c else None)
+
+
+KNOWN = {"dataset_id", "classification", "manifest_updated_at", "run_at", "spec_accuracy", "accuracy_note", "dataset", "source_id", "source", "title", "name", "description", "publisher", "provider", "url",
          "source_url", "download_url", "retrieved_at", "downloaded_at", "accessed_at", "http_headers", "headers", "etag",
          "last_modified", "sha256", "size", "size_bytes", "licence", "license", "licence_url", "license_url", "notes",
          "files", "outputs", "inputs", "crs", "resolution", "scale", "format", "data_class", "class", "suitability",
@@ -155,11 +192,11 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     src_meta = m.get("source") if isinstance(m.get("source"), dict) else {}
     if isinstance(src_meta, dict) and src_meta.get("id"):
         source_id = source_id or src_meta["id"]
-    dataset_id = _first(m, "dataset_id") or (m["dataset"] if isinstance(m.get("dataset"), str) else None) \
-        or (parts[1] if len(parts) > 1 else rel.replace(os.sep, "_"))
+    dataset_id = _first(m, "dataset_id") or (parts[1] if len(parts) > 1 else rel.replace(os.sep, "_"))
     version_label = str(_first(m, "version") or (parts[2] if len(parts) > 2 else "v?"))
     lic, lic_url = _licence(m)
     warnings: list[str] = []
+    lic_meta = m.get("licence") if isinstance(m.get("licence"), dict) else (m.get("license") if isinstance(m.get("license"), dict) else {})
 
     if source_id:
         access = _first(m, "access_method", default=_first(src_meta, "access_method"))
@@ -167,8 +204,10 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
             if access:
                 warnings.append(f"access method '{access}' not in vocabulary")
             access = "download" if _first(m, "url", "source_url", "download_url") else "manual"
-        ensure_source(db, source_id, name=str(_first(src_meta, "name") or _first(m, "publisher", "provider") or source_id),
-                      publisher=str(_first(src_meta, "publisher") or _first(m, "publisher", "provider") or "UNKNOWN"),
+        ensure_source(db, source_id, name=str(_first(src_meta, "name") or (m["dataset"] if isinstance(m.get("dataset"), str) else None)
+                                              or _first(m, "publisher", "provider") or source_id),
+                      publisher=str(_first(src_meta, "publisher") or _first(m, "publisher", "provider")
+                                    or _first(lic_meta, "publisher") or "UNKNOWN"),
                       url=str(_first(src_meta, "url", "homepage") or _first(m, "source_url", "url", default="")),
                       access_method=access, licence_text=lic, licence_url=lic_url,
                       robots_notes=str(_first(m, "robots", "robots_txt", default=_first(src_meta, "robots", default="")) or ""),
@@ -177,8 +216,10 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
                       registration_required=bool(_first(m, "registration_required", default=False)),
                       origin="manifest", notes=f"registered from {rel}")
 
-    theme = norm_theme(_first(m, "theme", "category", "domain"))
-    ensure_dataset(db, dataset_id, title=str(_first(m, "title", "name") or dataset_id), theme=theme,
+    t = _first(m, "theme", "category", "domain")
+    theme = norm_theme(t) if t else guess_theme(dataset_id, source_id)
+    title = _first(m, "title", "name") or (m["dataset"] if isinstance(m.get("dataset"), str) else None) or dataset_id
+    ensure_dataset(db, dataset_id, title=str(title), theme=theme,
                    description=str(_first(m, "description", default="")), source_id=source_id,
                    limitations=str(_first(m, "limitations", default="")), max_age_days=_int(_first(m, "max_age_days")),
                    update_check_json={"method": "http_head", "url": _first(m, "url", "download_url", "source_url")}
@@ -189,9 +230,16 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     if not isinstance(headers, dict):
         headers = {}
     hl = {str(k).lower(): v for k, v in headers.items()}
-    http = {"etag": _first(m, "etag") or hl.get("etag"), "last_modified": _first(m, "last_modified") or hl.get("last-modified"),
-            "content_length": hl.get("content-length"), "url": _first(m, "url", "download_url", "source_url")}
     files = _files(man or {}, d) if man else []
+    if not hl and len(files) == 1 and isinstance(files[0].get("_http"), dict):
+        hl = {str(k).lower(): v for k, v in files[0]["_http"].items()}
+    http = {"etag": _first(m, "etag") or hl.get("etag"), "last_modified": _first(m, "last_modified") or hl.get("last-modified"),
+            "content_length": hl.get("content-length"),
+            "url": _first(m, "url", "download_url", "source_url") or (files[0].get("url") if len(files) == 1 else None)}
+    if len(files) > 1:
+        http["per_file"] = {os.path.basename(f["path"]): {k: v for k, v in (f.get("_http") or {}).items() if k.lower() in ("etag", "last-modified", "content-length")}
+                            for f in files if f.get("_http")}
+    file_retrieved = sorted(str(f["_retrieved_at"]) for f in files if f.get("_retrieved_at"))
     out_files = _files({"files": (proc or {}).get("outputs")} if proc else {}, d) if proc else []
     roles = [dict(f, role="raw" if kind == "raw" else "derived") for f in files]
     have = {f["path"] for f in roles}
@@ -218,23 +266,33 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     if isinstance(inputs, dict):
         inputs = [{"path": k, **(v if isinstance(v, dict) else {"sha256": v})} for k, v in inputs.items()]
     inputs = [i if isinstance(i, dict) else {"path": str(i)} for i in inputs]
+    inherited: dict[str, tuple[str, str, str]] = {}
     for i in inputs:
         sha = i.get("sha256")
         if sha:
             hit = db.query(DsFileEntity).filter(DsFileEntity.sha256 == sha).first()
             if hit:
                 i["version_id"] = hit.version_id
-                if lic == "UNKNOWN":
-                    pv = db.get(DsDatasetVersionEntity, hit.version_id)
-                    if pv and pv.licence_text and pv.licence_text != "UNKNOWN":
-                        lic, lic_url = pv.licence_text, pv.licence_url
-                        warnings.append(f"licence inherited from input version {pv.id} — verify share-alike / attribution terms")
+                pv = db.get(DsDatasetVersionEntity, hit.version_id)
+                if pv and pv.licence_text and pv.licence_text != "UNKNOWN":
+                    inherited.setdefault(pv.licence_text, (pv.licence_url, pv.dataset_id, pv.id))
+    if lic == "UNKNOWN" and inherited:
+        if len(inherited) == 1:
+            (text_, (url_, ds_, vid_)), = inherited.items()
+            lic, lic_url = text_, url_
+            warnings.append(f"licence inherited from input version {vid_} ({ds_}) — verify share-alike / attribution terms")
+        else:
+            lic = "Inherited from inputs, each applies: " + " | ".join(f"{ds_}: {t[:120]}" for t, (_u, ds_, _v) in inherited.items())
+            warnings.append(f"{len(inherited)} different input licences — the most restrictive terms govern redistribution")
+    unmatched = [i.get("path") for i in inputs if i.get("sha256") and not i.get("version_id")]
+    if unmatched:
+        warnings.append(f"{len(unmatched)} input(s) not found in the registry by sha256 (lineage incomplete)")
 
     extra = {k: v for k, v in m.items() if k not in KNOWN}
     stats = {"manifest_extra": extra} if extra else {}
     if proc and _first(proc, "validation", "validation_results"):
         stats["validation"] = _first(proc, "validation", "validation_results")
-    acc = _first(m, "accuracy_statement", "accuracy", default="")
+    acc = _first(m, "accuracy_statement", "accuracy", "spec_accuracy", "accuracy_note", default="")
     v = add_version(
         db, dataset_id, files=[{k: f.get(k) for k in ("path", "sha256", "size_bytes", "format", "url", "role")} for f in roles],
         warnings=warnings, version_label=version_label,
@@ -242,12 +300,18 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
         observation_end=_s(_first(m, "observation_end", "observed_to")),
         published_date=_s(_first(m, "published_date", "published")),
         source_updated_date=_s(_first(m, "source_updated_date", "source_updated", "updated") or http["last_modified"]),
-        retrieved_at=_s(_first(m, "retrieved_at", "downloaded_at", "accessed_at", "created_at", "finished_at")),
+        retrieved_at=_s(_first(m, "retrieved_at", "downloaded_at", "accessed_at", "run_at", "created_at", "finished_at")
+                        or (file_retrieved[-1] if file_retrieved else None) or _first(m, "manifest_updated_at")),
         sha256=primary_sha, coverage_bbox_json=_bbox(m), coverage_geojson=json.dumps(_polygon(m)) if _polygon(m) else None,
-        crs=_s(_first(m, "crs")), resolution=_s(_first(m, "resolution", "scale")), format=_s(_first(m, "format")),
-        size_bytes=total, data_class=_first(m, "data_class", "class"), suitability=_first(m, "suitability"),
+        crs=_crs(m, data_files), resolution=_s(_first(m, "resolution", "scale")), format=_s(_first(m, "format")),
+        size_bytes=total, data_class=_class(m, warnings), suitability=_first(m, "suitability"),
         accuracy_statement=str(acc if isinstance(acc, str) else json.dumps(acc)), licence_text=lic, licence_url=lic_url,
-        http_json={k: v for k, v in http.items() if v}, stats_json=stats, notes=str(_first(m, "notes", default="")),
+        http_json={k: v for k, v in http.items() if v}, stats_json=stats,
+        notes="\n".join(x for x in [str(_first(m, "notes", default="")),
+                                    f"Classification as stated: {_first(m, 'classification')}" if _first(m, "classification") else "",
+                                    f"Vertical datum: {m['vertical_datum']}" if m.get("vertical_datum") else "",
+                                    f"Attribution required: {lic_meta.get('attribution_required')}" if lic_meta.get("attribution_required") else "",
+                                    f"Licence verified at: {lic_meta.get('verified_at')}" if lic_meta.get("verified_at") else ""] if x),
         origin="processing" if proc and not man else "manifest", origin_path=d, fingerprint=fp)
     if proc:
         db.add(DsProcessingRunEntity(
@@ -256,7 +320,7 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
             params_json=json.dumps(_first(proc, "parameters", "params", default={})),
             inputs_json=json.dumps(inputs), outputs_json=json.dumps(_first(proc, "outputs", default=[])),
             validation_json=json.dumps(_first(proc, "validation", "validation_results", default={})),
-            started_at=_s(_first(proc, "started_at")), finished_at=_s(_first(proc, "finished_at", "created_at")), origin_path=d))
+            started_at=_s(_first(proc, "started_at")), finished_at=_s(_first(proc, "finished_at", "run_at", "created_at")), origin_path=d))
     db.flush()
     run_checks(db, v)
     return {"dir": rel, "result": "registered", "dataset_id": dataset_id, "version_id": v.id,

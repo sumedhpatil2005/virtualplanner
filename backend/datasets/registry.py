@@ -22,11 +22,22 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+def _finite(o: Any) -> Any:
+    """NaN / ±Infinity (valid in Python's json, not in JSON) become null = UNKNOWN."""
+    if isinstance(o, float) and (o != o or o in (float("inf"), float("-inf"))):
+        return None
+    if isinstance(o, dict):
+        return {k: _finite(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_finite(v) for v in o]
+    return o
+
+
 def _j(text: str | None, default: Any = None) -> Any:
     if text in (None, ""):
         return default
     try:
-        return json.loads(text)
+        return _finite(json.loads(text))
     except (TypeError, ValueError):
         return default
 
@@ -322,5 +333,5 @@ def feature_status(db: Session, f: DsFeatureEntity) -> dict:
         if not e["required"] and e["state"] != "satisfied":
             reasons.append(f"optional: {e['reason']}")
     return {"id": f.id, "workspace": f.workspace, "capability": f.capability, "name": f.name, "description": f.description,
-            "status": status, "capped": capped, "status_cap": f.status_cap, "status_cap_reason": f.status_cap_reason,
+            "status": status, "capped": capped, "wired": f.wired, "wiring_note": f.wiring_note, "status_cap": f.status_cap, "status_cap_reason": f.status_cap_reason,
             "reasons": reasons, "dependencies": evals}

@@ -57,6 +57,7 @@ THEMES = {
     "vehicle_fleet": "Vehicle fleet composition",
     "emission_factors": "Emission factors",
     "demo_seed": "Demonstration seed objects",
+    "satellite_imagery": "Satellite imagery and derived indices",
     "other": "Other",
 }
 
@@ -69,7 +70,8 @@ THEME_SYNONYMS = {
     "landcover": "land_cover", "worldcover": "land_cover", "osm": "osm_extract", "roads": "road_network",
     "precipitation": "rainfall", "imd": "rainfall", "counts": "traffic_counts", "speeds": "traffic_speeds",
     "heritage": "heritage_locators", "monuments": "protected_monuments", "trees_census": "tree_census",
-    "geotech": "boreholes", "groundwater_levels": "groundwater", "water": "water_features", "waterways": "water_features",
+    "geotech": "boreholes", "sentinel2": "satellite_imagery", "imagery": "satellite_imagery", "ndvi": "satellite_imagery",
+    "surface_water": "water_features", "gsw": "water_features", "nasadem": "dem", "copdem": "dem", "worldcover2021": "land_cover", "groundwater_levels": "groundwater", "water": "water_features", "waterways": "water_features",
 }
 
 
@@ -79,6 +81,26 @@ def norm_theme(t: str | None) -> str:
     k = str(t).strip().lower().replace("-", "_").replace(" ", "_")
     k = THEME_SYNONYMS.get(k, k)
     return k if k in THEMES else "other"
+
+
+# keywords looked for in a dataset / source id when a manifest names no theme (first match wins)
+THEME_KEYWORDS = [("dem", "dem"), ("elevation", "dem"), ("nasadem", "dem"), ("worldcover", "land_cover"), ("landcover", "land_cover"),
+                  ("land_cover", "land_cover"), ("building", "buildings"), ("ward", "admin_boundaries"), ("boundar", "admin_boundaries"),
+                  ("gsw", "water_features"), ("surface_water", "water_features"), ("sentinel", "satellite_imagery"),
+                  ("landsat", "land_surface_temperature"), ("census", "population"), ("worldpop", "population"), ("flood", "flood_lines"),
+                  ("rain", "rainfall"), ("imd", "rainfall"), ("aqi", "air_quality"), ("caaqms", "air_quality"), ("cpcb", "air_quality"),
+                  ("groundwater", "groundwater"), ("cgwb", "groundwater"), ("geolog", "geology"), ("borehole", "boreholes"),
+                  ("tree", "tree_census"), ("osm", "osm_extract"), ("traffic", "traffic_counts"), ("count", "traffic_counts"),
+                  ("metro", "metro_alignment"), ("drain", "drainage_network"), ("seismic", "seismic_zone"), ("soil", "soil")]
+
+
+def guess_theme(*ids: str | None) -> str:
+    for i in ids:
+        k = (i or "").lower()
+        for kw, theme in THEME_KEYWORDS:
+            if kw in k:
+                return theme
+    return "other"
 
 
 def data_root() -> str:

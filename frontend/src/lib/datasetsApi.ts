@@ -53,6 +53,8 @@ export interface FeatureDependency {
 export interface FeatureReadiness {
   id: string; workspace: string; capability: string; name: string; description: string; status: FeatureStatus; capped: boolean;
   status_cap: FeatureStatus | null; status_cap_reason: string | null; reasons: string[]; dependencies: FeatureDependency[];
+  /** Whether the feature's code reads registered data today; null = not recorded. */
+  wired: boolean | null; wiring_note: string | null;
 }
 export interface Vocabulary { themes: Record<string, string>; pune_bbox: [number, number, number, number]; data_root: string; rules: string[] }
 

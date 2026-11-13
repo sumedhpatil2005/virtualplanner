@@ -280,7 +280,10 @@ const FeaturesPane: React.FC<{ features: FeatureReadiness[] | null; onDataset: (
                   <span className="text-label text-text-1 font-medium">{f.name}</span>
                   <span className="text-meta text-text-3">{f.workspace}</span>
                   {featureFailsValidation(f) && <TrustBadge trust="fails_validation" testId={`feature-trust-${f.id}`} />}
+                  {f.wired === false && <span className="uos-data-chip" style={{ borderColor: TONE_COLOR.warn, color: TONE_COLOR.warn }} title={f.wiring_note ?? ''}
+                    data-testid={`feature-not-wired-${f.id}`}>Not wired into the feature yet</span>}
                 </div>
+                {f.wired === false && f.wiring_note && <p className="text-meta text-text-3">{f.wiring_note}</p>}
                 {f.reasons.length > 0 && <ul className="text-meta text-text-2 list-disc pl-4">{f.reasons.map(r => <li key={r}>{r}</li>)}</ul>}
                 <table className="uos-table">
                   <thead><tr><th>Needs</th><th>Quality</th><th>Dataset</th><th>State</th></tr></thead>

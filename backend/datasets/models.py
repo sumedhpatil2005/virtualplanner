@@ -149,6 +149,9 @@ class DsFeatureEntity(Base):
     description = Column(Text, nullable=False, default="")
     status_cap = Column(String, nullable=True)       # the best status the feature can show (e.g. partial: validation fails)
     status_cap_reason = Column(Text, nullable=True)
+    # whether the feature's code reads these datasets today (data can be ready while the feature still ignores it)
+    wired = Column(Boolean, nullable=True)
+    wiring_note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_now)
 
 

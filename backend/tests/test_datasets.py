@@ -119,6 +119,7 @@ def test_importer_registers_idempotent_and_unblocks_feature(client, root):
     assert ds["source"]["access_method"] == "download"
     after = _feature(client, "underground.alignment_profile")
     assert after["status"] == "ready", after
+    assert after["wired"] is False   # data ready, but the profile still uses a flat datum: shown, not hidden
     # second scan: nothing new
     rep2 = client.post("/api/datasets/import", json={"root": root}).json()
     assert {e["result"] for e in rep2["entries"] if "test_dem_src" in e["dir"]} == {"unchanged"}
@@ -180,7 +181,7 @@ def test_derived_processing_lineage_quality_and_licence_inheritance(client, root
     v = ds["versions"][0]
     pr = v["processing_runs"][0]
     assert pr["git_commit"] == "deadbeef" and pr["inputs"][0]["version_id"]
-    assert v["licence_text"] == "SYNTHETIC test licence" and "inherited" in v["notes"]
+    assert v["licence_text"].startswith("SYNTHETIC test licence") and "inherited" in v["notes"]
     checks = {c["check"]: c for c in v["quality_checks"]}
     assert checks["geometry_validity"]["status"] in ("warn", "fail") and "1 invalid" in checks["geometry_validity"]["detail"]
     assert checks["duplicates"]["status"] == "warn" and checks["pune_coverage"]["status"] == "pass"

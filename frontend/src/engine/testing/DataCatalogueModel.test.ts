@@ -104,7 +104,7 @@ describe('catalogue grouping', () => {
 describe('features', () => {
   const f = (o: Partial<FeatureReadiness>): FeatureReadiness => ({
     id: 'x', workspace: 'simulate', capability: 'Traffic', name: 'x', description: '', status: 'blocked', capped: false,
-    status_cap: null, status_cap_reason: null, reasons: [], dependencies: [], ...o,
+    status_cap: null, status_cap_reason: null, reasons: [], dependencies: [], wired: null, wiring_note: null, ...o,
   });
   it('groups by capability in the fixed order with counts', () => {
     const g = groupFeatures([f({ id: 't', status: 'partial' }), f({ id: 'e', capability: 'Explore', status: 'ready' }), f({ id: 'z', capability: 'Zeta' })]);

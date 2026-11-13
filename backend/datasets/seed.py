@@ -261,9 +261,63 @@ FEATURES = [
 ]
 
 
+# Does the feature's code read registered data today? (False = data may be ready, the feature does not use it yet)
+WIRING = {
+    "explore.globe": (True, "Cesium streams imagery/terrain directly."),
+    "explore.city_model": (True, "city_objects + OSM index."),
+    "design.osm_import": (True, "Reads the local OSM index (TWINCITY_OSM_INDEX)."),
+    "design.feasibility_screening": (True, "Reads the OSM index and feasibility layers; no importer reads flood lines, protected limits or RoW yet."),
+    "underground.alignment_profile": (False, "Profile uses a flat datum; no code reads a registered DEM yet."),
+    "underground.utility_conflicts": (True, "Reads subsurface records imported in Underground."),
+    "underground.metro_clearance": (True, "OSM metro plan only; no structure levels exist."),
+    "underground.ground_model": (False, "No ground model code."),
+    "environment.constraint_overlays": (True, "Feasibility layers via /api/feasibility/site-data."),
+    "environment.air_quality": (False, "No reader."), "environment.noise": (False, "No reader."),
+    "environment.heat": (False, "No reader."), "environment.vegetation": (False, "Land cover not drawn or used yet."),
+    "environment.seismic": (False, "No reader."),
+    "flood.screening": (False, "No flood-screening code reads a DEM or flood lines yet."),
+    "flood.drainage_model": (False, "No SWMM integration."),
+    "traffic.simulation": (True, "OSM index, corrections, diurnal profile, counts files."),
+    "traffic.validation": (True, "Validation files under backend/data."),
+    "emissions.estimate": (True, "HBEFA4 stand-ins in the frontend engine."),
+    "population.exposure": (False, "Only SYNTHETIC demo zones are read."),
+    "coordination.conflict_detection": (True, "Base roads, OSM metro, utility records."),
+    "coordination.heritage_permission": (True, "AMASR rules exist; nothing to fire against without limits."),
+}
+
+
+def _migrate(db: Session) -> None:
+    """Additive columns on ds_* tables created by an earlier version of this module (nullable; nothing rewritten)."""
+    from sqlalchemy import inspect as sa_inspect, text
+    insp = sa_inspect(db.get_bind())
+    if "ds_features" in insp.get_table_names():
+        have = {c["name"] for c in insp.get_columns("ds_features")}
+        for name, typ in (("wired", "BOOLEAN"), ("wiring_note", "TEXT")):
+            if name not in have:
+                db.execute(text(f"ALTER TABLE ds_features ADD COLUMN {name} {typ}"))
+    db.flush()
+
+
+def _recheck_failed_files(db: Session) -> None:
+    """A seeded file recorded as missing may have appeared (or an env path changed): re-run that version's checks."""
+    from .models import DsQualityCheckEntity
+    for v in db.scalars(select(DsDatasetVersionEntity).where(DsDatasetVersionEntity.origin == "seed")):
+        last = db.scalars(select(DsQualityCheckEntity).where(DsQualityCheckEntity.version_id == v.id, DsQualityCheckEntity.check == "checksum")
+                          .order_by(DsQualityCheckEntity.run_at.desc(), DsQualityCheckEntity.id.desc())).first()
+        if last is not None and last.status == "fail":
+            from .quality import resolve_path
+            from .models import DsFileEntity
+            files = db.scalars(select(DsFileEntity).where(DsFileEntity.version_id == v.id)).all()
+            import os
+            if any(os.path.exists(resolve_path(f.path)) for f in files):
+                run_checks(db, v, hash_max_bytes=SEED_HASH_MAX)
+
+
 def seed_registry(session_factory) -> None:
     with session_factory() as db, acting_as(SEED_ACTOR):
+        _migrate(db)
         _seed(db)
+        _recheck_failed_files(db)
         sync_catalogues(db)
         db.commit()
 
@@ -285,8 +339,13 @@ def _seed(db: Session) -> None:
     for gid, title, theme, lim, rec in GAPS:
         ensure_dataset(db, gid, title=title, theme=theme, limitations=lim, recommended_sources_json=rec, origin="seed")
     for fid, ws, cap, name, cap_status, cap_reason, deps in FEATURES:
-        if db.get(DsFeatureEntity, fid) is None:
-            db.add(DsFeatureEntity(id=fid, workspace=ws, capability=cap, name=name, status_cap=cap_status, status_cap_reason=cap_reason))
+        wired, note = WIRING.get(fid, (None, None))
+        existing = db.get(DsFeatureEntity, fid)
+        if existing is not None and existing.wired is None and wired is not None:
+            existing.wired, existing.wiring_note = wired, note
+        if existing is None:
+            db.add(DsFeatureEntity(id=fid, workspace=ws, capability=cap, name=name, status_cap=cap_status, status_cap_reason=cap_reason,
+                                   wired=wired, wiring_note=note))
             for i, (theme, did, q, req, note) in enumerate(deps):
                 db.add(DsFeatureDependencyEntity(id=f"{fid}#{i}", feature_id=fid, theme=theme, dataset_id=did, required_quality=q,
                                                  required=req, note=note))
