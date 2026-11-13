@@ -112,16 +112,40 @@ are untouched (`/api/coordination/environment-layers`, `/api/coordination/subsur
 `POST /api/datasets/{id}/update-check` — one request, User-Agent `UrbanOS-dataset-registry/1.0`. `http_head` compares ETag /
 Last-Modified / Content-Length with the newest recorded version (or the last reference check); `ckan` compares
 `metadata_modified`. A change registers a **new version** (`origin update_check`, no sha256, "NOT downloaded", pending review).
-Errors and sources with no machine-checkable endpoint are recorded as such. No scheduled checks were created (manual only).
+Errors and sources with no machine-checkable endpoint are recorded as such.
+
+**Update monitor (2026-11-14): `python -m datasets.update_monitor [--only ids] [--exclude ids] [--plan] [--dry-run]`.**
+Probes every dataset listed in `backend/datasets/update_targets.json` (plus any dataset whose own `update_check` is
+`http_head`/`ckan`) and appends one `ds_update_checks` row per probed URL, `checked_by "update_monitor (CLI)"`.
+- Methods: `http_head` (ETag / Last-Modified / Content-Length vs the raw manifest's recorded headers for the same URL; an
+  identity-only difference is re-probed with `Accept-Encoding: gzip`, because pipelines using python-requests stored the gzip
+  representation), `ckan` (`package_show`: `metadata_modified` and each acquired resource's `last_modified`), `stac_latest`
+  (newest item over the Pune box vs the newest acquired scene), `github_release` (latest release; tags API when the repo
+  publishes none), `geofabrik` (region page "contains all OSM data up to"; Geofabrik's robots.txt disallows `.osm.pbf`,
+  `state.txt` and `*updates*`). Entries with `method: none` record **why** a source is not machine-checkable.
+- Results: `update_available` (newer upstream) · `unchanged` · `changed` (differs, not demonstrably newer) · `first_seen`
+  (no acquired reference; becomes the reference) · `error` · `not_checkable`. Unlike the manual API check, the monitor
+  **registers no version**: an available update is a row for a reviewer (acquire with the pipeline → importer → review).
+  `GET /api/datasets[/{id}]` returns `update_status` (latest verdict per URL, folded); the Data catalogue shows "Update
+  available upstream … not downloaded".
+- Politeness/safety: robots.txt read once per host per run (RFC 9309: `*`/`$` wildcards, longest match, 4xx = no rules,
+  5xx = disallow all); Crawl-delay honoured with a 1 s floor per host (NWDP and Zenodo 10 s from the targets file); public
+  http(s) only, every redirect re-checked (SSRF guard from `datasets.updates`); per-request timeout (default 15 s); a host
+  that fails at network level or answers 401/403/429 is not contacted again in that run (OpenCity's Cloudflare challenge
+  is recorded, never bypassed). Offline: every probe is an `error` row and the run exits 0.
+- No scheduler was created: run it by hand or from cron. A full run makes ~70 requests and takes ~3–4 min (NWDP's 10 s
+  delay dominates). Tests: `backend/tests/test_update_monitor.py` (mocked HTTP, UNIT-TESTED).
 
 ## 6. Configuration
 
 | Variable | Default | Used for |
 |---|---|---|
 | `URBANOS_DATA_DIR` | `/workspace/work/urbanos-data` if that directory exists, else `backend/data/urbanos` | **canonical** data root (raw/, derived/) for pipelines, importer, registry and the terrain API; one helper `backend/datasets/paths.py` (read at call time). Aliases, lower precedence: `URBANOS_DATA_ROOT`, `URBANOS_DATA_HOME` (Wave-1 names). `URBANOS_RAW_DIR` / `URBANOS_DERIVED_DIR` override the sub-roots. Decision 2026-11-13 (uos-terrain-ug): the sandbox store is the default because raw data is never committed, so a fresh clone falls back to the empty repo path. |
-| `URBANOS_DEM_VERSION` | `v2` | derived `elevation_copdem30` version the terrain API samples (falls back to the latest on disk) |
+| `URBANOS_DEM_VERSION` | `v3` | derived `elevation_copdem30` version the terrain API samples (falls back to the latest on disk) |
 | `TWINCITY_OSM_INDEX`, `TWINCITY_FEAS_LAYERS` | `backend/data/osm/…` | existing readers; the registry's checksum check follows the same override |
 | `DATABASE_URL` | `sqlite:///./twincity.db` | all tables incl. `ds_*` |
+| `URBANOS_UPDATE_TARGETS` | `backend/datasets/update_targets.json` | update-monitor endpoint list |
+| `URBANOS_CLASSIFICATION_OVERRIDES` | `backend/datasets/classification_overrides.json` | registry classification overrides |
 
 ## 7. Verification
 - `backend/tests/test_datasets.py` — 15 tests, **UNIT-TESTED** (full backend suite 130 passed, 3 skipped).

@@ -107,6 +107,16 @@ files, processing, quality, update checks, used by features) · `POST ""` · `PA
   `/workspace/work/urbanos/shots/p2/data-{catalogue-dem,catalogue-osm,features,features-scrolled}-1440x900.png`. Console: imagery 401
   (sandbox) only.
 
+## 8a. Provenance notes (2026-11-14)
+- `git_dirty_datasets`: written by the geo pipelines (`_common.write_processing`) since Wave 1 and by the gov / infra writers
+  (`gov_common.write_processing`, `infra_index`) from 2026-11-14. processing.json files written by the gov pipelines before
+  that carry no key; they are **not rewritten**, and `python -m datasets.provenance_check` reports them as
+  `UNKNOWN (not recorded)` (also noted in `classification_overrides.json` `_registry_notes`).
+- ML output is **inferred**: Microsoft / Google footprints and ESA WorldCover (raw tile and the Pune clip) are corrected from
+  the stated "derived" via `correct_stated_class`; the importer registers the corrected metadata as a new pending version
+  (raw files and the active version untouched). The landcover pipeline writes `inferred` for future runs.
+- Generated inventory: `DATA_SOURCE_CATALOGUE.md` (`python -m datasets.catalogue_doc`).
+
 ## 9. Not done / limits
 - Feature dependencies are seeded from this matrix; reading a registered dataset inside a feature (DEM in Underground, land cover in
   Environment, flood screening) is not implemented — that is what `wired = false` shows.
