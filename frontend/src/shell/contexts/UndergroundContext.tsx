@@ -5,61 +5,27 @@ import type { CityObject, UtilityObject } from '../../engine/objects/types';
 import { PanelSection } from '../../components/ui/Panel';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Disclosure } from '../../components/ui/Disclosure';
-import type { DrawerTab } from '../../components/ui/Drawer';
 import { CertaintyBadge } from '../../components/ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../useEngineObjects';
 import { useShellStore } from '../useShellStore';
 import { lengthM } from './geo';
 import { DEFAULT_DEPTH_M, UTILITY_LABEL, utilityCertainty } from './utilityCertainty';
 import { ALIGNMENT_KIND_LABEL, alignmentProfile, worstCertainty } from '../../engine/underground/alignmentGeometry';
-import { isAlignment } from '../../engine/underground/alignmentFactory';
-import { undergroundView } from '../../engine/underground/UndergroundView';
-import { undergroundRenderer } from '../../engine/underground/UndergroundRenderer';
 import { useActiveAlignment } from '../../components/underground/common';
 import { useUndergroundStore } from '../../components/underground/undergroundStore';
 import { AlignmentEditor } from '../../components/underground/AlignmentForms';
 import { ViewControls } from '../../components/underground/ViewControls';
-import { ProfileView, CrossSectionView } from '../../components/underground/SectionViews';
 import { SubsurfaceRecords } from '../../components/underground/SubsurfaceRecords';
 import { ConflictCheck } from '../../components/underground/ConflictCheck';
 
 const isUtility = (o: CityObject): o is UtilityObject => o.type === 'utility';
 
-// ---- runtime: underground view while the workspace is open; alignments always drawn -----------------------------
-let runtimeStarted = false;
-/** Wires the globe view state to the workspace and keeps the 3D alignments in step with the model. Idempotent. */
-export function startUndergroundRuntime() {
-  if (runtimeStarted || typeof window === 'undefined') return;
-  runtimeStarted = true;
-  const viewer = () => engineInstance.getViewer?.() ?? null;
-  const redraw = () => {
-    const v = viewer();
-    if (!v) return;
-    undergroundRenderer.attach(v);
-    const sel = engineInstance.selection.getSelection()[0] ?? null;
-    undergroundRenderer.renderAlignments(engineInstance.objects.getAll().filter(isAlignment), sel);
-  };
-  const syncView = (ws: string) => { if (ws === 'underground') undergroundView.enter(viewer()); else undergroundView.leave(); };
-  engineInstance.objects.onChange(redraw);
-  engineInstance.scenarios.onChange(redraw);
-  engineInstance.selection.onChange(redraw);
-  useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) syncView(s.workspace); });
-  // The viewer is created after the shell module loads: catch up once it exists
-  const wait = window.setInterval(() => {
-    if (!viewer()) return;
-    window.clearInterval(wait);
-    redraw();
-    syncView(useShellStore.getState().workspace);
-  }, 250);
-}
-
-const CertaintyText: React.FC<{ level: 'hypothetical' | 'unknown'; why: string }> = ({ level, why }) => (
+export const CertaintyText: React.FC<{ level: 'hypothetical' | 'unknown'; why: string }> = ({ level, why }) => (
   <span className={`inline-flex items-center gap-1 text-meta font-medium ${level === 'unknown' ? 'text-unknown' : 'text-hypothetical'}`} title={why}>
     {level === 'unknown' ? <CircleHelp size={12} aria-hidden /> : <FlaskConical size={12} aria-hidden />}
     {level === 'unknown' ? 'Unknown' : 'Hypothetical'}
   </span>
 );
-export { CertaintyText };
 
 const focus = (id: string) => { engineInstance.selection.selectSingle(id); engineInstance.flyToObject(id); };
 
@@ -89,13 +55,6 @@ export const UtilityTable: React.FC = () => {
     </table>
   );
 };
-
-/** Bottom-drawer tabs of the Underground workspace (registered in AppShell's DRAWER_TABS). */
-export const UNDERGROUND_DRAWER_TABS: DrawerTab[] = [
-  { id: 'profile', label: 'Profile', content: <ProfileView /> },
-  { id: 'section', label: 'Cross-section', content: <CrossSectionView /> },
-  { id: 'utilities', label: 'Utility table', content: <UtilityTable /> },
-];
 
 const AlignmentList: React.FC = () => {
   const { alignments, active } = useActiveAlignment();
@@ -201,4 +160,3 @@ export const UndergroundContext: React.FC = () => {
   );
 };
 
-startUndergroundRuntime();

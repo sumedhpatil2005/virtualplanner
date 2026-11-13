@@ -1,15 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { undergroundView } from '../../engine/underground/UndergroundView';
 import type { UndergroundAlignmentObject } from '../../engine/objects/types';
-
-/** Lon/lat box around the alignments with a margin (m), for limiting ground translucency. */
-export function alignmentsRect(as: UndergroundAlignmentObject[], marginM = 300): [number, number, number, number] | null {
-  const pts = as.flatMap(a => a.coordinates);
-  if (pts.length === 0) return null;
-  const lat = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-  const dLat = marginM / 110574, dLon = marginM / (111320 * Math.cos((lat * Math.PI) / 180));
-  return [Math.min(...pts.map(p => p[0])) - dLon, Math.min(...pts.map(p => p[1])) - dLat, Math.max(...pts.map(p => p[0])) + dLon, Math.max(...pts.map(p => p[1])) + dLat];
-}
+import { alignmentsRect } from '../../engine/underground/viewRect';
 
 /** Ground opacity, X-ray, and "limit to alignments" (Cesium globe translucency). Real controls on the globe. */
 export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }> = ({ alignments }) => {

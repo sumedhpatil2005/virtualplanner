@@ -1,33 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Database, Upload } from 'lucide-react';
 import { coordinationApi, type SubsurfaceRecord } from '../../lib/coordinationApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import { undergroundRenderer } from '../../engine/underground/UndergroundRenderer';
 import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { field, fmtM, input, inputStyle, lbl, labelStyle, note } from './common';
-import { useUndergroundStore } from './undergroundStore';
-
-export const USER_KEY = 'td-user';
-
-/** Loads datasets + records from /api/coordination/subsurface and draws them on the map. */
-export function useSubsurfaceRecords() {
-  const s = useUndergroundStore();
-  const reload = useCallback(async () => {
-    const st = useUndergroundStore.getState();
-    st.setRecords({ recordsState: 'loading', recordsError: null });
-    try {
-      const [datasets, recs] = await Promise.all([coordinationApi.listDatasets(), coordinationApi.listRecords()]);
-      st.setRecords({ datasets, records: recs.records, recordsState: 'loaded' });
-      undergroundRenderer.attach(engineInstance.getViewer());
-      undergroundRenderer.renderRecords(recs.records);
-    } catch (e) {
-      st.setRecords({ recordsState: 'error', recordsError: (e as Error).message });
-    }
-  }, []);
-  useEffect(() => { if (useUndergroundStore.getState().recordsState === 'idle') void reload(); }, [reload]);
-  return { ...s, reload };
-}
+import { USER_KEY, useSubsurfaceRecords } from './useSubsurfaceRecords';
 
 const QL_NOTE: Record<string, string> = {
   'QL-A': 'ASCE 38 QL-A: exposed / potholed (horizontal and vertical measured)',
