@@ -47,3 +47,13 @@ describe('base imagery errors', () => {
     expect(baseImageryErrorMessage(new Error('x'))).toMatch(/no response/);
   });
 });
+
+describe('Explore inspector dates', () => {
+  it('ISO timestamps are shown in words with their zone', async () => {
+    const { readableWhen } = await import('../../components/explore/municipalModel');
+    expect(readableWhen('2026-11-13T21:33:43+05:30')).toBe('2026-11-13 21:33 IST (UTC+05:30)');
+    expect(readableWhen('2025-11-25T15:53:16.852943 UTC (CKAN last_modified)')).toBe('2025-11-25 15:53 UTC (CKAN last_modified)');
+    expect(readableWhen('2025-01-02T03:04:05Z')).toBe('2025-01-02 03:04 UTC');
+    expect(readableWhen('Fri 2026-11-13 9:48 PM IST (UTC+05:30)')).toBe('Fri 2026-11-13 9:48 PM IST (UTC+05:30)');
+  });
+});

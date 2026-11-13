@@ -68,7 +68,7 @@ export const TopBar: React.FC<{ onHelp: () => void; trust?: React.ReactNode }> =
       <AlternativeChip />
       <button type="button" className="uos-search" onClick={() => setPaletteOpen(true)} aria-label="Search and commands" aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'} data-testid="open-command-palette">
         <Search size={14} aria-hidden />
-        <span className="uos-search-text">Search workspaces, tools, layers, projects…</span>
+        <span className="uos-search-text" title="Search workspaces, tools, layers, alternatives and projects">Search tools, layers, projects…</span>
         <kbd className="uos-kbd">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
       </button>
       <div className="flex items-center gap-1.5 ml-auto">

@@ -28,6 +28,7 @@ export const useTerrainOverlayStore = create<Store>(set => ({
 }));
 
 const layers = new Map<TerrainOverlayKey, ImageryLayer>();
+const overlaySeq: Record<TerrainOverlayKey, number> = { hillshade: 0, slope: 0 };
 
 function viewer(): Viewer | null {
   const v = engineInstance.getViewer() as Viewer | null;
@@ -53,6 +54,8 @@ export async function setTerrainOverlay(k: TerrainOverlayKey, on: boolean): Prom
   const mark = (s: Store['shown'][TerrainOverlayKey], error: string | null = null) =>
     useTerrainOverlayStore.getState().set({ shown: { ...useTerrainOverlayStore.getState().shown, [k]: s }, error });
   const old = layers.get(k);
+  // every call supersedes the previous one for this overlay: a slow load finishing after "off" (or a second "on") adds nothing
+  const my = ++overlaySeq[k];
   if (!on) {
     if (old && v) v.imageryLayers.remove(old, true);
     layers.delete(k);
@@ -62,19 +65,21 @@ export async function setTerrainOverlay(k: TerrainOverlayKey, on: boolean): Prom
   if (old) return;
   mark('loading');
   const m = await loadOverlayMeta();
-  if (!m || !v) { mark('error', st.metaError ?? 'viewer not ready'); return; }
+  if (my !== overlaySeq[k]) return;
+  if (!m || !v) { mark('error', useTerrainOverlayStore.getState().metaError ?? st.metaError ?? 'viewer not ready'); return; }
   try {
     const b = m.bounds_wgs84;
     const provider = await SingleTileImageryProvider.fromUrl(terrainApi.overlayUrl(m.overlays[k].url), {
       rectangle: Rectangle.fromDegrees(b.west, b.south, b.east, b.north), credit: m.attribution,
     });
+    if (my !== overlaySeq[k] || v.isDestroyed()) return;
     const layer = v.imageryLayers.addImageryProvider(provider);
     layer.alpha = k === 'hillshade' ? 0.75 : 0.65;
     layers.set(k, layer);
     mark('shown');
     v.scene.requestRender();
   } catch (e) {
-    mark('error', (e as Error).message);
+    if (my === overlaySeq[k]) mark('error', (e as Error).message);
   }
 }
 

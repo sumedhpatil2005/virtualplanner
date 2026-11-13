@@ -31,7 +31,7 @@ const LayerRow: React.FC<{ l: InfraLayer }> = ({ l }) => {
         onClick={() => void setMuniLayerVisible(l, !on)} disabled={!l.available}>
         {busy ? <Loader2 size={14} aria-hidden className="animate-spin text-text-2" /> : on ? <Eye size={14} aria-hidden className="text-accent" /> : <EyeOff size={14} aria-hidden className="text-text-3" />}
         <span className="inline-block h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: colorOf(l.id) }} aria-hidden />
-        <span className={`flex-1 min-w-0 text-label truncate ${on ? 'text-text-1' : 'text-text-2'}`}>{l.title}</span>
+        <span className={`flex-1 min-w-0 text-label break-words ${on ? 'text-text-1' : 'text-text-2'}`}>{l.title}</span>
         {!l.active && <span className="text-meta text-text-3">version</span>}
         <span className="text-meta text-text-3 tabular-nums shrink-0" title="Features in the whole layer">{featuresText(l.feature_count)}</span>
       </button>

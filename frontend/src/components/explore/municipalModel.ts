@@ -28,6 +28,12 @@ export function orderLayers(layers: readonly InfraLayer[]): { subgroup: string; 
   return subs.map(s => ({ subgroup: s, layers: layers.filter(l => l.subgroup === s).sort((a, b) => Number(b.active) - Number(a.active)) }));
 }
 
+/** ISO timestamps in words: "2025-11-25T15:53:16.85 UTC" → "2025-11-25 15:53 UTC", "…T21:33:43+05:30" → "… 21:33 IST (UTC+05:30)". Other text unchanged. */
+export function readableWhen(v: string): string {
+  return v.replace(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?/g, (_m, d: string, t: string, z?: string) =>
+    `${d} ${t}${z === 'Z' ? ' UTC' : z === '+05:30' ? ' IST (UTC+05:30)' : z ? ` (UTC${z})` : ''}`);
+}
+
 export interface InspectorRow { label: string; value: string; tone?: 'unknown' | 'warn' }
 
 const CLASS_TEXT: Record<string, string> = {
@@ -42,8 +48,8 @@ export function inspectorRows(layer: InfraLayer, props: Record<string, unknown>)
   const provenance: InspectorRow[] = [
     { label: 'Layer', value: layer.title },
     { label: 'Source', value: layer.id === 'buildings' && typeof props.source === 'string' ? `${sourceLabel(props.source)} (${u(props.source_id)})` : `${u(layer.publisher)} · via ${u(layer.via)}` },
-    { label: 'Source date', value: u(layer.source_updated), tone: layer.source_updated ? undefined : 'unknown' },
-    { label: 'Retrieved', value: u(layer.retrieved_at) },
+    { label: 'Source date', value: readableWhen(u(layer.source_updated)), tone: layer.source_updated ? undefined : 'unknown' },
+    { label: 'Retrieved', value: readableWhen(u(layer.retrieved_at)) },
     { label: 'Licence', value: layer.licence || 'UNKNOWN', tone: /NON-COMMERCIAL|UNKNOWN/i.test(layer.licence) ? 'warn' : undefined },
     { label: 'Class', value: CLASS_TEXT[featureClass] ?? u(featureClass) },
     { label: 'Suitable for', value: layer.suitability === 'engineering' ? 'engineering' : `${layer.suitability} only` },
