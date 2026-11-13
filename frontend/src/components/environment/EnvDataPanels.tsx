@@ -12,33 +12,44 @@ import { useSelectedId } from '../../hooks/useAppMode';
 import { istDate, lineFootprint, MONTHS, seriesPath } from './envDataModel';
 import { cameraBox, loadStations } from './envDataOverlay';
 
-const selCls = 'rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
+const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
 
 const Err: React.FC<{ e: string | null; id: string }> = ({ e, id }) => e ? <p className="text-meta text-warn" role="status" data-testid={id}>{e}</p> : null;
 
 // ── land cover areas ───────────────────────────────────────────────────────────
 export const LandcoverAreasPanel: React.FC = () => {
-  const [res, setRes] = useState<(LandcoverAreas & { label: string }) | null>(null);
+  const [res, setRes] = useState<(LandcoverAreas & { label: string; scope: 'view' | 'footprint'; bbox?: number[] }) | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const selectedId = useSelectedId();
   const sel = selectedId ? engineInstance.objects.getById(selectedId) : undefined;
   const prop = sel && isProposalObject(sel) ? sel : null;
-  const run = (p: Promise<LandcoverAreas>, label: string) => {
-    setBusy(true); setErr(null);
-    p.then(r => setRes({ ...r, label })).catch((e: Error) => setErr(e.message)).finally(() => setBusy(false));
+  const reqSeq = React.useRef(0);
+  const run = (p: Promise<LandcoverAreas>, label: string, scope: 'view' | 'footprint', bbox?: number[]) => {
+    const my = ++reqSeq.current;
+    setBusy(true); setErr(null); setRes(null);
+    p.then(r => { if (my === reqSeq.current) setRes({ ...r, label, scope, bbox }); })
+      .catch((e: Error) => { if (my === reqSeq.current) setErr(e.message); })
+      .finally(() => { if (my === reqSeq.current) setBusy(false); });
   };
+  // A result describes the area it was computed for: drop it when that area changes (no stale numbers)
+  useEffect(() => {
+    const v = engineInstance.getViewer() as { camera?: { moveEnd: { addEventListener: (f: () => void) => () => void } } } | null;
+    const off = v?.camera?.moveEnd.addEventListener(() => setRes(r => (r && r.scope === 'view' ? null : r)));
+    return () => { off?.(); };
+  }, []);
+  useEffect(() => { setRes(r => (r && r.scope === 'footprint' ? null : r)); }, [selectedId]);
   const view = () => {
     const b = cameraBox();
     if (!b) { setErr('Camera view could not be read.'); return; }
-    run(envDataApi.landcoverAreasBbox(b), 'Current camera view');
+    run(envDataApi.landcoverAreasBbox(b), 'Current camera view', 'view', b);
   };
   const footprint = () => {
     if (!prop) return;
     const g = lineFootprint(prop.coordinates.map(c => [c[0], c[1]] as [number, number]), (prop as { width?: number }).width ?? 0);
     if (!g) { setErr('Selected object has no usable footprint (needs ≥ 2 points and a width).'); return; }
-    run(envDataApi.landcoverAreasPolygon(g, 'footprint'), `Footprint of “${prop.name || prop.type}” (centreline ± width/2, approximate)`);
+    run(envDataApi.landcoverAreasPolygon(g, 'footprint'), `Footprint of “${prop.name || prop.type}” (centreline ± width/2, approximate)`, 'footprint');
   };
   return (
     <div className="space-y-1.5" data-testid="env-landcover-areas">
@@ -51,7 +62,8 @@ export const LandcoverAreasPanel: React.FC = () => {
       <Err e={err} id="env-lc-error" />
       {res && (
         <div data-testid="env-lc-result">
-          <p className="text-meta text-text-2">{res.label}: {fmt(res.area_km2, 3)} km² · ESA WorldCover 2021 · derived · screening only</p>
+          <p className="text-meta text-text-2">{res.label}: {fmt(res.area_km2, 3)} km²{res.bbox ? ` (${res.bbox.map(v => v.toFixed(3)).join(', ')} °, W,S,E,N)` : ''} · ESA WorldCover 2021 · derived · screening only</p>
+          <p className="text-meta text-text-3">Cleared when the {res.scope === 'view' ? 'camera moves' : 'selection changes'}.</p>
           <table className="w-full text-label tabular-nums mt-1">
             <tbody>
               {res.classes.map(c => (
@@ -63,7 +75,8 @@ export const LandcoverAreasPanel: React.FC = () => {
               ))}
             </tbody>
           </table>
-          {res.nodata_pixels > 0 && <p className="text-meta text-text-3">{fmt(res.nodata_pixels)} pixels outside the data (not counted in %).</p>}
+          {res.classes.length === 0 && <p className="text-meta text-text-2" data-testid="env-lc-empty">No land-cover pixels in this area (outside the Pune study box) — UNKNOWN, not zero.</p>}
+          {res.nodata_pixels > 0 && <p className="text-meta text-text-3">{fmt(res.nodata_pixels)} pixels ({fmt(res.nodata_pixels * 100 / 1e6, 3)} km²) outside the data, not counted in %.</p>}
           <p className="text-meta text-text-3">{res.method}. Land cover is not land use or zoning.</p>
         </div>
       )}
@@ -77,7 +90,7 @@ const LineChart: React.FC<{ values: number[]; labels: [string, string]; unit: st
   const { d, min, max } = seriesPath(values, W, H);
   return (
     <figure className="space-y-0.5" data-testid={testId} data-points={values.length}>
-      <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>max {fmt(max, 1)} {unit}</span><span>min {fmt(min, 1)}</span></div>
+      <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>max {fmt(max, 1)} {unit}</span><span>axis from {fmt(min, 1)} {unit}</span></div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[90px] rounded bg-white/[0.03] border border-white/10" role="img" aria-label={`Series ${labels[0]} to ${labels[1]}`}>
         <path d={d} fill="none" stroke={color} strokeWidth={1.2} />
       </svg>
@@ -115,11 +128,14 @@ export const AirQualityPanel: React.FC = () => {
   const st = stations?.find(s => s.station_id === sid);
   const params = st ? Object.entries(st.parameters) : [];
   useEffect(() => {
-    if (!st || !st.has_series) { setSeries(null); return; }
+    setSeries(null);
+    if (!st || !st.has_series) return;
     const p = st.parameters[param] ? param : Object.keys(st.parameters)[0];
     if (p !== param) { setParam(p); return; }
+    let live = true;
     setBusy(true); setErr(null);
-    envDataApi.airSeries(sid, p, agg).then(setSeries).catch((e: Error) => setErr(e.message)).finally(() => setBusy(false));
+    envDataApi.airSeries(sid, p, agg).then(r => { if (live) setSeries(r); }).catch((e: Error) => { if (live) setErr(e.message); }).finally(() => { if (live) setBusy(false); });
+    return () => { live = false; };
   }, [sid, param, agg, st]);
   const partial = series ? series.points.filter(p => series.samples_per_full_bucket && p.n < series.samples_per_full_bucket).length : 0;
   return (
@@ -143,9 +159,10 @@ export const AirQualityPanel: React.FC = () => {
           {st && (
             <p className="text-meta text-text-2" data-testid="env-air-meta">
               {st.name} · {st.agency ?? 'agency UNKNOWN'} · Observed · coordinates {st.lon != null ? 'from CPCB list' : 'UNKNOWN (not drawn)'} ·
-              data {istDate(st.parameters[param]?.first)} → {istDate(st.parameters[param]?.last)} · {fmt(st.parameters[param]?.samples ?? 0)} 15-min samples
+              data {istDate(st.parameters[param]?.first)} → {istDate(st.parameters[param]?.last)} · {st.parameters[param] ? `${fmt(st.parameters[param].samples ?? 0)} 15-min samples` : 'no samples for this parameter'}
             </p>
           )}
+          {series && series.points.length === 0 && <p className="text-meta text-text-2" data-testid="env-air-empty">No values for this parameter at this station — UNKNOWN, not zero.</p>}
           {series && series.points.length > 0 && (
             <>
               <LineChart values={series.points.map(p => p.v)} labels={[istDate(series.first), istDate(series.last)]} unit={series.unit} testId="env-air-chart" />
@@ -193,7 +210,7 @@ export const RainfallPanel: React.FC = () => {
           </div>
           <div data-testid="env-rain-dailymax">
             <p className="text-meta text-text-2">Highest daily totals in this cell (mm/day, IMD day):</p>
-            <ul className="text-label tabular-nums">{top.map(t => <li key={t.year} className="flex justify-between"><span>{t.date}</span><span className="text-text-1">{fmt(t.mm, 1)}{cell.suspect_years.includes(t.year) ? ' · suspect year' : ''}</span></li>)}</ul>
+            <ul className="text-label tabular-nums">{top.map(t => <li key={t.year} className="flex justify-between"><span>{t.date}</span><span className="text-text-1">{fmt(t.mm, 1)} mm{cell.suspect_years.includes(t.year) ? ' · suspect year' : ''}</span></li>)}</ul>
           </div>
           <div>
             <p className="text-meta text-text-2">CHIRPS v2 study-box average, annual total 2000–{chirpsYears[chirpsYears.length - 1]?.[0]} (mm; estimated)</p>

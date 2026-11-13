@@ -11,7 +11,7 @@ import type { EnvDataLayer, EnvLegend } from '../../lib/envDataApi';
 import { classLine, envDataStatus, hasMapToggle, legendOf, rampCss, STATUS_LABEL } from './envDataModel';
 import { setEnvDataVariant, setEnvDataVisible, useEnvDataOverlayStore } from './envDataOverlay';
 
-const selCls = 'rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
+const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 
 export const Legend: React.FC<{ legend: EnvLegend; testId?: string }> = ({ legend, testId }) => {
   if (legend.type === 'ramp') {
@@ -65,9 +65,9 @@ export const EnvDataRow: React.FC<{ l: EnvDataLayer }> = ({ l }) => {
         </div>
         {toggle && (
           <button type="button" className="uos-btn uos-btn-sm shrink-0" aria-pressed={on} aria-label={`${on ? 'Hide' : 'Show'} ${l.name} on the map`}
-            data-testid={`env-data-toggle-${l.id}`} data-status={status} disabled={status === 'loading'} onClick={() => void setEnvDataVisible(l, !on)}>
+            data-testid={`env-data-toggle-${l.id}`} data-status={status} onClick={() => void setEnvDataVisible(l, !on)}>
             {status === 'loading' ? <Loader2 size={13} aria-hidden className="animate-spin" /> : on ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
-            {status === 'loading' ? 'Loading' : on ? 'Shown' : 'Show'}
+            {status === 'loading' ? 'Loading…' : on ? 'Shown' : 'Show'}
           </button>
         )}
       </div>

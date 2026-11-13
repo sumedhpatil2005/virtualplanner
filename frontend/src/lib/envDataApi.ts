@@ -69,7 +69,12 @@ export interface RainfallSummary {
 const BASE = `${API_BASE}/api/env-data`;
 
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  let r: Response;
+  try {
+    r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) });
+  } catch (e) {
+    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the server within 60 s' : 'backend unreachable');
+  }
   if (!r.ok) {
     let msg = `${r.status}`;
     try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail ?? j); } catch { /* keep status */ }
