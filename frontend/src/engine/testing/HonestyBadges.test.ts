@@ -54,10 +54,13 @@ describe('data status', () => {
     expect(html).toContain('Not imported');
     expect(html).toContain('UNKNOWN');
   });
-  it('available shows source, date and licence; a blank one shows unknown', () => {
+  it('available shows source, date and licence; a blank one shows UNKNOWN', () => {
     const html = renderToStaticMarkup(createElement(DataStatus, { name: 'Roads', value: { status: 'available', source: 'OpenStreetMap', date: '2026-10-01', licence: '' } }));
     expect(html).toContain('OpenStreetMap');
     expect(html).toContain('2026-10-01');
-    expect(html).toContain('licence unknown');
+    expect(html).toContain('licence UNKNOWN');
+    const none = renderToStaticMarkup(createElement(DataStatus, { name: 'Roads', value: { status: 'available', source: '', date: '', licence: '' } }));
+    expect(none).toContain('source UNKNOWN');
+    expect(none).toContain('date UNKNOWN');
   });
 });

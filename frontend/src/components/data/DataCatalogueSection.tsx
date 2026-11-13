@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Database, ListChecks, Loader2 } from 'lucide-react';
 import { datasetsApi, type DsDataset, type FeatureStatus } from '../../lib/datasetsApi';
 import { PanelSection } from '../ui/Panel';
-import { catalogueSummary } from './dataCatalogueModel';
+import { catalogueSummary, withPendingVersions } from './dataCatalogueModel';
 import { useDataCatalogue } from './useDataCatalogue';
 
 /** Reports → "Data catalogue" entry: counts, and the two buttons that open the catalogue overlay. */
@@ -23,6 +23,7 @@ export const DataCatalogueSection: React.FC = () => {
       {s && (
         <p className="text-label text-text-2 tabular-nums" data-testid="data-summary">
           {s.total} datasets: {s.available} available · {s.pending_review} pending review · {s.synthetic} synthetic · {s.not_acquired} not acquired
+          {list && withPendingVersions(list) > 0 && <><br /><span data-testid="data-summary-pending-versions">{withPendingVersions(list)} in use with a newer version pending review</span></>}
           {feat && <><br />Features: {feat.ready} ready · {feat.partial} partial · {feat.blocked} blocked</>}
         </p>
       )}

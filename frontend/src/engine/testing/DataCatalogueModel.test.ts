@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   UNKNOWN, bestDate, catalogueSummary, dataStatusValue, featureFailsValidation, filterDatasets, footprint, formatBytes, groupDatasets,
-  groupFeatures, provenanceRows, qualitySummary,
+  featureNames, groupFeatures, provenanceRows, qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, withPendingVersions, workspaceLabel,
 } from '../../components/data/dataCatalogueModel';
 import type { DsDataset, DsVersion, FeatureReadiness } from '../../lib/datasetsApi';
 
@@ -114,5 +114,23 @@ describe('features', () => {
   it('flags the traffic validation failure for the trust badge', () => {
     expect(featureFailsValidation(f({ status_cap_reason: 'Model FAILS validation (TAG M3.1: 0 of 15 …)' }))).toBe(true);
     expect(featureFailsValidation(f({}))).toBe(false);
+  });
+});
+
+describe('labels in words (QA 2026-11-14)', () => {
+  it('themes, workspaces, review states and quality badges never show a raw id or "?"', () => {
+    expect(themeLabel('dem')).toBe('Digital elevation model (analysis)');
+    expect(themeLabel('emission_factors')).toBe('Emission factors');
+    expect(themeLabel('brand_new_theme')).toBe('Brand new theme');
+    expect(themeLabel(null)).toBe(UNKNOWN);
+    expect(workspaceLabel('projects')).toBe('Projects');
+    expect(reviewStatusLabel('pending_review')).toBe('Pending review');
+    expect(qualityBadge({ warn: 0, fail: 0, unknown: 3, worst: 'unknown' })).toBe('3 unknown');
+    expect(qualityBadge({ warn: 2, fail: 0, unknown: 3, worst: 'warn' })).toBe('2 warn');
+    expect(qualityBadge({ warn: 0, fail: 0, unknown: 0, worst: null })).toBeNull();
+  });
+  it('feature ids become names; datasets with a pending newer version are counted', () => {
+    expect(featureNames(['explore.terrain_overlay', 'x.flow_paths'], [{ id: 'explore.terrain_overlay', name: 'Terrain overlay' }])).toEqual(['Terrain overlay', 'Flow paths']);
+    expect(withPendingVersions([ds({ active_version: version(), pending_version_ids: ['v3'] }), ds({ pending_version_ids: ['v2'] }), ds()])).toBe(1);
   });
 });

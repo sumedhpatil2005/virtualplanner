@@ -15,7 +15,7 @@ const CLASS_TONE: Record<string, string> = {
   unknown_no_coverage: 'text-slate-400', no_conflict_within_available_data: 'text-slate-400',
 };
 const STATUS_TEXT: Record<ConflictStatus, string> = { open: 'Open', acknowledged: 'Acknowledged', resolved: 'Resolved' };
-const m = (v: number | null) => (v == null ? 'UNKNOWN' : `${v.toFixed(1)} m`);
+const m = (v: number | null) => (v == null ? 'UNKNOWN' : `${v.toFixed(1)}\u00a0m`);
 
 export const ConflictsTab: React.FC<{ b: ProjectBundle; who: string; act: Act }> = ({ b, who, act }) => {
   const [busy, setBusy] = useState(false);
@@ -39,7 +39,7 @@ export const ConflictsTab: React.FC<{ b: ProjectBundle; who: string; act: Act }>
       </Section>
       {lastRun && groups.length === 0 && <EmptyState icon={ShieldCheck} title="No findings to show">Nothing within the screening radius in the available data.</EmptyState>}
       {groups.map(g => (
-        <Section key={g.cls} title={g.label} aside={`${g.items.length}`}>
+        <Section key={g.cls} title={g.label} aside={`${g.items.length} finding${g.items.length === 1 ? '' : 's'}`}>
           <ul className="space-y-1.5" data-testid={`conflicts-${g.cls}`}>
             {g.items.map(i => <IssueRow key={i.id} i={i} b={b} who={who} act={act} />)}
           </ul>
@@ -68,7 +68,7 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
     <li className="rounded-lg bg-white/[0.04] border border-white/5 px-2.5 py-2 text-sm space-y-1" data-testid="conflict-row" data-class={i.class} data-status={i.status}>
       <div className="flex items-start gap-2">
         <button type="button" onClick={() => void fly()} className="flex-1 min-w-0 text-left cursor-pointer" title="Fly to location">
-          <div className="truncate text-slate-100">{ourEl?.name ?? ours ?? i.element_a_id} <span className="text-slate-500">↔</span> {otherSideLabel(i, b.projectNames, pid)}</div>
+          <div className="break-words text-slate-100" data-testid="conflict-title">{ourEl?.name ?? ours ?? i.element_a_id} <span className="text-slate-500">↔</span> {otherSideLabel(i, b.projectNames, pid)}</div>
           <div className={`text-xs ${CLASS_TONE[i.class] ?? ''}`}>{i.class_label} · horizontal {m(i.horizontal_distance_m)} · vertical gap {m(i.vertical_gap_m)}</div>
         </button>
         <CertaintyBadge certainty={i.certainty} compact />

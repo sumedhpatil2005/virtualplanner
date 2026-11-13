@@ -19,14 +19,14 @@ export const DataStatus: React.FC<{ name: string; value: DataStatusValue; classN
       </span>
     );
   }
-  const part = (v: string) => (v && v.trim() ? v : 'unknown');
+  const part = (v: string, what: string) => (v && v.trim() ? v : `${what} UNKNOWN`);
   return (
     <span data-data-status="available" className={`inline-flex flex-wrap items-center gap-1 text-[11px] ${className}`} style={{ color: 'var(--text-2, #A9B3C1)' }}>
       <Database size={11} aria-hidden="true" style={{ color: 'var(--measured, #3FB950)' }} />
       <span className="font-semibold" style={{ color: 'var(--text-1, #E6EAF0)' }}>Available</span>
-      <span>· {value.url ? <a href={value.url} target="_blank" rel="noreferrer" className="underline">{part(value.source)}</a> : part(value.source)}</span>
-      <span>· {part(value.date)}</span>
-      <span>· licence {part(value.licence)}</span>
+      <span>· {value.url ? <a href={value.url} target="_blank" rel="noreferrer" className="underline">{part(value.source, 'source')}</a> : part(value.source, 'source')}</span>
+      <span>· {part(value.date, 'date')}</span>
+      <span>· licence {part(value.licence, '').trim()}</span>
     </span>
   );
 };

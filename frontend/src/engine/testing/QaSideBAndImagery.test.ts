@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { otherSideLabel, sideBLabel, sideBRefShown } from '../../lib/planningProjects';
+import { otherSideLabel, recordRef, sideBLabel, sideBRefShown } from '../../lib/planningProjects';
 import { baseImageryErrorMessage, watchImageryErrors } from '../../lib/baseImageryErrors';
 import type { ProjectIssue } from '../../lib/coordinationApi';
 
@@ -19,6 +19,9 @@ describe('side B labels (Underground conflict check + Projects conflicts)', () =
     expect(sideBLabel(f('building', 'bld_2', { source: 'google_open_buildings_v3' }))).toBe('Possible building (ML footprint)');
     expect(sideBLabel(f('subsurface_utility', 'u1', { utility_type: 'sewer', external_id: 'S-9' }))).toBe('Sewer record S-9');
     expect(sideBLabel(f('project_element', 'pel_1'))).toBe('Other project element');
+    // GeoServer feature ids (layer.N) read as a record number, not the raw layer id (QA 2026-11-14)
+    expect(sideBLabel(f('subsurface_utility', 'u2', { utility_type: 'storm_drain', external_id: 'pmc_storm_water_drains.631' }))).toBe('Storm drain record #631');
+    expect(recordRef('ND-CO-27413')).toBe('ND-CO-27413');
     expect(sideBRefShown(f('building', 'bld_1'))).toBe(true);
   });
   it('Projects keeps project names first', () => {

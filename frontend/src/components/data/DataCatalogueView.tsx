@@ -10,12 +10,14 @@ import { CERTAINTY_COLOR } from '../ui/badges/honesty';
 import { useShellStore } from '../../shell/useShellStore';
 import {
   CHECK_LABEL, CHECK_TONE, DATA_CLASS_HELP, DATA_CLASS_LABEL, DATA_CLASS_TONE, DEP_STATE_LABEL, FEATURE_STATUS_LABEL, UNKNOWN,
-  dataStatusValue, featureFailsValidation, filterDatasets, footprint, groupDatasets, groupFeatures, provenanceRows, puneRect, qualitySummary,
+  CHECK_STATUS_LABEL, dataStatusValue, featureFailsValidation, featureNames, filterDatasets, footprint, groupDatasets, groupFeatures, provenanceRows, puneRect,
+  qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, workspaceLabel,
 } from './dataCatalogueModel';
 import { useDataCatalogue, type DataView } from './useDataCatalogue';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
 const FEATURE_COLOR = { ready: TONE_COLOR.good, partial: TONE_COLOR.warn, blocked: TONE_COLOR.bad };
+const ORIGIN_LABEL: Record<string, string> = { seed: 'from the built-in seed', manifest: 'from manifest.json', processing: 'from processing.json', catalogue_sync: 'from the source catalogue' };
 const who = () => localStorage.getItem('td-user') ?? '';
 
 /**
@@ -66,7 +68,7 @@ const DataCatalogueView: React.FC = () => {
       {error && <p className="text-label text-warn px-4 pt-2" role="status">Could not load everything ({error}).</p>}
       <TabPanel idBase="uos-data" id={view} className="uos-data-body">
         {view === 'datasets'
-          ? <DatasetsPane list={list} selected={selected} onSelect={id => select(id)} onChanged={load} />
+          ? <DatasetsPane list={list} features={features} selected={selected} onSelect={id => select(id)} onChanged={load} />
           : <FeaturesPane features={features} onDataset={id => select(id)} />}
       </TabPanel>
     </section>
@@ -74,7 +76,7 @@ const DataCatalogueView: React.FC = () => {
 };
 
 // ── Datasets ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-const DatasetsPane: React.FC<{ list: DsDataset[] | null; selected: string | null; onSelect: (id: string) => void; onChanged: () => void }> = ({ list, selected, onSelect, onChanged }) => {
+const DatasetsPane: React.FC<{ list: DsDataset[] | null; features: FeatureReadiness[] | null; selected: string | null; onSelect: (id: string) => void; onChanged: () => void }> = ({ list, features, selected, onSelect, onChanged }) => {
   const [query, setQuery] = useState('');
   const groups = useMemo(() => (list ? groupDatasets(filterDatasets(list, query, null)) : []), [list, query]);
   const current = selected ?? groups[0]?.items[0]?.id ?? null;
@@ -99,11 +101,11 @@ const DatasetsPane: React.FC<{ list: DsDataset[] | null; selected: string | null
                     <button type="button" className={`uos-row w-full text-left ${current === d.id ? 'is-selected' : ''}`} onClick={() => onSelect(d.id)}
                       aria-current={current === d.id} data-testid={`data-row-${d.id}`}>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-label text-text-1 truncate">{d.title}</span>
-                        <span className="block text-meta text-text-3 truncate">{d.theme}{d.active_version?.data_class ? ` · ${DATA_CLASS_LABEL[d.active_version.data_class]}` : ''}</span>
+                        <span className="block text-label text-text-1 break-words">{d.title}</span>
+                        <span className="block text-meta text-text-3 break-words">{themeLabel(d.theme)}{d.active_version?.data_class ? ` · ${DATA_CLASS_LABEL[d.active_version.data_class]}` : ''}{d.active_version && d.pending_version_ids.length > 0 ? ' · newer version pending review' : ''}</span>
                       </span>
-                      {q.worst && <span className="text-meta tabular-nums" style={{ color: TONE_COLOR[CHECK_TONE[q.worst]] }} title={`${q.pass} pass · ${q.warn} warn · ${q.fail} fail · ${q.unknown} unknown`}>
-                        {q.fail ? `${q.fail} fail` : q.warn ? `${q.warn} warn` : q.unknown ? `${q.unknown} ?` : 'ok'}</span>}
+                      {q.worst && <span className="text-meta tabular-nums shrink-0" style={{ color: TONE_COLOR[CHECK_TONE[q.worst]] }} title={`Quality checks: ${q.pass} pass · ${q.warn} warn · ${q.fail} fail · ${q.unknown} unknown`}>
+                        {qualityBadge(q)}</span>}
                     </button>
                   </li>
                 );
@@ -113,7 +115,7 @@ const DatasetsPane: React.FC<{ list: DsDataset[] | null; selected: string | null
         ))}
       </div>
       <div className="uos-data-detail">
-        {current ? <ProvenanceCard id={current} onChanged={onChanged} /> : <EmptyState icon={Database} title="Select a dataset" />}
+        {current ? <ProvenanceCard id={current} features={features} onChanged={onChanged} /> : <EmptyState icon={Database} title="Select a dataset" />}
       </div>
     </div>
   );
@@ -127,7 +129,7 @@ const DataClassChip: React.FC<{ cls: DataClass | null }> = ({ cls }) => {
   );
 };
 
-const ProvenanceCard: React.FC<{ id: string; onChanged: () => void }> = ({ id, onChanged }) => {
+const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null; onChanged: () => void }> = ({ id, features, onChanged }) => {
   const [d, setD] = useState<DsDataset | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -215,8 +217,8 @@ const ProvenanceCard: React.FC<{ id: string; onChanged: () => void }> = ({ id, o
             <li key={x.id} className="uos-card space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-label text-text-1 font-medium">{x.version_label}</span>
-                <span className="uos-data-chip">{x.review_status.replace('_', ' ')}</span>
-                <span className="text-meta text-text-3">{x.origin} · registered {x.created_at?.slice(0, 16).replace('T', ' ') ?? UNKNOWN} UTC</span>
+                <span className="uos-data-chip" data-testid={`version-status-${x.version_label}`}>{reviewStatusLabel(x.review_status)}</span>
+                <span className="text-meta text-text-3">{ORIGIN_LABEL[x.origin] ?? x.origin} · registered {x.created_at?.slice(0, 16).replace('T', ' ') ?? UNKNOWN} UTC</span>
                 {x.review_status === 'pending_review' && (
                   <span className="flex gap-1 ml-auto">
                     <button type="button" className="uos-btn uos-btn-sm" disabled={!!busy || !who()} title={who() ? '' : 'Set your name (Traffic data / Projects) to review'}
@@ -245,7 +247,7 @@ const ProvenanceCard: React.FC<{ id: string; onChanged: () => void }> = ({ id, o
           <ul className="text-meta text-text-2 space-y-0.5">{d.update_checks!.map(u => <li key={u.id}>{u.checked_at?.slice(0, 16).replace('T', ' ')} UTC · {u.result} · {u.detail}</li>)}</ul>
         </Disclosure>
       )}
-      {(d.used_by_features ?? []).length > 0 && <p className="text-meta text-text-3">Used by: {d.used_by_features!.join(', ')}</p>}
+      {(d.used_by_features ?? []).length > 0 && <p className="text-meta text-text-3" data-testid="used-by">Used by: {featureNames(d.used_by_features!, features).join(', ')}</p>}
     </article>
   );
 };
@@ -260,7 +262,7 @@ const QualityList: React.FC<{ checks: QualityCheck[] }> = ({ checks }) => (
         return (
           <tr key={c.check}>
             <td>{CHECK_LABEL[c.check] ?? c.check}</td>
-            <td><span className="inline-flex items-center gap-1" style={{ color: TONE_COLOR[tone] }}><Icon size={12} aria-hidden />{c.status.replace('_', ' ')}</span></td>
+            <td><span className="inline-flex items-center gap-1" style={{ color: TONE_COLOR[tone] }}><Icon size={12} aria-hidden />{CHECK_STATUS_LABEL[c.status] ?? c.status}</span></td>
             <td className="text-text-2" style={{ whiteSpace: 'normal' }}>{c.detail}</td>
           </tr>
         );
@@ -286,7 +288,7 @@ const FeaturesPane: React.FC<{ features: FeatureReadiness[] | null; onDataset: (
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="uos-data-chip" style={{ borderColor: FEATURE_COLOR[f.status], color: FEATURE_COLOR[f.status] }}>{FEATURE_STATUS_LABEL[f.status]}</span>
                   <span className="text-label text-text-1 font-medium">{f.name}</span>
-                  <span className="text-meta text-text-3">{f.workspace}</span>
+                  <span className="text-meta text-text-3">{workspaceLabel(f.workspace)}</span>
                   {featureFailsValidation(f) && <TrustBadge trust="fails_validation" testId={`feature-trust-${f.id}`} />}
                   {f.wired === false && <span className="uos-data-chip" style={{ borderColor: TONE_COLOR.warn, color: TONE_COLOR.warn }} title={f.wiring_note ?? ''}
                     data-testid={`feature-not-wired-${f.id}`}>Not wired into the feature yet</span>}
@@ -297,7 +299,7 @@ const FeaturesPane: React.FC<{ features: FeatureReadiness[] | null; onDataset: (
                   <thead><tr><th>Needs</th><th>Quality</th><th>Dataset</th><th>State</th></tr></thead>
                   <tbody>{f.dependencies.map(dep => (
                     <tr key={dep.dependency_id}>
-                      <td>{dep.theme}{dep.required ? '' : ' (optional)'}</td>
+                      <td>{themeLabel(dep.theme)}{dep.required ? '' : ' (optional)'}</td>
                       <td>{dep.required_quality}</td>
                       <td>{dep.dataset_id ? <button type="button" className="uos-link text-left" onClick={() => onDataset(dep.dataset_id!)}>{dep.dataset_title ?? dep.dataset_id}</button> : <span style={{ color: TONE_COLOR.unknown }}>none registered</span>}</td>
                       <td style={{ color: dep.state === 'satisfied' ? TONE_COLOR.good : dep.state === 'insufficient_quality' ? TONE_COLOR.warn : TONE_COLOR.bad }}>{DEP_STATE_LABEL[dep.state]}</td>

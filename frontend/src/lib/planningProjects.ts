@@ -182,6 +182,12 @@ export const LAYER_NAME: Readonly<Record<string, string>> = {
  * Side B of a finding in words, without project names (both Underground's conflict check and Projects → Conflicts use it).
  * 'building' is returned by the backend since engine 1.1; kept out of the shared b_type union.
  */
+/** A source feature id in words: GeoServer-style "pmc_storm_water_drains.631" → "#631"; other ids are kept as published. */
+export function recordRef(id: string): string {
+  const m = /^[a-z][a-z0-9_]*\.(\d+)$/i.exec(id.trim());
+  return m ? `#${m[1]}` : id;
+}
+
 export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'evidence'>): string {
   switch (i.b_type as string) {
     case 'project_element': return 'Other project element';
@@ -191,7 +197,7 @@ export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'eviden
     case 'subsurface_utility': {
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
       const t = b.utility_type === 'sewer' ? 'Sewer' : b.utility_type === 'storm_drain' ? 'Storm drain' : 'Utility';
-      return b.external_id ? `${t} record ${String(b.external_id)}` : `${t} record`;
+      return b.external_id ? `${t} record ${recordRef(String(b.external_id))}` : `${t} record`;
     }
     case 'building': {
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;

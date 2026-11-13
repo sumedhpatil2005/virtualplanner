@@ -38,6 +38,48 @@ export const DEP_STATE_LABEL: Record<DepState, string> = {
   satisfied: 'Met', insufficient_quality: 'Lower quality than needed', quality_fail: 'Quality check failed', unclassified: 'Not classified',
   synthetic_only: 'Synthetic only', pending_review: 'Pending review', missing: 'Not acquired',
 };
+/** Theme id → words (mirrors backend/datasets/vocab.py THEMES); unknown ids are humanised, never shown raw. */
+export const THEME_LABEL: Record<string, string> = {
+  base_map_imagery: 'Base-map imagery (streamed)', terrain_visual: 'Visual terrain (streamed)', osm_extract: 'OpenStreetMap extract (raw)',
+  road_network: 'Road network', buildings: 'Building footprints', metro_alignment: 'Metro alignments and stations',
+  water_features: 'Water bodies and waterways', heritage_locators: 'Heritage locators', trees: 'Trees (point features)',
+  railway: 'Railways (non-metro)', flood_lines: 'Flood lines / flood hazard', dem: 'Digital elevation model (analysis)',
+  drainage_network: 'Storm-water drainage network', rainfall: 'Rainfall / IDF', groundwater: 'Groundwater levels', geology: 'Geology',
+  soil: 'Soil', boreholes: 'Borehole logs', utilities: 'Utility records', air_quality: 'Air quality (measured)', noise: 'Noise (measured)',
+  land_surface_temperature: 'Land surface temperature', land_cover: 'Land cover', tree_census: 'Tree census', seismic_zone: 'Seismic zone',
+  traffic_counts: 'Traffic counts', traffic_speeds: 'Traffic speeds / travel times', traffic_validation: 'Independent traffic validation observations',
+  travel_demand: 'Travel demand (OD / household survey)', diurnal_profile: 'Hour-of-day traffic profile', network_corrections: 'Local network corrections',
+  population: 'Population', admin_boundaries: 'Administrative / ward boundaries', protected_monuments: 'Protected monument limits (ASI / state)',
+  heritage_list: 'Municipal heritage list', dp_road_lines: 'Development-plan road lines / right of way',
+  metro_structures: 'Metro structure levels (tunnel crown/invert, deck)', vehicle_fleet: 'Vehicle fleet composition', emission_factors: 'Emission factors',
+  demo_seed: 'Demonstration seed objects', satellite_imagery: 'Satellite imagery and derived indices', transit: 'Public transport (stops, depots, routes)',
+  amenities: 'Public facilities and amenities', land_parcels: 'Revenue / cadastral parcels (gut, TP scheme)', other: 'Other',
+};
+const humanise = (id: string) => { const t = id.replace(/[_.]+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : UNKNOWN; };
+export const themeLabel = (t: string | null | undefined): string => (t ? THEME_LABEL[t] ?? humanise(t) : UNKNOWN);
+export const WORKSPACE_LABEL: Record<string, string> = {
+  explore: 'Explore', design: 'Design', underground: 'Underground', environment: 'Environment', simulate: 'Simulate', projects: 'Projects', reports: 'Reports',
+};
+export const workspaceLabel = (w: string | null | undefined): string => (w ? WORKSPACE_LABEL[w] ?? humanise(w) : UNKNOWN);
+export const CHECK_STATUS_LABEL: Record<CheckStatus, string> = { pass: 'pass', warn: 'warn', fail: 'fail', unknown: 'unknown', not_applicable: 'not applicable' };
+export const REVIEW_STATUS_LABEL: Record<string, string> = { active: 'Active', pending_review: 'Pending review', rejected: 'Rejected', superseded: 'Superseded' };
+export const reviewStatusLabel = (s: string): string => REVIEW_STATUS_LABEL[s] ?? humanise(s);
+
+/** Short quality badge for a catalogue row, in words ("2 warn", "3 unknown", "ok"); null when no checks ran. */
+export function qualityBadge(q: { warn: number; fail: number; unknown: number; worst: CheckStatus | null }): string | null {
+  if (!q.worst) return null;
+  return q.fail ? `${q.fail} fail` : q.warn ? `${q.warn} warn` : q.unknown ? `${q.unknown} unknown` : 'ok';
+}
+
+/** Feature ids (e.g. "explore.terrain_overlay") → their names where the feature list is known; humanised otherwise. */
+export function featureNames(ids: string[], features: { id: string; name: string }[] | null | undefined): string[] {
+  const by = new Map((features ?? []).map(f => [f.id, f.name]));
+  return ids.map(id => by.get(id) ?? humanise(id.split('.').slice(-1)[0]));
+}
+
+/** Datasets whose active version stays in use while a newer version waits for review. */
+export const withPendingVersions = (list: DsDataset[]): number => list.filter(d => d.active_version && d.pending_version_ids.length > 0).length;
+
 export const CAPABILITY_ORDER = ['Explore', 'Design', 'Underground', 'Environment', 'Flood/drainage', 'Traffic', 'Emissions', 'Population', 'Coordination'];
 
 export const orUnknown = (v: string | number | null | undefined): string =>

@@ -100,7 +100,7 @@ export const ReportsContext: React.FC = () => {
                 return (
                   <li key={p.id} className="uos-card space-y-1.5" data-testid={`report-card-${p.id}`}>
                     <button type="button" className="min-w-0 w-full text-left" onClick={() => { setWorkspace('projects'); openProject(p.id); }} title="Open the project">
-                      <span className="block text-body text-text-1 truncate">{p.name}</span>
+                      <span className="block text-body text-text-1 break-words">{p.name}</span>
                       <span className="block text-meta text-text-2">{STATUS_LABEL[p.status] ?? p.status}</span>
                     </button>
                     {s && <div className="text-meta text-text-2 tabular-nums" data-testid="report-inputs">Inputs: {s.alternatives} alternatives · {s.datasets} datasets · {s.assessments} screenings · {s.runs} runs · {s.decisions} decisions</div>}
