@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { TrafficCountsNotice } from './data/TrafficCountsNotice';
 import { AlertTriangle, Crosshair, Database, FileUp, Loader2, Trash2, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSelectedId } from '../hooks/useAppMode';
@@ -89,6 +90,7 @@ export const TrafficDataPanel: React.FC<{ onClose: () => void }> = ({ onClose })
             <label className={labelCls} htmlFor="td-user">Your name (recorded with every change)</label>
             <input id="td-user" className={inputCls} value={user} onChange={e => setUser(e.target.value)} placeholder="e.g. A. Engineer" />
           </div>
+          <TrafficCountsNotice compact />
           {error && <Notice tone="bad" icon={AlertTriangle} action={<Button size="sm" variant="ghost" onClick={() => void reload()}>Retry</Button>}>Traffic data could not be loaded: {error}</Notice>}
           {tab === 'datasets' && <DatasetList datasets={datasets} sets={sets} user={user} onChanged={reload} />}
           {tab === 'enter' && <ManualEntry datasets={datasets ?? []} classes={classes} sets={sets} user={user} roadId={roadId} setRoadId={setRoadId} onChanged={reload} />}

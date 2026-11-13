@@ -30,6 +30,7 @@ TRAFFIC_COUNTS = {
                "Counts the simulator reads are research transcriptions (6 junctions, NICMAR 2025; 8 CCTV cameras, Mendeley 2023; "
                "CMP 2008 screen line) — the model still FAILS TAG M3.1."),
     "collection_plan": "docs/urbanos/MISSING_DATA_AND_COLLECTION_PLAN.md",
+    "collection_plan_url": "/api/infra/docs/collection-plan",
     "restricted_sources": [{"id": "pmc_portal_traffic_details", "name": "PMC open-data portal — 'PMC Traffic Details' (id 431, xlsx)",
                             "access": "restricted (CAPTCHA purpose form)", "url": "https://opendata.pmc.gov.in",
                             "note": "Contents UNKNOWN. Not accessed: UrbanOS never bypasses CAPTCHAs or logins; a person can download it via the form (plan §2.7)."}],
@@ -118,6 +119,22 @@ def infra_features(lid: str, bbox: str = Query(..., description="minLon,minLat,m
 @router.get("/census2011")
 def census2011():
     return census_summary(full=True)
+
+
+DOCS = {"collection-plan": "MISSING_DATA_AND_COLLECTION_PLAN.md", "infrastructure-data": "INFRASTRUCTURE_DATA.md"}
+
+
+@router.get("/docs/{name}")
+def infra_doc(name: str):
+    """The repository's own planning documents as plain text (so the UI can link to them)."""
+    from fastapi.responses import PlainTextResponse
+    fn = DOCS.get(name)
+    if fn is None:
+        raise HTTPException(404, "unknown document")
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "docs", "urbanos", fn)
+    if not os.path.exists(p):
+        raise HTTPException(404, f"{fn} not found in this checkout")
+    return PlainTextResponse(open(p, encoding="utf-8").read(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/traffic-counts")

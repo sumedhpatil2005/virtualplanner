@@ -6,7 +6,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges';
 import { coordinationApi, type ConflictStatus, type ProjectIssue } from '../../lib/coordinationApi';
 import { planningClient } from '../../lib/planningClient';
-import { groupIssuesByClass, otherSideLabel, ACTIONABLE } from '../../lib/planningProjects';
+import { groupIssuesByClass, otherSideEvidence, otherSideLabel, ACTIONABLE } from '../../lib/planningProjects';
 import { StaleBadge } from './common';
 import { inputCls, when, flyToGeometry, type Act, type ProjectBundle } from './projectData';
 
@@ -34,7 +34,7 @@ export const ConflictsTab: React.FC<{ b: ProjectBundle; who: string; act: Act }>
         </div>
         {b.elements.length === 0 && <p className="text-xs text-slate-400">Register proposal elements from an alternative first.</p>}
         <Disclosure>
-          <p className="text-xs text-slate-400">Checks this project's elements against other projects, base-city roads, OpenStreetMap metro and imported utility records (UTM 43N). Depth or width UNKNOWN gives “potential conflict”, never “clear”. “No conflict within available data” is not proof of no conflict. Permission distances (e.g. metro NOC 20 m) are triggers for a permission, not engineering clearances. Findings never edit either project.</p>
+          <p className="text-xs text-slate-400">Checks this project's elements against other projects, base-city roads, OpenStreetMap metro, building footprints (OSM observed; Microsoft / Google ML inferred) and utility records incl. PMC sewer / storm-drain records (ASCE 38 QL-D; sewer depths from DESIGN levels, unverified) (UTM 43N). Depth or width UNKNOWN gives “potential conflict”, never “clear”. “No conflict within available data” is not proof of no conflict. Permission distances (e.g. metro NOC 20 m) are triggers for a permission, not engineering clearances. Findings never edit either project.</p>
         </Disclosure>
       </Section>
       {lastRun && groups.length === 0 && <EmptyState icon={ShieldCheck} title="No findings to show">Nothing within the screening radius in the available data.</EmptyState>}
@@ -74,6 +74,7 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
         <CertaintyBadge certainty={i.certainty} compact />
         <button aria-label="Fly to location" title="Fly to location" className="p-1 rounded text-slate-400 hover:text-white cursor-pointer" onClick={() => void fly()}><Crosshair size={14} /></button>
       </div>
+      {otherSideEvidence(i) && <div className="text-xs text-slate-400" data-testid="conflict-evidence">{otherSideEvidence(i)}</div>}
       {shared && <div className="text-xs text-violet-200 flex items-start gap-1" data-testid="conflict-shared"><Share2 size={11} aria-hidden className="mt-0.5 shrink-0" />Shared with project “{shared}” — they see the same finding; nothing in their project is changed.</div>}
       {i.permission_triggers.length > 0 && <div className="text-xs text-amber-200">{i.permission_triggers.map(t => `${t.label}: ${t.distance_m.toFixed(1)} m ≤ ${t.threshold_m} m (permission trigger, not an engineering clearance)`).join(' · ')}</div>}
       <div className="flex items-center gap-2 text-xs">

@@ -178,13 +178,43 @@ export function otherSideLabel(i: ProjectIssue, projectNames: Readonly<Record<st
     const nm = projectNames[i.other_project] ?? i.other_project;
     return i.raised_by_project === thisProject ? `Project “${nm}”` : `Project “${nm}” (raised by them)`;
   }
-  switch (i.b_type) {
+  // 'building' is returned by the backend since engine 1.1; kept out of the shared b_type union (Underground maps every member)
+  switch (i.b_type as string) {
     case 'baseline_road': return 'Existing road (base city)';
     case 'osm_metro': return 'Existing metro (OpenStreetMap)';
-    case 'subsurface_utility': return 'Utility record';
+    case 'subsurface_utility': {
+      const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
+      const t = b.utility_type === 'sewer' ? 'Sewer' : b.utility_type === 'storm_drain' ? 'Storm drain' : 'Utility';
+      return b.external_id ? `${t} record ${String(b.external_id)}` : `${t} record`;
+    }
+    case 'building': {
+      const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
+      return b.source === 'osm' ? 'Existing building (OSM footprint)' : 'Possible building (ML footprint)';
+    }
     case 'layer': return `Layer: ${i.b_ref}`;
     default: return i.b_ref;
   }
+}
+
+const BLD_SOURCE: Record<string, string> = { osm: 'OpenStreetMap (volunteer-mapped)', google_open_buildings_v3: 'Google Open Buildings v3 (ML)', ms_global_ml_buildings: 'Microsoft ML footprints' };
+
+/** Source and confidence of side B for building / utility-record findings (null for other kinds): never blank, UNKNOWN when missing. */
+export function otherSideEvidence(i: Pick<ProjectIssue, 'b_type' | 'evidence'>): string | null {
+  const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
+  if ((i.b_type as string) === 'building') {
+    const src = BLD_SOURCE[String(b.source)] ?? String(b.source ?? 'UNKNOWN');
+    const cls = b.data_class === 'observed' ? 'observed' : b.data_class === 'inferred' ? 'inferred' : 'class UNKNOWN';
+    const conf = b.confidence == null ? 'confidence UNKNOWN' : `confidence ${String(b.confidence)}`;
+    const agree = b.osm_agreement === 'ml_only_candidate' ? 'not in OSM' : b.osm_agreement === 'osm' ? 'OSM' : String(b.osm_agreement ?? '');
+    const h = b.height_m == null ? 'height UNKNOWN' : `height ${String(b.height_m)} m (OSM tag)`;
+    return `Source: ${src} ${String(b.source_id ?? '')} · ${cls} · ${conf} · ${agree} · ${h} · foundation depth UNKNOWN`;
+  }
+  if (i.b_type === 'subsurface_utility' && (b.quality_level || b.source)) {
+    const depth = b.z_max_m == null && b.z_min_m == null ? 'depth UNKNOWN'
+      : `z ${b.z_max_m == null ? 'UNKNOWN' : Number(b.z_max_m).toFixed(2)} to ${b.z_min_m == null ? 'UNKNOWN' : Number(b.z_min_m).toFixed(2)} m${b.levels_status ? ` (${String(b.levels_status)})` : ''}`;
+    return `Source: ${String(b.source ?? b.owner ?? 'imported record')} · ASCE 38 ${String(b.quality_level ?? 'QL UNKNOWN')} · ${depth}`;
+  }
+  return null;
 }
 
 // ── Staleness ────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,8 @@ import { cityStats, groupLayers, osmIdOf, searchObjects, summarise, typeLabel } 
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import type { OverlayKey } from '../../components/environment/envCatalogue';
 import { TerrainSection } from '../../components/explore/TerrainSection';
+import { MunicipalInspector, MunicipalLayerGroups } from '../../components/explore/MunicipalLayers';
+import { useMuniStore } from '../../components/explore/municipalOverlay';
 
 function useLayers(): Layer[] {
   const [layers, setLayers] = useState<Layer[]>(() => engineInstance.layers.getAll());
@@ -66,6 +68,7 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
         <p className="text-meta text-text-3">Other environmental data: see Environment (most is not imported, UNKNOWN).</p>
       </section>
       <TerrainSection />
+      <MunicipalLayerGroups />
       <section aria-label="Proposals">
         <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-0.5">Proposals</h4>
         <p className="text-label text-text-2" data-testid="explore-proposals">{proposals === 0 ? 'No proposed objects in this alternative.' : `${proposals.toLocaleString()} proposed or changed object${proposals === 1 ? '' : 's'} in this alternative (shown on their own layers above).`}</p>
@@ -147,11 +150,17 @@ export const ExploreContext: React.FC = () => {
   // useEngineObjects re-renders on object / alternative changes; the filter and stats are O(n) and cheap
   const objects = filterObjectsForScenario(all, engineInstance.scenarios.getActiveScenarioId());
   const stats = cityStats(objects);
+  const inspected = useMuniStore(s => s.inspected);
   return (
     <div className="space-y-5">
       <PanelSection title="Find">
         <ObjectSearch objects={objects} />
       </PanelSection>
+      {inspected && (
+        <PanelSection title="Map feature">
+          <MunicipalInspector />
+        </PanelSection>
+      )}
       <PanelSection title="Selected">
         <SelectedSummary />
       </PanelSection>
@@ -167,7 +176,7 @@ export const ExploreContext: React.FC = () => {
         <LayerTree proposals={stats.proposals} />
       </PanelSection>
       <Disclosure>
-        <p className="text-label text-text-2">Road km sums the great-circle length of every loaded road centreline (each carriageway drawn separately counts separately). Network nodes: vertices shared by two or more road pieces (matched at about 0.1 m) where at least three arms meet; flyovers crossing without a shared vertex are not counted. Search matches object names and OpenStreetMap ids of loaded objects only. Toggles change the existing layer registry; environment overlays draw GET /api/feasibility/site-data.</p>
+        <p className="text-label text-text-2">Road km sums the great-circle length of every loaded road centreline (each carriageway drawn separately counts separately). Network nodes: vertices shared by two or more road pieces (matched at about 0.1 m) where at least three arms meet; flyovers crossing without a shared vertex are not counted. Search matches object names and OpenStreetMap ids of loaded objects only. Toggles change the existing layer registry; environment overlays draw GET /api/feasibility/site-data; municipal and building layers load the features in view from GET /api/infra/layers/:id/features (capped) and reload when the camera stops.</p>
       </Disclosure>
     </div>
   );
