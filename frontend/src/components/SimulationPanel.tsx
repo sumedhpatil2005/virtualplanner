@@ -16,10 +16,8 @@ import { SPEED_COLORS } from '../engine/rendering/renderers/MicroTrafficVisualiz
 import { formatDistanceM } from '../lib/format';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, Notice } from './ui/kit';
-import { CalibrationPanel } from './CalibrationPanel';
-import { TimeOfDayPanel } from './TimeOfDayPanel';
-import { UnderstandView, ImproveView, DemandEvidence, CountChecks } from './RoadAnalysisPanel';
-import { EmissionsCard } from './OdmeAndEmissions';
+import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
+import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawer';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -170,7 +168,7 @@ const Study: React.FC<{ sim: SimulationModeState; tab: Tab; setTab: (t: Tab) => 
       )}
       {sim.error && <Notice tone="bad" icon={AlertOctagon}>{sim.error}</Notice>}
       {area && tab === 'understand' && <UnderstandView sim={sim} goImprove={() => setTab('improve')} goDetails={() => setTab('details')} />}
-      {area && tab === 'improve' && <ImproveView sim={sim} />}
+      {area && tab === 'improve' && <ImproveView sim={sim} onThroughTheDay={() => openSimulateDrawer('day')} />}
       {area && tab === 'details' && <DetailsView sim={sim} />}
     </>
   );
@@ -193,18 +191,9 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-400 leading-relaxed">Everything behind the figures, closed until opened. Nothing here is needed to read the results.</p>
+      <DrawerLinks />
       <Advanced title="Assumptions & data sources: the demand">
         <DemandEvidence sim={sim} />
-      </Advanced>
-      <Advanced title="Checks against traffic counts (screenlines)">
-        <CountChecks sim={sim} />
-        <CalibrationPanel sim={sim} />
-      </Advanced>
-      <Advanced title="Fuel and emissions (estimated)">
-        <EmissionsCard result={sim.analysis.output?.result} />
-      </Advanced>
-      <Advanced title="Hourly demand profile">
-        <TimeOfDayPanel tod={sim.timeOfDay} />
       </Advanced>
       <Advanced title="Live view figures">
         <VehicleInspector sim={sim} />
@@ -232,6 +221,21 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
     </div>
   );
 };
+
+const DRAWER_LINKS: { id: SimulateDrawerTabId; label: string }[] = [
+  { id: 'calibration', label: 'Calibration' }, { id: 'odme', label: 'ODME' }, { id: 'emissions', label: 'Emissions' },
+  { id: 'counts', label: 'Count checks' }, { id: 'day', label: 'Through the day' },
+];
+
+/** The checks against counts, ODME, emissions and the day profile live in the bottom drawer (rendered once, there). */
+const DrawerLinks: React.FC = () => (
+  <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 space-y-1.5" data-testid="details-drawer-links">
+    <p className="text-xs text-slate-400">Checks and estimates, in the drawer below the map:</p>
+    <div className="flex flex-wrap gap-1">
+      {DRAWER_LINKS.map(l => <Button key={l.id} size="sm" variant="ghost" onClick={() => openSimulateDrawer(l.id)}>{l.label}</Button>)}
+    </div>
+  </div>
+);
 
 const SignalsNote: React.FC<{ signals: SignalsState }> = ({ signals }) => {
   if (signals.status === 'off') return null;

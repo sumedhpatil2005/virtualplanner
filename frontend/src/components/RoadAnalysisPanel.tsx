@@ -179,7 +179,8 @@ const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = 
 
 // ── Improve & compare ──────────────────────────────────────────────────────
 
-export const ImproveView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+/** onThroughTheDay: when the shell hosts "Through the day" in its bottom drawer, a link replaces the inline card (rendered once). */
+export const ImproveView: React.FC<{ sim: SimulationModeState; onThroughTheDay?: () => void }> = ({ sim, onThroughTheDay }) => {
   const out = sim.analysis.output;
   return (
     <div className="space-y-5" data-testid="improve-view">
@@ -187,7 +188,9 @@ export const ImproveView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => 
       <ScenarioTest sim={sim} />
       {out ? <Suggestions r={out.result} sim={sim} /> : <AnalysisGate sim={sim} />}
       <ScenarioGeneratorPanel />
-      <TimesOfDay sim={sim} />
+      {onThroughTheDay
+        ? <p className="text-xs text-slate-400">Through the day (morning peak, midday, evening peak, night): <button type="button" className="underline cursor-pointer text-cyan-200" data-testid="open-through-the-day" onClick={onThroughTheDay}>open in the drawer below</button>.</p>
+        : <TimesOfDay sim={sim} />}
     </div>
   );
 };
@@ -472,14 +475,15 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
 };
 
 /** Model against published counts in the area: river bridges (mid-block) and counted junctions. */
-export const CountChecks: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+/** withOdme=false when the ODME card is shown elsewhere (the Simulate drawer's own ODME tab), so it renders once. */
+export const CountChecks: React.FC<{ sim: SimulationModeState; withOdme?: boolean }> = ({ sim, withOdme = true }) => {
   const out = sim.analysis.output;
   const checks = screenlineChecks(sim.screenlines, out?.result, sim.analysis.hour);
   const counts = out?.counts ?? [];
   return (
     <div className="space-y-3 text-xs text-slate-400" data-testid="count-checks">
       <TrafficCountChecks sim={sim} />
-      <OdmeCard sim={sim} />
+      {withOdme && <OdmeCard sim={sim} />}
       {checks.length > 0 ? (
         <div>
           <p className="text-slate-300 font-medium">River bridges in the area (both directions, veh/h)</p>

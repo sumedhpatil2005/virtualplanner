@@ -25,6 +25,7 @@ import { DesignContext } from './contexts/DesignContext';
 import { UndergroundContext, UtilityTable } from './contexts/UndergroundContext';
 import { EnvironmentContext } from './contexts/EnvironmentContext';
 import { SimulateContext } from './contexts/SimulateContext';
+import { SIMULATE_DRAWER_TABS } from './contexts/SimulateDrawer';
 import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
 
@@ -43,6 +44,7 @@ const CONTEXTS: Record<WorkspaceId, React.FC> = {
 /** Bottom-drawer tabs per workspace. Only real content; a workspace without tabs shows no drawer at all. */
 const DRAWER_TABS: Partial<Record<WorkspaceId, DrawerTab[]>> = {
   underground: [{ id: 'utilities', label: 'Utility table', content: <UtilityTable /> }],
+  simulate: SIMULATE_DRAWER_TABS,
 };
 
 /** Workspaces whose context panel hosts a full existing side panel and needs the wider column. */
