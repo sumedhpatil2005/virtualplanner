@@ -388,3 +388,14 @@ export function alignmentElementPayload(a: UndergroundAlignmentObject): Alignmen
     element_ref: a.id,
   };
 }
+
+/**
+ * One line for an alignment in a list: kind, plan length, deepest known depth (invert where the section is known), how many vertex depths are
+ * unknown. Value and unit are joined by a no-break space so a narrow panel never wraps "21.0" away from its "m".
+ */
+export function alignmentRowSummary(kindLabel: string, p: Pick<AlignmentProfile, 'lengthM' | 'maxKnownDepthM' | 'unknownDepthCount'>): string {
+  const nb = '\u00a0';
+  const deepest = p.maxKnownDepthM === null ? 'Unknown' : `${p.maxKnownDepthM.toFixed(1)}${nb}m`;
+  const unknown = p.unknownDepthCount ? ` · ${p.unknownDepthCount}${nb}vertex depth${p.unknownDepthCount === 1 ? '' : 's'} unknown` : '';
+  return `${kindLabel} · ${Math.round(p.lengthM).toLocaleString('en-IN')}${nb}m · deepest ${deepest}${unknown}`;
+}

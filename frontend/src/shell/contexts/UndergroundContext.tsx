@@ -10,7 +10,7 @@ import { useEngineObjects } from '../useEngineObjects';
 import { dualOverlay, useShellStore } from '../useShellStore';
 import { lengthM } from './geo';
 import { DEFAULT_DEPTH_M, UTILITY_LABEL, utilityCertainty } from './utilityCertainty';
-import { ALIGNMENT_KIND_LABEL, alignmentProfile, worstCertainty } from '../../engine/underground/alignmentGeometry';
+import { ALIGNMENT_KIND_LABEL, alignmentProfile, alignmentRowSummary, worstCertainty } from '../../engine/underground/alignmentGeometry';
 import { useActiveAlignment } from '../../components/underground/common';
 import { useUndergroundStore } from '../../components/underground/undergroundStore';
 import { AlignmentEditor } from '../../components/underground/AlignmentForms';
@@ -87,7 +87,7 @@ const AlignmentList: React.FC = () => {
               <TrainFrontTunnel size={16} aria-hidden className="text-text-2 shrink-0" />
               <span className="min-w-0 flex-1">
                 <span className="block text-body text-text-1 truncate">{a.name}</span>
-                <span className="block text-meta text-text-2">{ALIGNMENT_KIND_LABEL[a.alignmentKind]} · {Math.round(p.lengthM)} m · deepest {p.maxKnownDepthM === null ? 'Unknown' : `${p.maxKnownDepthM.toFixed(1)} m`}{p.unknownDepthCount ? ` · ${p.unknownDepthCount} depth ?` : ''}</span>
+                <span className="block text-meta text-text-2">{alignmentRowSummary(ALIGNMENT_KIND_LABEL[a.alignmentKind], p)}</span>
               </span>
               <CertaintyBadge certainty={cert} compact />
             </button>

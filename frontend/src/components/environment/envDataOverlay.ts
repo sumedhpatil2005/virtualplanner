@@ -15,7 +15,7 @@ import {
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { envDataApi, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
-import { clipBbox, renderWidth } from './envDataModel';
+import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
 
 export interface EnvDataOverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -132,13 +132,13 @@ async function drawStreams(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnTy
   const res = await envDataApi.features(l.id, box.bbox, 2000);
   if (!alive()) throw new Superseded();
   const ds = new CustomDataSource(`env-data-${l.id}`);
-  for (const f of res.geojson.features) {
+  res.geojson.features.forEach((f, k) => {
     const lines = f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]) : [f.geometry.coordinates as number[][]];
     lines.forEach((c, i) => {
       if (c.length < 2) return;
-      ds.entities.add({ id: `env_overlay_${l.id}_${f.id}_${i}`, polyline: { positions: c.map(p => lift(p[0], p[1])), width: 2, material: STREAM_COLOR } });
+      ds.entities.add({ id: streamEntityId(l.id, f, k, i), polyline: { positions: c.map(p => lift(p[0], p[1])), width: 2, material: STREAM_COLOR } });
     });
-  }
+  });
   await swapSource(v, l.id, ds, alive);
   return `${res.returned.toLocaleString()} of ${res.total.toLocaleString()} derived flow paths in the ${box.from}` +
     (res.not_shown ? ` (${res.not_shown.toLocaleString()} more not shown; zoom in).` : '.');

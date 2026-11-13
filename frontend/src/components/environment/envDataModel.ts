@@ -132,3 +132,13 @@ export function istDate(s: string | null | undefined): string {
   const m = /^(\d{4}-\d{2}-\d{2})T[\d:]+\+05:30$/.exec(s);
   return m ? `${m[1]} IST` : s;
 }
+
+/**
+ * A flow path's entity id. The server's GeoJSON features carry their id in properties (feature.id is absent), so ids
+ * built from feature.id were all `..._null_0` and the second path failed the draw ("already exists in this
+ * collection"). The feature's position in the response keeps every id unique even when no id is given.
+ */
+export function streamEntityId(layerId: string, f: { id?: unknown; properties?: Record<string, unknown> | null }, index: number, part: number): string {
+  const fid = f.id ?? f.properties?.id;
+  return `env_overlay_${layerId}_${index}_${fid ?? 'noid'}_${part}`;
+}
