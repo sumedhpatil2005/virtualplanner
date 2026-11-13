@@ -47,7 +47,7 @@ Harness: /workspace/work/uos-env-e2e/env_check.py (backend :8317 on a copy of tw
 /workspace/work/urbanos/shots/after/{env,explore,simulate}-*-{1440x900,1024x768}.png.
 - BROWSER-VERIFIED (1440x900 and 1024x768): catalogue loads 17 rows in 8 groups (12 Not imported · UNKNOWN, 5 Available
   with source / date+zone / licence); water (1,409 features) and heritage (71) overlays draw and report their box; metro
-  toggle flips the engine `metro` layer; selected road → "Screen …" opens FeasibilityPanel in the context column (no
+  toggle flips the engine `metro` layer; selected road → "Screen …" opens FeasibilityPanel (1440 only: at 1024 the selection closes the context panel by the shell's one-overlay rule) in the context column (no
   horizontal overflow); Explore search by name and by OSM id → fly to + select, summary shows OSM id, lanes, width,
   speed limit, length; layer-tree toggle flips `buildings`; Simulate study with drawer tabs Calibration / ODME /
   Emissions / Count checks / Through the day — every card test id (emissions-card, odme-card, calibration-panel,
