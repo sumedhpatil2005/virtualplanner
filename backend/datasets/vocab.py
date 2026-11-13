@@ -59,6 +59,7 @@ THEMES = {
     "satellite_imagery": "Satellite imagery and derived indices",
     "transit": "Public transport (stops, depots, routes)",
     "amenities": "Public facilities and amenities",
+    "land_parcels": "Revenue / cadastral parcels (gut, TP scheme)",
     "other": "Other",
 }
 

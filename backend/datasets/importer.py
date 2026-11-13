@@ -32,6 +32,59 @@ from .vocab import ACCESS_METHODS, DATA_CLASSES, data_root, guess_theme, norm_th
 
 MANIFEST = "manifest.json"
 PROCESSING = "processing.json"
+OVERRIDES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classification_overrides.json")
+
+
+def load_overrides(path: str | None = None) -> tuple[dict, str | None]:
+    """Committed registry classification for acquisitions whose manifest does not state theme / class / suitability.
+    Returns ({dataset_id: {theme, data_class, suitability, reason}}, sha256 of the file) — empty when absent."""
+    import hashlib
+    p = path or os.environ.get("URBANOS_CLASSIFICATION_OVERRIDES") or OVERRIDES_PATH
+    try:
+        with open(p, "rb") as f:
+            raw = f.read()
+        doc = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError):
+        return {}, None
+    ds = doc.get("datasets") if isinstance(doc, dict) else None
+    return (ds if isinstance(ds, dict) else {}), hashlib.sha256(raw).hexdigest()
+
+
+def _override_note(ov: dict, sha: str | None, applied: list[str]) -> str:
+    return (f"Classification ({', '.join(applied)}) from the registry overrides file backend/datasets/classification_overrides.json"
+            f" (sha256 {(sha or 'UNKNOWN')[:12]}…): {ov.get('reason', 'no reason recorded')}")
+
+
+def apply_override_to_registered(db: Session, version_id: str, overrides: dict, sha: str | None) -> list[str]:
+    """Fill-only on an already-registered version: theme of a manifest-origin dataset whose theme was guessed, and a
+    data class / suitability still NULL. Never replaces a stated value; engineering is never set from here."""
+    v = db.get(DsDatasetVersionEntity, version_id)
+    if v is None:
+        return []
+    ov = overrides.get(v.dataset_id)
+    if not ov:
+        return []
+    applied: list[str] = []
+    d = db.get(DsDatasetEntity, v.dataset_id)
+    th = norm_theme(ov.get("theme")) if ov.get("theme") else None
+    if d is not None and th and d.theme != th and d.origin == "manifest" and "theme not stated" in (v.notes or ""):
+        d.theme = th
+        applied.append(f"theme {th}")
+    if v.data_class is None and ov.get("data_class") in DATA_CLASSES:
+        v.data_class = ov["data_class"]
+        applied.append(f"class {v.data_class}")
+    if v.suitability is None and ov.get("suitability") in ("visualisation", "screening"):
+        v.suitability = ov["suitability"]
+        applied.append(f"suitability {v.suitability}")
+    if applied:
+        # notes are immutable on a registered version: the reason is recorded as the latest classification check (append-only)
+        db.flush()
+        run_checks(db, v)
+        if v.data_class and v.suitability:
+            from .quality import _add
+            _add(db, v.id, "classification", "pass", f"{v.data_class}; suitable for {v.suitability}. {_override_note(ov, sha, applied)}"[:1900])
+            db.flush()
+    return applied
 
 
 def _first(d: dict, *keys, default=None):
@@ -171,8 +224,9 @@ KNOWN = {"dataset_id", "classification", "manifest_updated_at", "run_at", "spec_
          "filename", "file", "max_age_days", "limitations"}
 
 
-def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
-    """kind: raw | derived. Returns a report entry."""
+def register_dir(db: Session, d: str, kind: str, root: str, overrides: dict | None = None, overrides_sha: str | None = None) -> dict:
+    """kind: raw | derived. Returns a report entry. `overrides` (classification_overrides.json) fills theme / data class /
+    suitability a manifest does not state."""
     rel = os.path.relpath(d, root)
     parts = rel.split(os.sep)
     man_p, proc_p = os.path.join(d, MANIFEST), os.path.join(d, PROCESSING)
@@ -185,7 +239,11 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     fp = fingerprint("dir-registration", rel, man_sha, proc_sha)
     existing = find_version_by_fingerprint(db, fp)
     if existing is not None:
-        return {"dir": rel, "result": "unchanged", "version_id": existing.id, "dataset_id": existing.dataset_id}
+        applied = apply_override_to_registered(db, existing.id, overrides or {}, overrides_sha) if overrides else []
+        out = {"dir": rel, "result": "unchanged", "version_id": existing.id, "dataset_id": existing.dataset_id}
+        if applied:
+            out["classified_from_overrides"] = applied
+        return out
 
     m: dict[str, Any] = {**(proc or {}), **(man or {})}   # manifest wins for metadata; processing adds lineage
     source_id = _first(m, "source_id") or (parts[1] if kind == "raw" and len(parts) > 1 else None)
@@ -196,6 +254,18 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     version_label = str(_first(m, "version") or (parts[2] if len(parts) > 2 else "v?"))
     lic, lic_url = _licence(m)
     warnings: list[str] = []
+    ov = (overrides or {}).get(dataset_id) or {}
+    ov_applied: list[str] = []
+    if ov:
+        if not _first(m, "theme", "category", "domain") and ov.get("theme"):
+            m["theme"] = ov["theme"]
+            ov_applied.append(f"theme {ov['theme']}")
+        if not _first(m, "data_class", "classification", "class") and ov.get("data_class"):
+            m["data_class"] = ov["data_class"]
+            ov_applied.append(f"class {ov['data_class']}")
+        if not _first(m, "suitability") and ov.get("suitability") in ("visualisation", "screening"):
+            m["suitability"] = ov["suitability"]
+            ov_applied.append(f"suitability {ov['suitability']}")
     lic_meta = m.get("licence") if isinstance(m.get("licence"), dict) else (m.get("license") if isinstance(m.get("license"), dict) else {})
 
     if source_id:
@@ -328,6 +398,7 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
         http_json={k: v for k, v in http.items() if v}, stats_json=stats,
         notes="\n".join(x for x in [str(_first(m, "notes", default="")),
                                     f"Classification as stated: {_first(m, 'classification')}" if _first(m, "classification") else "",
+                                    _override_note(ov, overrides_sha, ov_applied) if ov_applied else "",
                                     f"Vertical datum: {m['vertical_datum']}" if m.get("vertical_datum") else "",
                                     f"Attribution required: {lic_meta.get('attribution_required')}" if lic_meta.get("attribution_required") else "",
                                     f"Licence verified at: {lic_meta.get('verified_at')}" if lic_meta.get("verified_at") else ""] if x),
@@ -355,6 +426,7 @@ def _s(v):
 def scan(db: Session, root: str | None = None) -> dict:
     root = os.path.abspath(root or data_root())
     report: list[dict] = []
+    overrides, ov_sha = load_overrides()
     if not os.path.isdir(root):
         return {"root": root, "exists": False, "entries": [], "summary": {}}
     for kind in ("raw", "derived"):
@@ -366,13 +438,14 @@ def scan(db: Session, root: str | None = None) -> dict:
             if MANIFEST in filenames or PROCESSING in filenames:
                 try:
                     with db.begin_nested():
-                        report.append(register_dir(db, dirpath, kind, root))
+                        report.append(register_dir(db, dirpath, kind, root, overrides, ov_sha))
                 except Exception as e:  # noqa: BLE001 — one bad directory never stops the scan
                     report.append({"dir": os.path.relpath(dirpath, root), "result": "error", "reason": str(e)[:400]})
     summary: dict[str, int] = {}
     for r in report:
         summary[r["result"]] = summary.get(r["result"], 0) + 1
-    return {"root": root, "exists": True, "entries": report, "summary": summary}
+    return {"root": root, "exists": True, "entries": report, "summary": summary,
+            "classification_overrides": {"path": OVERRIDES_PATH, "sha256": ov_sha, "datasets": len(overrides)}}
 
 
 def main(argv=None) -> None:
