@@ -15,7 +15,7 @@ const km = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.r
 /** Depth-to-water sparkline (m bgl, deeper = lower). Plots only the observations; no smoothing, no gap filling. */
 const Sparkline: React.FC<{ w: Well }> = ({ w }) => {
   const s = w.series;
-  if (s.length < 2) return <span className="text-text-3">{s.length} obs</span>;
+  if (s.length < 2) return <span className="text-text-3">{s.length} observation{s.length === 1 ? '' : 's'}</span>;
   const W = 140, H = 28;
   const t = s.map(o => Date.parse(o.date)), v = s.map(o => o.depth_m_bgl);
   const t0 = Math.min(...t), t1 = Math.max(...t), v0 = Math.min(...v), v1 = Math.max(...v);
@@ -54,15 +54,15 @@ export const SubsurfaceEvidenceView: React.FC = () => {
                   <td className={td}>{km(w.distance_m)}</td>
                   <td className={td}>{w.latest ? w.latest.depth_m_bgl.toFixed(2) : 'Unknown'}</td>
                   <td className={td}>{w.latest?.date ?? '—'}</td>
-                  <td className={td}><Sparkline w={w} /> <span className="text-text-3">{w.n_obs} obs since {w.first_date ?? '?'}</span></td>
+                  <td className={td}><Sparkline w={w} /> <span className="text-text-3">{w.n_obs} observations since {w.first_date ?? 'Unknown'}</span></td>
                 </tr>))}</tbody></table>}
         </section>
         <section className={box} style={boxStyle} data-testid="ug-ev-boreholes">
           <div className="text-text-1 font-medium">Boreholes within {bh.radius_km} km · {bh.records.length}</div>
           {bh.records.length === 0
             ? <div data-testid="ug-ev-boreholes-none"><span className="font-semibold" style={{ color: 'var(--warning, #fbbf24)' }}>{bh.message}</span>. {bh.import_hint} <span className="text-text-3">({bh.source})</span></div>
-            : bh.records.map(r => <div key={r.id}>{r.external_id} · {km(r.distance_m)} · final depth {n(r.final_depth_m)} m</div>)}
-          <div className="text-text-1 font-medium mt-1">Topsoil (SoilGrids 2.0, {so.depth}) · {so.points.length} points, {so.n_unknown ?? 0} UNKNOWN</div>
+            : bh.records.map(r => <div key={r.id}>{r.external_id} · {km(r.distance_m)} away · final depth {n(r.final_depth_m, 1, ' m')}</div>)}
+          <div className="text-text-1 font-medium mt-1">Topsoil (SoilGrids 2.0, {so.depth}) · {so.points.length} points every ≈250 m, {so.n_unknown ?? 0} UNKNOWN</div>
           <div className="text-text-3">{so.statement}</div>
           <div className="overflow-x-auto"><table className="w-full" data-testid="ug-ev-soil"><thead><tr className="text-text-3"><th className={th}>Ch (m)</th>{so.properties.map(p => <th key={p.key} className={th}>{p.label} ({p.unit})</th>)}</tr></thead>
             <tbody>{so.points.filter((_, i, arr) => arr.length <= 8 || i % Math.ceil(arr.length / 8) === 0 || i === arr.length - 1).map(p => (
@@ -72,14 +72,14 @@ export const SubsurfaceEvidenceView: React.FC = () => {
       </div>
       <section className={box} style={boxStyle} data-testid="ug-ev-sewers">
         <div className="text-text-1 font-medium">PMC sewers: {sw.crossings.length} crossing the alignment · {sw.near.length + sw.near_not_shown} within {sw.near_m ?? 50} m <span className="text-text-3 font-normal">— design/unverified, ASCE 38 QL-D</span></div>
-        <div className="text-text-3">{sw.statement} Publisher: {sw.publisher}.{sw.datum_check ? ` Datum check: DSM − published manhole top level, median ${sw.datum_check.median_dsm_minus_top_level_m} m (p10 ${sw.datum_check.p10}, p90 ${sw.datum_check.p90}, n ${sw.datum_check.n}) — ${sw.datum_check.note}` : ''}</div>
+        <div className="text-text-3">{sw.statement} Publisher: {sw.publisher}.{sw.datum_check ? ` Datum check: DSM − published manhole top level, median ${sw.datum_check.median_dsm_minus_top_level_m} m (p10 ${sw.datum_check.p10} m, p90 ${sw.datum_check.p90} m, ${sw.datum_check.n} pipes) — ${sw.datum_check.note}` : ''}</div>
         {sw.crossings.length > 0 && (
           <div className="overflow-x-auto" style={{ maxHeight: 180 }}><table className="w-full"><thead><tr className="text-text-3"><th className={th}>Ch (m)</th><th className={th}>Pipe</th><th className={th}>Ø</th><th className={th}>Invert at crossing (m, as published)</th><th className={th}>DSM (m)</th><th className={th}>Invert below DSM</th><th className={th}>QL</th></tr></thead>
             <tbody>{sw.crossings.map((c, i) => (
               <tr key={`${c.pipeline_id}-${i}`} data-testid="ug-ev-sewer-crossing"><td className={td}>{Math.round(c.chainage_m_utm)}</td><td className={td} title={`${c.type ?? ''} · ${c.material ?? ''} · ${c.sewer_district ?? ''} · ${c.level_method}`}>{c.label ?? c.pipeline_id}</td>
                 <td className={td}>{n(c.diameter_m, 2, ' m')}</td><td className={td}>{n(c.invert_at_crossing_m, 2)}</td><td className={td}>{n(c.dsm_at_crossing_m, 1)}</td>
                 <td className={td}>{n(c.invert_below_dsm_m, 1, ' m')}</td><td className={td}>QL-D</td></tr>))}</tbody></table></div>)}
-        {sw.near.length > 0 && <div data-testid="ug-ev-sewer-near">Near, not crossing: {sw.near.slice(0, 8).map(s => `${s.label ?? s.pipeline_id} (${Math.round(s.distance_m)} m, ch ${Math.round(s.nearest_chainage_m_utm)})`).join(' · ')}{sw.near.length > 8 ? ` · +${sw.near.length - 8} listed by the API` : ''}{sw.near_not_shown > 0 ? ` · ${sw.near_not_shown} more not shown (cap)` : ''}</div>}
+        {sw.near.length > 0 && <div data-testid="ug-ev-sewer-near">Near, not crossing: {sw.near.slice(0, 8).map(s => `${s.label ?? s.pipeline_id} (${Math.round(s.distance_m)} m away, ch ${Math.round(s.nearest_chainage_m_utm)} m)`).join(' · ')}{sw.near.length > 8 ? ` · +${sw.near.length - 8} listed by the API` : ''}{sw.near_not_shown > 0 ? ` · ${sw.near_not_shown} more not shown (cap)` : ''}</div>}
       </section>
     </div>
   );

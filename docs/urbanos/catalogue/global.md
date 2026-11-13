@@ -49,9 +49,9 @@ Owner: geo-acquisition agent, UrbanOS Phase 2. Written 2026-11-13 (IST). Study b
 - `streams_derived_epsg32643.geojson`: 705 stream segments, starting where contributing area reaches 1 km².
 - A catchment label raster and `catchment_outlets.json`: 6 outlet catchments of at least 10 km², 1,143 km² in total. The largest is 862 km² and drains east along the Mula-Mutha.
 
-**Hydrology method.** pysheds 0.5's `resolve_flats` left unresolved flats on the river surfaces, which the DEM flattens, and that cut the catchments off mid-river. So conditioning uses our own Priority-Flood with an ε of 1 mm per cell (Barnes et al. 2014), in `_raster.priority_flood_epsilon`. pysheds then computes D8 flow, accumulation, catchments and the river network on that conditioned DEM.
+**Hydrology method.** pysheds 0.5's `resolve_flats` left unresolved flats on the river surfaces, which the DEM flattens, and that cut the catchments off mid-river. So conditioning uses our own Priority-Flood with an ε of 1 mm per cell (Barnes et al. 2014), in `_raster.priority_flood_epsilon`. In v1, pysheds then computed D8 flow, accumulation, catchments and the river network on that conditioned DEM. **Since v2 (2026-11-13) this is our own numpy D8** (`backend/datasets/pipelines/_hydro.py`); v1 stays on disk and the comparison is in v2's processing.json (see TERRAIN_AND_SUBSURFACE_DATA.md §2).
 
-**Licence flag for the coordinator.** pysheds is GPL-3.0-or-later. It is imported lazily, only in `elevation.process()`. The fallback is to replace it with about 80 lines of our own D8 code. Priority-Flood is already ours.
+**Licence flag (resolved 2026-11-13).** pysheds (GPL-3.0-or-later) has been removed from requirements.txt and from every import; hydrology is our own code. A test (`datasets/tests/test_hydro.py::test_pysheds_not_required`) keeps it out.
 
 **Quality checks.**
 - Clip covers 100% of the box; 99.9% of cells are valid. Elevation runs from 519.5 to 1149.7 m.

@@ -69,7 +69,7 @@ Decision — **no rewrite**:
 ## 3. On-disk convention (coordinator decision, adopted unchanged)
 
 ```
-$URBANOS_DATA_DIR (default backend/data/urbanos; sandbox: /workspace/work/urbanos-data)
+$URBANOS_DATA_DIR (resolved by backend/datasets/paths.py - see §6)
   raw/<source_id>/<YYYY-MM-DD>/<original files> + manifest.json        never modified, never committed
   derived/<dataset_id>/<version>/<outputs> + processing.json (+ optional manifest.json)
 ```
@@ -118,7 +118,8 @@ Errors and sources with no machine-checkable endpoint are recorded as such. No s
 
 | Variable | Default | Used for |
 |---|---|---|
-| `URBANOS_DATA_DIR` | `backend/data/urbanos` | importer root (raw/, derived/); relative registry paths |
+| `URBANOS_DATA_DIR` | `/workspace/work/urbanos-data` if that directory exists, else `backend/data/urbanos` | **canonical** data root (raw/, derived/) for pipelines, importer, registry and the terrain API; one helper `backend/datasets/paths.py` (read at call time). Aliases, lower precedence: `URBANOS_DATA_ROOT`, `URBANOS_DATA_HOME` (Wave-1 names). `URBANOS_RAW_DIR` / `URBANOS_DERIVED_DIR` override the sub-roots. Decision 2026-11-13 (uos-terrain-ug): the sandbox store is the default because raw data is never committed, so a fresh clone falls back to the empty repo path. |
+| `URBANOS_DEM_VERSION` | `v2` | derived `elevation_copdem30` version the terrain API samples (falls back to the latest on disk) |
 | `TWINCITY_OSM_INDEX`, `TWINCITY_FEAS_LAYERS` | `backend/data/osm/…` | existing readers; the registry's checksum check follows the same override |
 | `DATABASE_URL` | `sqlite:///./twincity.db` | all tables incl. `ds_*` |
 

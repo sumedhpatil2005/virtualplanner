@@ -42,7 +42,7 @@ const GroundLine: React.FC<{ x0: number; x1: number; y: number; label?: string }
 function flatLabel(t: Loadable<TerrainProfile>): string {
   if (t.state === 'loading') return 'Ground = flat datum 0 m · loading DEM…';
   if (t.state === 'error') return `Ground = flat datum 0 m · terrain service unavailable (${t.error}) — UNKNOWN`;
-  if (t.state === 'ok') return 'Ground = flat datum 0 m · alignment outside DEM coverage — UNKNOWN';
+  if (t.state === 'ok') return 'Ground = flat datum 0 m · outside DEM coverage — UNKNOWN';
   return FLAT_LABEL;
 }
 
@@ -57,7 +57,7 @@ export const ProfileView: React.FC = () => {
   const ev = useSubsurfaceEvidence(active?.coordinates);
   if (!active) return <NoAlignment />;
   if (terrain.state === 'ok' && terrain.data.summary.n_ok > 0) {
-    return <ElevationProfileSvg a={active} others={all} prof={terrain.data} evidence={ev.state === 'ok' ? ev.data : null} />;
+    return <ElevationProfileSvg a={active} others={all} prof={terrain.data} evidence={ev.state === 'ok' ? ev.data : null} evidenceNote={ev.state === 'error' ? `PMC sewer crossings: evidence service unavailable (${ev.error}) — UNKNOWN` : ev.state === 'ok' ? null : 'PMC sewer crossings: loading…'} />;
   }
   return <ProfileSvg a={active} others={all} groundLabel={flatLabel(terrain)} />;
 };
@@ -204,7 +204,7 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
                 Ground: Copernicus GLO-30 DSM {groundPts.ds.version} · {groundPts.centre.toFixed(1)} m EGM2008 at the axis · depth 0 = DSM at the axis · {groundPts.ds.warning}
               </text>
             </g>
-          : <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} label={ground.state === 'loading' ? 'Ground = flat datum 0 m · loading DEM…' : FLAT_LABEL} />}
+          : <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} label={flatLabel(ground)} />}
         <line x1={scale(L.x, 0)} x2={scale(L.x, 0)} y1={L.box.top} y2={H - L.box.bottom} stroke={C.grid} strokeDasharray="3 3" />
         {own && own.shape === 'circular' && <ellipse cx={own.cx} cy={own.cy} rx={own.rx} ry={own.ry} fill={C.own} fillOpacity={0.35} stroke={C.own} strokeWidth={2} strokeDasharray={isHypo(L.section.own.certainty) ? '5 3' : undefined} data-testid="ug-section-own" />}
         {own && own.shape === 'box' && <rect x={own.x} y={own.y} width={own.w} height={own.h} fill={C.own} fillOpacity={0.35} stroke={C.own} strokeWidth={2} strokeDasharray={isHypo(L.section.own.certainty) ? '5 3' : undefined} data-testid="ug-section-own" />}

@@ -82,7 +82,7 @@ export const UndergroundToolSettings: React.FC = () => {
         <label className={lbl} style={labelStyle} htmlFor="ug-tool-sec-cert">Section is <CertaintyBadge certainty={e.undergroundSectionCertainty} compact /></label>
         <CertaintySelect id="ug-tool-sec-cert" label="Section certainty" value={e.undergroundSectionCertainty} onChange={c => set(() => { e.undergroundSectionCertainty = c; })} />
       </div>
-      <p className="text-[11px]" style={note}>Defaults per type are drawing placeholders, not standards. Depth is below a flat ground datum (no terrain data). Set each vertex's depth after drawing.</p>
+      <p className="text-[11px]" style={note}>Defaults per type are drawing placeholders, not standards. Depth is below the ground: the Copernicus GLO-30 DSM where it covers the alignment (screening only; buildings/trees included), else a flat datum labelled UNKNOWN. Set each vertex's depth after drawing.</p>
     </div>
   );
 };
@@ -145,7 +145,7 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
             ))}
           </tbody>
         </table>
-        <p className="text-[11px] mt-1" style={note}>Depth = crown (top of structure) below the flat ground datum. Blank = Unknown: never interpolated across, shown as "?" on the profile.</p>
+        <p className="text-[11px] mt-1" style={note}>Depth = crown (top of structure) below the ground (DSM where covered, else flat datum UNKNOWN); the Profile shows the crown elevation (m EGM2008) too. Blank = Unknown: never interpolated across, shown as "?" on the profile.</p>
       </div>
     </div>
   );

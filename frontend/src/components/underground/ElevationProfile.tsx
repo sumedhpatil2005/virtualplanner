@@ -20,7 +20,7 @@ const isHypo = (c: string) => c === 'hypothetical' || c === 'unknown';
 const f1 = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? 'Unknown' : v.toFixed(1));
 
 /** Long-section on an elevation axis: DSM ground line, crown/invert at ground − depth, crossings, PMC sewer inverts (QL-D). */
-export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: readonly CityObject[]; prof: TerrainProfile; evidence: SubsurfaceEvidence | null }> = ({ a, others, prof, evidence }) => {
+export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: readonly CityObject[]; prof: TerrainProfile; evidence: SubsurfaceEvidence | null; evidenceNote?: string | null }> = ({ a, others, prof, evidence, evidenceNote }) => {
   const sewers = useMemo(() => {
     if (!evidence) return [];
     const vFe = chainages(a.coordinates);
@@ -40,7 +40,7 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
         <span>Length {Math.round(L.ep.lengthM)} m</span>
         <span data-testid="ug-profile-dem-coverage">DEM coverage {Math.round(L.ep.coverageFraction * 100)} % of samples</span>
         {unknownDepths > 0 && <span className="text-unknown" data-testid="ug-profile-unknown-count">{unknownDepths} vertex depth{unknownDepths > 1 ? 's' : ''} UNKNOWN</span>}
-        <span>{L.crossings.length} model crossing{L.crossings.length === 1 ? '' : 's'} · {L.sewers.length} PMC sewer crossing{L.sewers.length === 1 ? '' : 's'}</span>
+        <span>{L.crossings.length} model crossing{L.crossings.length === 1 ? '' : 's'} · {evidenceNote ? <span data-testid="ug-profile-evidence-note">{evidenceNote}</span> : `${L.sewers.length} PMC sewer crossing${L.sewers.length === 1 ? '' : 's'}`}</span>
         <span>Vertical scale exaggerated; click to set the cross-section chainage</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: H, minWidth: 560 }} role="img" data-testid="ug-profile-elevation"
@@ -122,7 +122,11 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
           </span>
         ))}
         {L.ep.runs.map((r, i) => r.minCoverM !== null && (
-          <span key={`r${i}`} data-testid="ug-profile-min-cover">Least crown depth below DSM on run {i + 1}: {r.minCoverM.toFixed(1)} m at ch {Math.round(r.minCoverChainageM ?? 0)} m (straight grade between vertices)</span>
+          <span key={`r${i}`} data-testid="ug-profile-min-cover" style={r.minCoverM < 0 ? { color: 'var(--warning, #fbbf24)' } : undefined}>
+            {r.minCoverM < 0
+              ? `Run ${i + 1}: crown ${(-r.minCoverM).toFixed(1)} m ABOVE the DSM at ch ${Math.round(r.minCoverChainageM ?? 0)} m on a straight grade between vertices — add a vertex or deepen (DSM includes buildings/trees)`
+              : `Least crown depth below DSM on run ${i + 1}: ${r.minCoverM.toFixed(1)} m at ch ${Math.round(r.minCoverChainageM ?? 0)} m (straight grade between vertices)`}
+          </span>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-meta text-text-3">

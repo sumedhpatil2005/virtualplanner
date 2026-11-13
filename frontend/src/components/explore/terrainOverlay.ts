@@ -89,25 +89,36 @@ export function terrainOverlayLayers(): { key: TerrainOverlayKey; rectangle: num
 // ---- elevation readout -------------------------------------------------------------------------------------------
 let handler: ScreenSpaceEventHandler | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
-let seq = 0;
+const seq: Record<Readout['from'], number> = { cursor: 0, selection: 0 };
 
+/** Latest request per source wins (an older, slower response never overwrites a newer one). Errors clear the value. */
 export async function sampleReadout(lon: number, lat: number, from: Readout['from']): Promise<Readout | null> {
-  const my = ++seq;
+  const my = ++seq[from];
+  const st = () => useTerrainOverlayStore.getState();
+  st().set({ [from]: { lon, lat, elevationM: null, status: 'loading', from, at: Date.now() } } as Partial<Store>);
   try {
     const p = await terrainApi.point(lon, lat);
     const r: Readout = { lon, lat, elevationM: p.elevation_m, status: p.status, from, at: Date.now() };
-    if (from === 'selection' || my === seq) useTerrainOverlayStore.getState().set({ [from]: r, dataset: p.dataset } as Partial<Store>);
+    if (my === seq[from]) st().set({ [from]: r, dataset: p.dataset, error: null } as Partial<Store>);
     return r;
   } catch (e) {
-    useTerrainOverlayStore.getState().set({ error: (e as Error).message });
+    if (my === seq[from]) st().set({ [from]: { lon, lat, elevationM: null, status: 'error', from, at: Date.now() }, error: (e as Error).message } as Partial<Store>);
     return null;
   }
 }
 
+/** Cancels pending readouts for a source (selection cleared / readout switched off). */
+export function clearReadout(from: Readout['from']): void {
+  seq[from]++;
+  useTerrainOverlayStore.getState().set({ [from]: null } as Partial<Store>);
+}
+
 /** Cursor readout: pick the ellipsoid under the mouse (works without imagery/terrain tiles), sample after 250 ms still. */
 export function setCursorReadout(on: boolean): void {
-  useTerrainOverlayStore.getState().set({ readoutOn: on, ...(on ? {} : { cursor: null }) });
+  useTerrainOverlayStore.getState().set({ readoutOn: on });
   if (handler) { handler.destroy(); handler = null; }
+  if (timer) { clearTimeout(timer); timer = null; }
+  if (!on) clearReadout('cursor');
   if (!on) return;
   const v = viewer();
   if (!v) return;
