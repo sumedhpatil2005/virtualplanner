@@ -1,7 +1,6 @@
 """Controlled vocabulary of the dataset registry (docs/urbanos/DATA_QUALITY_AND_PROVENANCE.md §2)."""
 from __future__ import annotations
 
-import os
 
 DATA_CLASSES = ("observed", "inferred", "estimated", "derived", "synthetic")
 SUITABILITY = ("visualisation", "screening", "engineering")
@@ -112,6 +111,8 @@ def guess_theme(*ids: str | None) -> str:
 
 
 def data_root() -> str:
-    """`URBANOS_DATA_DIR` (default `backend/data/urbanos`): holds raw/ and derived/ trees."""
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.environ.get("URBANOS_DATA_DIR", os.path.join(here, "data", "urbanos"))
+    """Data root holding raw/ and derived/ trees - resolved by datasets/paths.py (URBANOS_DATA_DIR canonical,
+    URBANOS_DATA_ROOT / URBANOS_DATA_HOME aliases, then /workspace/work/urbanos-data if present, else
+    backend/data/urbanos)."""
+    from .paths import data_dir
+    return str(data_dir())

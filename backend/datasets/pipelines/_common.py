@@ -1,8 +1,8 @@
 """Shared helpers for UrbanOS dataset pipelines.
 
 Conventions (docs/urbanos/catalogue/global.md, urbanos-p2 brief):
-- raw originals: $URBANOS_RAW_DIR/<source_id>/<YYYY-MM-DD>/<original filename> + manifest.json (never modified)
-- derived:       $URBANOS_DERIVED_DIR/<dataset_id>/<version>/... + processing.json
+- raw originals: $URBANOS_RAW_DIR (default $URBANOS_DATA_DIR/raw)/<source_id>/<YYYY-MM-DD>/<original filename> + manifest.json (never modified)
+- derived:       $URBANOS_DERIVED_DIR (default $URBANOS_DATA_DIR/derived)/<dataset_id>/<version>/... + processing.json
 """
 from __future__ import annotations
 
@@ -20,9 +20,13 @@ PUNE_BBOX = (73.70, 18.40, 74.05, 18.70)  # (min_lon, min_lat, max_lon, max_lat)
 ENGINEERING_EPSG = 32643
 IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30), "IST")
 
-DATA_ROOT = Path(os.environ.get("URBANOS_DATA_ROOT", "/workspace/work/urbanos-data"))
-RAW_DIR = Path(os.environ.get("URBANOS_RAW_DIR", DATA_ROOT / "raw"))
-DERIVED_DIR = Path(os.environ.get("URBANOS_DERIVED_DIR", DATA_ROOT / "derived"))
+# Paths come from the one shared helper (datasets/paths.py): URBANOS_DATA_DIR canonical,
+# URBANOS_DATA_ROOT / URBANOS_DATA_HOME aliases. Module constants are resolved at import (pipelines are CLIs).
+from .. import paths as _paths
+
+DATA_ROOT = _paths.data_dir()
+RAW_DIR = _paths.raw_dir()
+DERIVED_DIR = _paths.derived_dir()
 USER_AGENT = "UrbanOS-dataset-pipeline/0.1 (research; contact: repository owner)"
 
 

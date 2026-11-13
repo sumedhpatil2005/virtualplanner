@@ -1,9 +1,9 @@
 """Shared helpers for the Indian-government / Pune source pipelines.
 
 Storage convention (docs/urbanos/PUNE_DATA_AVAILABILITY.md §0):
-  raw     : $URBANOS_DATA_HOME/raw/<source_id>/<YYYY-MM-DD>/<original filename> + manifest.json
-  derived : $URBANOS_DATA_HOME/derived/<dataset_id>/<version>/... + processing.json
-URBANOS_DATA_ROOT (alias URBANOS_DATA_HOME) defaults to /workspace/work/urbanos-data;
+  raw     : $URBANOS_DATA_DIR/raw/<source_id>/<YYYY-MM-DD>/<original filename> + manifest.json
+  derived : $URBANOS_DATA_DIR/derived/<dataset_id>/<version>/... + processing.json
+URBANOS_DATA_DIR (aliases URBANOS_DATA_ROOT, URBANOS_DATA_HOME) - resolved by datasets/paths.py;
 URBANOS_RAW_DIR / URBANOS_DERIVED_DIR override the two sub-roots (outside the repo; raw files
 are never committed and never modified after download).
 
@@ -33,16 +33,19 @@ _last_request = [0.0]
 
 
 def data_home() -> Path:
-    """Same env names as the sibling pipelines (_common.py): URBANOS_DATA_ROOT; URBANOS_DATA_HOME kept as alias."""
-    return Path(os.environ.get("URBANOS_DATA_ROOT") or os.environ.get("URBANOS_DATA_HOME") or "/workspace/work/urbanos-data")
+    """Delegates to datasets/paths.py: URBANOS_DATA_DIR canonical; URBANOS_DATA_ROOT / URBANOS_DATA_HOME aliases."""
+    from .. import paths
+    return paths.data_dir()
 
 
 def raw_root() -> Path:
-    return Path(os.environ.get("URBANOS_RAW_DIR") or data_home() / "raw")
+    from .. import paths
+    return paths.raw_dir()
 
 
 def derived_root() -> Path:
-    return Path(os.environ.get("URBANOS_DERIVED_DIR") or data_home() / "derived")
+    from .. import paths
+    return paths.derived_dir()
 
 
 def now_ist() -> str:
