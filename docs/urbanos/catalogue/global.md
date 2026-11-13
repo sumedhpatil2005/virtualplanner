@@ -280,30 +280,8 @@ Owner: geo-acquisition agent, UrbanOS Phase 2. Written 2026-11-13 (IST). Study b
 
 ---
 
-## Draft section for MISSING_DATA_AND_COLLECTION_PLAN — what remote sensing can and cannot substitute
+## Remote sensing: what it can and cannot substitute — moved
 
-**Can substitute, at screening level, with the stated accuracy:**
-- **Terrain and indicative drainage.** Copernicus DEM GLO-30 (under 4 m LE90 absolute) is enough for slope classes, ridge and valley context, and catchment screening. It **cannot** give invert levels, drain capacity or flood depths. That needs a bare-earth DTM from LiDAR or a ground survey, plus PMC storm-water drain records.
-- **Building presence and footprint extent.** OSM plus Microsoft plus Google gives near-complete roof coverage. It **cannot** give building use, storeys or height. Microsoft heights are −1 here, so absent. Nor can it give age, structure type or legal status. Those need PMC property tax and building permission data.
-- **Land cover, vegetation and open water.** WorldCover, Sentinel-2 NDVI/MNDWI and JRC GSW cover this. They **cannot** give land use, zoning or ownership. The Development Plan and land records are needed.
-- **Rainfall climatology.** CHIRPS covers this. It **cannot** give design rainfall or IDF curves. IMD gauge records are needed.
-
-**Cannot substitute. These stay UNKNOWN until collected:**
-- Underground utilities: water, sewer, storm-water, power, gas, telecom.
-- Groundwater depth.
-- Geology and geotechnical properties (SoilGrids masks the city, so even screening is absent there).
-- Traffic observations.
-- Drain network geometry.
-- Building heights and storeys.
-
-**ML only where it can be measured:**
-1. **Footprint datasets vs ground truth.** Draw a stratified random sample of about 400 one-hectare cells from `coverage_grid_1km`, stratified by OSM completeness ratio and density. Label building outlines manually against recent imagery that is licensed for tracing. Report precision, recall and IoU for each of OSM, Microsoft and Google, with confidence intervals. Only then choose a gap-fill threshold. The current IoU tables measure agreement, not accuracy.
-2. **Built-up change.** Do not use the NDBI rule (F1 0.46 against WorldCover). If change detection is needed, train or evaluate on manually labelled change and no-change samples from Sentinel-2 C1 composites, and report F1. Otherwise show WorldCover or GHSL snapshots only.
-3. **Soil and terrain-derived proxies.** No ML until borehole or SPT records exist to validate against.
-
-**Collection priorities that remote sensing exposed:**
-- Official PMC and PCMC boundaries. The zones above are inferred.
-- PMC storm-water and nala network.
-- A LiDAR DTM, or survey levels along drains.
-- IMD rainfall stations.
-- Building height and storey attributes.
+The draft that stood here was reconciled into `../MISSING_DATA_AND_COLLECTION_PLAN.md` on 2026-11-14 IST: §1a (what remote
+sensing can and cannot substitute), §1 priorities 11–13 (collection priorities it exposed) and §4.6 (machine learning only
+where it can be measured). That plan is the single source; nothing was dropped.
