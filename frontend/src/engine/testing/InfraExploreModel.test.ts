@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colorOf, inspectorRows, loadedLine, orderLayers } from '../../components/explore/municipalModel';
+import { colorOf, featuresText, inspectorRows, intersects, loadedLine, orderLayers } from '../../components/explore/municipalModel';
 import { otherSideEvidence, otherSideLabel } from '../../lib/planningProjects';
 import type { InfraLayer } from '../../lib/infraApi';
 import type { ProjectIssue } from '../../lib/coordinationApi';
@@ -29,6 +29,7 @@ describe('municipal layers (Explore)', () => {
     const a = Object.fromEntries(r.attributes.map(x => [x.label, x.value]));
     expect(a['Depth to invert']).toMatch(/DESIGN levels, unverified/);
     expect(a['Diameter']).toBe('600 mm');
+    expect(inspectorRows(layer('sewer'), { _fid: 1, _ext_id: 'x', pipeline_d: '600' }).attributes.find(x => x.label === 'pipeline_d')!.value).toBe('600 mm (internal diameter)');
     expect(a['Quality level']).toMatch(/QL-D/);
     expect(a.pipeline_i).toBe('SYN-1');
   });
@@ -46,6 +47,12 @@ describe('municipal layers (Explore)', () => {
   it('status line reports the cap and the count not shown', () => {
     expect(loadedLine({ returned: 2000, total_in_bbox: 10450, not_shown: 8450, truncated: true, cap: 2000 })).toMatch(/8,450 more in view not shown/);
     expect(loadedLine({ returned: 0, total_in_bbox: 0, not_shown: 0, truncated: false, cap: 2000 })).toMatch(/not evidence/);
+    expect(loadedLine({ returned: 1, total_in_bbox: 1, not_shown: 0, truncated: false, cap: 2000 })).toBe('1 feature in view');
+    expect(intersects([74.5, 19, 74.6, 19.1], [73.7, 18.4, 74.05, 18.7])).toBe(false);
+    expect(intersects([73.8, 18.5, 73.9, 18.6], [73.7, 18.4, 74.05, 18.7])).toBe(true);
+    expect(intersects([0, 0, 1, 1], null)).toBe(true);
+    expect(featuresText(44482)).toBe('44,482 features');
+    expect(featuresText(null)).toBe('count UNKNOWN');
     expect(loadedLine({ returned: 0, total_in_bbox: null, not_shown: null, truncated: true, cap: 2000, too_large: true, message: 'Zoom in' })).toBe('Zoom in');
   });
 });
@@ -58,7 +65,7 @@ describe('conflict evidence for buildings and PMC records', () => {
     const e = otherSideEvidence(i)!;
     expect(e).toMatch(/Google Open Buildings/);
     expect(e).toMatch(/inferred/);
-    expect(e).toMatch(/confidence 0.81/);
+    expect(e).toMatch(/confidence 0.81 \(model score 0–1\)/);
     expect(e).toMatch(/height UNKNOWN/);
     expect(e).toMatch(/foundation depth UNKNOWN/);
   });

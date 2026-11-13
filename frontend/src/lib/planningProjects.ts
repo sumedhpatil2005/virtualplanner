@@ -204,7 +204,7 @@ export function otherSideEvidence(i: Pick<ProjectIssue, 'b_type' | 'evidence'>):
   if ((i.b_type as string) === 'building') {
     const src = BLD_SOURCE[String(b.source)] ?? String(b.source ?? 'UNKNOWN');
     const cls = b.data_class === 'observed' ? 'observed' : b.data_class === 'inferred' ? 'inferred' : 'class UNKNOWN';
-    const conf = b.confidence == null ? 'confidence UNKNOWN' : `confidence ${String(b.confidence)}`;
+    const conf = b.confidence == null ? 'confidence UNKNOWN' : `confidence ${String(b.confidence)} (model score 0–1)`;
     const agree = b.osm_agreement === 'ml_only_candidate' ? 'not in OSM' : b.osm_agreement === 'osm' ? 'OSM' : String(b.osm_agreement ?? '');
     const h = b.height_m == null ? 'height UNKNOWN' : `height ${String(b.height_m)} m (OSM tag)`;
     return `Source: ${src} ${String(b.source_id ?? '')} · ${cls} · ${conf} · ${agree} · ${h} · foundation depth UNKNOWN`;

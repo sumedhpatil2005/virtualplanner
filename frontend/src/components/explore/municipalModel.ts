@@ -50,7 +50,7 @@ export function inspectorRows(layer: InfraLayer, props: Record<string, unknown>)
   ];
   const attributes: InspectorRow[] = [];
   if (layer.id === 'buildings') {
-    attributes.push({ label: 'Confidence', value: props.confidence == null ? 'UNKNOWN (not published by this source)' : String(props.confidence), tone: props.confidence == null ? 'unknown' : undefined });
+    attributes.push({ label: 'Confidence', value: props.confidence == null ? 'UNKNOWN (not published by this source)' : `${String(props.confidence)} (model score 0–1)`, tone: props.confidence == null ? 'unknown' : undefined });
     attributes.push({ label: 'OSM agreement', value: statusLabel(String(props.status ?? '')) });
     attributes.push({ label: 'Height', value: props.height_m == null ? 'UNKNOWN (not tagged)' : `${props.height_m} m — ${u(props.height_basis)}`, tone: props.height_m == null ? 'unknown' : undefined });
     if (props.levels_tag) attributes.push({ label: 'Levels (OSM tag)', value: String(props.levels_tag) });
@@ -65,7 +65,7 @@ export function inspectorRows(layer: InfraLayer, props: Record<string, unknown>)
   const skip = new Set(['_fid', '_ext_id', 'data_class', 'depth_basis', 'levels_status', 'invert_depth_max_m', 'invert_depth_min_m', 'top_depth_m', 'diameter_m']);
   for (const [k, v] of Object.entries(props)) {
     if (skip.has(k) || v === null || v === undefined || v === '') continue;
-    attributes.push({ label: k, value: typeof v === 'object' ? JSON.stringify(v) : String(v) });
+    attributes.push({ label: k, value: (typeof v === 'object' ? JSON.stringify(v) : String(v)) + (ATTR_UNIT[k] ?? '') });
     if (attributes.length >= 18) break;
   }
   return { provenance, attributes };
@@ -82,6 +82,19 @@ export function statusLabel(s: string): string {
 export function loadedLine(fc: Pick<InfraFeatureCollection, 'returned' | 'total_in_bbox' | 'not_shown' | 'truncated' | 'too_large' | 'message' | 'cap'>): string {
   if (fc.too_large) return fc.message ?? 'Zoom in to load this layer.';
   if (fc.truncated) return `${fc.returned.toLocaleString()} shown · ${(fc.not_shown ?? 0).toLocaleString()} more in view not shown (cap ${fc.cap.toLocaleString()}) — zoom in`;
-  if (fc.returned === 0) return 'None in view (absence of a record is not evidence)';
-  return `${fc.returned.toLocaleString()} in view`;
+  if (fc.returned === 0) return 'No features in view (absence of a record is not evidence)';
+  return `${fc.returned.toLocaleString()} feature${fc.returned === 1 ? '' : 's'} in view`;
 }
+
+/** Boxes [minLon, minLat, maxLon, maxLat] overlap; an unknown layer extent never blocks a request. */
+export function intersects(a: readonly number[], b: readonly number[] | null | undefined): boolean {
+  if (!b || b.length !== 4) return true;
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+export const outsideLine = () => 'View is outside this layer\'s coverage (Pune study area): nothing to load here.';
+
+/** A feature count with its unit. */
+export const featuresText = (n: number | null | undefined) => (n == null ? 'count UNKNOWN' : `${n.toLocaleString()} feature${n === 1 ? '' : 's'}`);
+
+/** Units of publisher attributes where the meaning is clear from the PMC sewer schema; others are shown as published. */
+const ATTR_UNIT: Record<string, string> = { pipeline_d: ' mm (internal diameter)', tl_start_m: ' m (cover level, RL)', tl_end_man: ' m (cover level, RL)', start_inve: ' m (invert level, RL)', end_invert: ' m (invert level, RL)', area_m2: ' m²', i_length: ' m', st_length_: ' m', Shape_Length: ' (as published, unit not stated)' };

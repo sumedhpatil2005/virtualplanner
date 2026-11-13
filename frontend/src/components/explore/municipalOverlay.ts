@@ -12,7 +12,7 @@ import {
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { infraApi, type InfraFeatureCollection, type InfraLayer } from '../../lib/infraApi';
-import { colorOf, loadedLine } from './municipalModel';
+import { colorOf, intersects, loadedLine, outsideLine } from './municipalModel';
 
 export interface MuniLayerState { status: 'off' | 'loading' | 'shown' | 'error'; line: string | null; error: string | null; returned: number | null }
 const OFF: MuniLayerState = { status: 'off', line: null, error: null, returned: null };
@@ -113,24 +113,33 @@ async function load(id: string): Promise<void> {
   const st = useMuniStore.getState();
   if (!v || !meta) { st.set(id, { status: 'error', error: 'The map is not ready.' }); return; }
   const bbox = viewBox(v);
-  if (!bbox) { st.set(id, { status: 'error', error: 'The camera view could not be read (looking at the horizon?). Tilt down or zoom in.' }); return; }
   const n = (seq.get(id) ?? 0) + 1;
   seq.set(id, n);
+  if (!bbox) { clearDrawn(id); st.set(id, { status: 'shown', line: 'Camera view could not be read (horizon in view): tilt down or zoom in to load features.', returned: 0, error: null }); return; }
+  if (!intersects(bbox, meta.bbox)) { clearDrawn(id); st.set(id, { status: 'shown', line: outsideLine(), returned: 0, error: null }); return; }
   st.set(id, { status: 'loading', error: null });
   try {
     const fc = await infraApi.features(id, bbox);
     if (seq.get(id) !== n || !sources.has(id)) return;
     const ds = sources.get(id)!;
     ds.entities.suspendEvents();
-    ds.entities.removeAll();
-    for (const k of [...props.keys()]) if (k.startsWith(`${id}:`)) props.delete(k);
+    clearDrawn(id);
     draw(ds, fc);
     ds.entities.resumeEvents();
     v.scene.requestRender();
     st.set(id, { status: 'shown', line: loadedLine(fc), returned: fc.returned });
   } catch (e) {
-    if (seq.get(id) === n) st.set(id, { status: 'error', error: e instanceof Error ? e.message : String(e) });
+    if (seq.get(id) === n && sources.has(id)) {
+      clearDrawn(id);
+      st.set(id, { status: 'error', error: `Could not load features: ${e instanceof Error ? e.message : String(e)}. Nothing drawn for this layer.` });
+    }
   }
+}
+
+function clearDrawn(id: string): void {
+  sources.get(id)?.entities.removeAll();
+  for (const k of [...props.keys()]) if (k.startsWith(`${id}:`)) props.delete(k);
+  viewer()?.scene.requestRender();
 }
 
 /** Shows or hides one municipal / buildings layer. */
@@ -139,6 +148,7 @@ export async function setMuniLayerVisible(layer: InfraLayer, visible: boolean): 
   const st = useMuniStore.getState();
   metaById.set(layer.id, layer);
   if (!visible) {
+    seq.set(layer.id, (seq.get(layer.id) ?? 0) + 1);   // a response still in flight is discarded
     const ds = sources.get(layer.id);
     if (ds && v) v.dataSources.remove(ds, true);
     sources.delete(layer.id);
