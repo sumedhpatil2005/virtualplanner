@@ -66,9 +66,17 @@ and stored `synthetic=true`; feasibility and conflict findings are screening.
 
 _(filled in below)_
 
-## 4. What is not tested
+## 4. What is not tested (UNTESTED here)
 
-_(filled in below)_
+- Real pointer drawing on the globe: tunnel points are fed through the engine's drawing API because globe tiles never
+  render in this sandbox (Cesium ion imagery 401); road drawing uses the topology harness (`topo.js`), as on 2026-11-11.
+- Through-the-day runs, an ODME estimation run, the Calibration drawer tab content, DOCX content (only HTTP 200 + size),
+  evidence upload/review and decisions (covered on partial heads in PROJECTS_AND_COORDINATION_UI.md), borehole/utility
+  record import in this pass (covered in UNDERGROUND_WORKSPACE.md §4), cross-section view, X-ray rendering.
+- Light theme (no toggle), Alt+1…7 workspace keys, real touch input / real devices, browsers other than Chromium, GPU rendering.
+- Polish-branch commits after `0cd1cfa` that were not on the branch tip when tested (e.g. `f690c0d` phone top bar,
+  `591208f` ShellOverlay tests): this report is for `0cd1cfa` + the QA fix `255be05` only.
+- The traffic model's accuracy: still FAILS TAG M3.1 (ENGINEERING_VALIDATION §5); no step here measures accuracy.
 
 ## 5. Fixes made by QA
 
