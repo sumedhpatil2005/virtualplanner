@@ -18,7 +18,7 @@ export interface Decision {
 }
 export interface Project {
   id: string; name: string; description: string; area_id: string | null; bbox: number[] | null; baseline_id: string; baseline_fingerprint: string;
-  status: ProjectStatus; status_label: string; created_by: string; created_at: string; link_count: number;
+  status: ProjectStatus; status_label: string; preferred_scenario_id?: string | null; created_by: string; created_at: string; link_count: number;
   baseline_current_fingerprint?: string; baseline_changed_since_created?: boolean; links?: ProjectLink[]; decisions?: Decision[];
   area?: { id: string; name: string; bbox: number[] } | null;
 }
@@ -43,6 +43,8 @@ export const planningApi = {
   project: (id: string) => call<Project>('GET', `/projects/${id}`),
   create: (b: { name: string; description: string; area_id?: string | null; created_by: string }) => call<Project>('POST', '/projects', b),
   setStatus: (id: string, status: Exclude<ProjectStatus, 'decision_recorded'>, edited_by: string) => call<Project>('PATCH', `/projects/${id}`, { status, edited_by }),
+  /** Marks an attached scenario as the preferred alternative ('' clears). A working flag, not a decision (audited). */
+  setPreferred: (id: string, scenarioId: string, edited_by: string) => call<Project>('PATCH', `/projects/${id}`, { preferred_scenario_id: scenarioId, edited_by }),
   linkable: () => call<Linkable>('GET', '/linkable'),
   link: (id: string, entity_type: LinkType, entity_id: string, added_by: string) => call<ProjectLink>('POST', `/projects/${id}/links`, { entity_type, entity_id, added_by }),
   unlink: (id: string, linkId: number, by: string) => call<unknown>('DELETE', `/projects/${id}/links/${linkId}?removed_by=${encodeURIComponent(by)}`),
