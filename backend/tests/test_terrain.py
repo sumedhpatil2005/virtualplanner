@@ -141,8 +141,15 @@ def test_subsurface_evidence(client, data_dir):
     assert c["dsm_at_crossing_m"] == pytest.approx(517.0, abs=0.01) and c["invert_below_dsm_m"] == pytest.approx(-31.5, abs=0.05)
     assert [n["pipeline_id"] for n in sw["near"]] == ["P3"] and sw["near"][0]["end_invert_m"] is None   # blank = UNKNOWN
     assert "QL-D" in sw["statement"] and sw["datum_check"]["n"] >= 1
-    b = e["boreholes"]
-    assert b["records"] == [] and b["message"] == "No borehole records — required: site investigation"
+    b = e["boreholes"]   # the shared test DB may hold boreholes imported by other tests: either listed, or the gap message
+    if b["records"]:
+        assert b["status"] == "ok" and all(r["distance_m"] <= 2000 for r in b["records"])
+    else:
+        assert b["message"] == "No borehole records — required: site investigation"
+    from terrain import evidence as EV
+    none = EV.boreholes(EV.Alignment(_line()), 2.0, db=None)
+    assert none["records"] == [] and none["status"] == "none" and none["message"] == "No borehole records — required: site investigation"
+    assert "AGS4" in none["import_hint"]
 
 
 def test_evidence_missing_datasets(client, tmp_path, monkeypatch):
