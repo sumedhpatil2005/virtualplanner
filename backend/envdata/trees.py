@@ -5,6 +5,7 @@ cell, the finest grid level that keeps ≤ MAX_CELLS cells in view), with the to
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from typing import Sequence
@@ -23,13 +24,40 @@ def db_path():
 
 
 def _conn() -> sqlite3.Connection:
+    """Per-thread read-only connection, reopened when the index file is replaced (pipeline re-run: os.replace) so a
+    long-lived server never keeps reading the unlinked old file; the stale connection is closed, not leaked."""
     p = str(db_path())
+    m = os.path.getmtime(p)
     c = getattr(_local, "conn", None)
-    if c is None or getattr(_local, "path", None) != p:
+    if c is None or getattr(_local, "path", None) != p or getattr(_local, "mtime", None) != m:
+        _close()
         c = sqlite3.connect(f"file:{p}?mode=ro", uri=True, check_same_thread=False)
         c.row_factory = sqlite3.Row
-        _local.conn, _local.path = c, p
+        _local.conn, _local.path, _local.mtime = c, p, m
     return c
+
+
+def _close() -> None:
+    c = getattr(_local, "conn", None)
+    if c is not None:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001
+            pass
+    _local.conn = None
+
+
+def _retry(fn):
+    """One retry on a fresh connection after an SQLite read error ("database disk image is malformed" was seen on the
+    network filesystem right after an index file was replaced)."""
+    def wrapper(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except sqlite3.DatabaseError:
+            _close()
+            return fn(*a, **kw)
+    wrapper.__name__, wrapper.__doc__, wrapper.__wrapped__ = fn.__name__, fn.__doc__, fn
+    return wrapper
 
 
 _WHERE = ("r.maxx>=? AND r.minx<=? AND r.maxy>=? AND r.miny<=? "
@@ -62,6 +90,7 @@ def _grid_sum(c, level: int, s: float, bbox) -> list[sqlite3.Row]:
                      (level, gx0, gx1, gy0, gy1)).fetchall()
 
 
+@_retry
 def query(bbox: Sequence[float], limit: int = 2000) -> dict:
     limit = max(1, min(MAX_LIMIT, int(limit)))
     c = _conn()
@@ -92,6 +121,7 @@ def query(bbox: Sequence[float], limit: int = 2000) -> dict:
                        f"shown as {len(cells):,} grid clusters ({s}° cells). Zoom in to see individual trees."}
 
 
+@_retry
 def count_in_polygon(geom_4326: dict) -> dict:
     """Trees whose point lies inside a WGS84 polygon (used by feasibility screening's treesInFootprint slot)."""
     from shapely.geometry import Point

@@ -234,3 +234,37 @@ def test_boreholes_one_bad_record_does_not_hide_the_others():
     out = EV.boreholes(al, 1.0, db=DB())
     assert out["status"] == "ok" and [r["external_id"] for r in out["records"]] == ["BH3"]
     assert out["n_skipped"] == 2
+
+
+def test_tree_index_reopened_after_replacement(tmp_path, monkeypatch):
+    import csv
+    import os as _os
+    import time
+
+    from datasets.pipelines import tree_index
+    from envdata import trees
+    monkeypatch.setenv("URBANOS_DERIVED_DIR", str(tmp_path / "derived"))
+    out = tmp_path / "derived" / trees.DATASET / trees.VERSION
+    out.mkdir(parents=True)
+
+    def build(n):
+        p = tmp_path / f"t{n}.csv"
+        with open(p, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["lon", "lat", "id", "girth_cm", "height_m", "canopy_dia_m", "condition", "ownership", "botanical_name",
+                        "common_name", "local_name", "ward", "is_rare"])
+            for k in range(n):
+                w.writerow([73.80 + k * 0.0001, 18.50, k + 1, 1, 1, 1, "Healthy", "Private", "x", "x", "x", "1", "FALSE"])
+        tree_index.build(p, out / trees.FILE)
+    trees._local.__dict__.clear()
+    build(3)
+    b = [73.79, 18.49, 73.81, 18.51]
+    assert trees.query(b)["total"] == 3
+    old = trees._local.conn
+    time.sleep(0.02)
+    build(5)
+    _os.utime(out / trees.FILE, None)
+    assert trees.query(b)["total"] == 5
+    with pytest.raises(sqlite3.ProgrammingError):
+        old.execute("select 1")
+    trees._close()
