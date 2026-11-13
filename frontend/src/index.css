@@ -392,3 +392,13 @@ button.uos-row:hover { background: var(--surface-2); }
 /* Environment → "Screen this proposal": the FeasibilityPanel fills the context column edge to edge (no card in a card) */
 .uos-context-body:has(> [data-testid=env-feasibility]) { padding: 0; }
 [data-testid=env-feasibility] > div { width: 100% !important; max-height: none; border-radius: 0 !important; border: 0 !important; box-shadow: none !important; backdrop-filter: none !important; background: var(--surface-1) !important; animation: none; }
+
+/* Phone top bar (polish pass): the trust pill stays fully worded but wraps to two lines; the wordmark and the
+   keyboard-shortcuts button give way (shortcuts stay in the command palette), so nothing runs off-screen at 390 px. */
+@media (max-width: 767.98px) {
+  .uos-wordmark { display: none; }
+  .uos-topbar [aria-label="Keyboard shortcuts"] { display: none; }
+  .uos-trust-slot [data-testid=model-trust-pill] { height: auto; min-height: 40px; white-space: normal; max-width: 118px; line-height: 13px; font-size: 11px; text-align: left; border-radius: 12px; padding: 4px 8px; }
+}
+/* The search box shows its focus on the wrapper (focus-within border); no second ring on the inner input */
+[data-testid=explore-search]:focus-visible { outline: none; }
