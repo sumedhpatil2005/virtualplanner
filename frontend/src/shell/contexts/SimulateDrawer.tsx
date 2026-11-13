@@ -8,16 +8,7 @@ import { EmissionsCard, OdmeCard } from '../../components/OdmeAndEmissions';
 import { TimeOfDayPanel } from '../../components/TimeOfDayPanel';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import type { SimulationModeState } from '../../engine/simulation/SimulationMode';
-import { useShellStore } from '../useShellStore';
-
-export type SimulateDrawerTabId = 'calibration' | 'odme' | 'emissions' | 'counts' | 'day';
-
-/** Opens one of the Simulate drawer tabs (used by links in the study panel). */
-export function openSimulateDrawer(tab: SimulateDrawerTabId): void {
-  const st = useShellStore.getState();
-  st.setDrawerTab(tab);
-  st.setDrawerOpen(true);
-}
+import type { SimulateDrawerTabId } from './SimulateDrawerNav';
 
 /** Each tab renders its existing card once; without a study area it shows how to get one. */
 const WithStudy: React.FC<{ children: (sim: SimulationModeState) => React.ReactNode }> = ({ children }) => {

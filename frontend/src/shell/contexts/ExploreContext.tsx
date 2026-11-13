@@ -138,8 +138,9 @@ const SelectedSummary: React.FC = () => {
 export const ExploreContext: React.FC = () => {
   const all = useEngineObjects();
   const alt = engineInstance.scenarios.getActiveScenario();
-  const objects = useMemo(() => filterObjectsForScenario(all, engineInstance.scenarios.getActiveScenarioId()), [all, alt?.id]);
-  const stats = useMemo(() => cityStats(objects), [objects]);
+  // useEngineObjects re-renders on object / alternative changes; the filter and stats are O(n) and cheap
+  const objects = filterObjectsForScenario(all, engineInstance.scenarios.getActiveScenarioId());
+  const stats = cityStats(objects);
   return (
     <div className="space-y-5">
       <PanelSection title="Find">

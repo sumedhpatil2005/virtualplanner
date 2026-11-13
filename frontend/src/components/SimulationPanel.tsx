@@ -17,7 +17,7 @@ import { formatDistanceM } from '../lib/format';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, Notice } from './ui/kit';
 import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
-import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawer';
+import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
