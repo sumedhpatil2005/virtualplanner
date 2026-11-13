@@ -181,7 +181,7 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     ensure_dataset(db, dataset_id, title=str(_first(m, "title", "name") or dataset_id), theme=theme,
                    description=str(_first(m, "description", default="")), source_id=source_id,
                    limitations=str(_first(m, "limitations", default="")), max_age_days=_int(_first(m, "max_age_days")),
-                   update_check={"method": "http_head", "url": _first(m, "url", "download_url", "source_url")}
+                   update_check_json={"method": "http_head", "url": _first(m, "url", "download_url", "source_url")}
                    if _first(m, "url", "download_url", "source_url") else {},
                    origin="manifest")
 
