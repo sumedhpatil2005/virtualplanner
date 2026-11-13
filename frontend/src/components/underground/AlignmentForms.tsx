@@ -131,7 +131,7 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
                   {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
                 </td>
                 <td style={cell}>
-                  <input aria-label={`Crown depth at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="Unknown" title="Blank = Unknown"
+                  <input aria-label={`Crown depth at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
                     className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
                     onChange={e => commitAlignment(a, withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
                 </td>

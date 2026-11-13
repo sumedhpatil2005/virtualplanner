@@ -76,7 +76,14 @@ const AlignmentList: React.FC = () => {
           <li key={a.id}>
             <button type="button" aria-pressed={active?.id === a.id} className="uos-row w-full text-left" data-testid={`ug-alignment-${a.id}`}
               style={active?.id === a.id ? { background: 'var(--surface-2)' } : undefined}
-              onClick={() => { setActive(a.id); focus(a.id); useShellStore.getState().setDrawerOpen(true); }}>
+              onClick={() => {
+                setActive(a.id);
+                // On tablet / phone only one overlay fits: selecting would swap this panel for the inspector, so just fly there
+                const st = useShellStore.getState();
+                if (st.viewport === 'desktop' || st.viewport === 'laptop') engineInstance.selection.selectSingle(a.id);
+                engineInstance.flyToObject(a.id);
+                st.setDrawerOpen(true);
+              }}>
               <TrainFrontTunnel size={16} aria-hidden className="text-text-2 shrink-0" />
               <span className="min-w-0 flex-1">
                 <span className="block text-body text-text-1 truncate">{a.name}</span>
