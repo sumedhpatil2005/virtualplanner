@@ -27,6 +27,42 @@ from planning.audit import acting_as
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
+def allowed_roots() -> list[str]:
+    """Directories the API may read dataset files from: the data dir, the backend tree (registry paths like
+    data/osm/osm_index.db), plus URBANOS_IMPORT_ROOTS (os.pathsep-separated; tests, a mounted staging area)."""
+    extra = [r for r in os.environ.get("URBANOS_IMPORT_ROOTS", "").split(os.pathsep) if r]
+    return [os.path.realpath(r) for r in [data_root(), quality.BACKEND_DIR, *extra]]
+
+
+def _inside_allowed(path: str) -> bool:
+    rp = os.path.realpath(path)
+    return any(rp == r or rp.startswith(r.rstrip(os.sep) + os.sep) for r in allowed_roots())
+
+
+def _check_update_url(cfg: dict) -> None:
+    """update_check.url is probed by the server (HEAD/GET): http(s) to a public host only (no SSRF to loopback,
+    link-local or private addresses, no file:// or other schemes)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    url = (cfg or {}).get("url")
+    if not url:
+        return
+    u = urlparse(str(url))
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise HTTPException(400, "update_check.url must be an http(s) URL")
+    if (cfg or {}).get("method") not in (None, "http_head", "ckan"):
+        raise HTTPException(400, "update_check.method must be http_head or ckan")
+    try:
+        addrs = {ai[4][0] for ai in socket.getaddrinfo(u.hostname, None)}
+    except OSError:
+        addrs = set()  # unresolvable now: the probe itself will fail and be recorded as an error
+    for a in addrs:
+        ip = ipaddress.ip_address(a.split("%")[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise HTTPException(400, f"update_check.url resolves to a non-public address ({ip})")
+
+
 @router.get("/vocabulary")
 def vocabulary():
     return {"data_classes": DATA_CLASSES, "suitability": SUITABILITY, "access_methods": ACCESS_METHODS,
@@ -68,6 +104,8 @@ class ImportBody(BaseModel):
 @router.post("/import")
 def import_tree(body: ImportBody, db: Session = Depends(get_db)):
     root = body.root or data_root()
+    if not _inside_allowed(root):  # the importer reads manifests and hashes files: never an arbitrary server path
+        raise HTTPException(400, "root must be the data directory or inside it (or listed in URBANOS_IMPORT_ROOTS)")
     if not os.path.isdir(root):
         return {"root": os.path.abspath(root), "exists": False, "entries": [], "summary": {}}
     with acting_as(body.actor):
@@ -206,6 +244,10 @@ def register_version(dataset_id: str, body: VersionBody, db: Session = Depends(g
     data = body.model_dump()
     files = [{"path": f.get("path"), "sha256": f.get("sha256"), "size_bytes": f.get("size_bytes"), "format": f.get("format"),
               "url": f.get("url"), "role": f.get("role", "raw")} for f in data.pop("files") if f.get("path")]
+    for f in files:  # quality checks stat and hash these: confine them to the data directories
+        p = str(f["path"])
+        if ".." in p.replace("\\", "/").split("/") or not _inside_allowed(quality.resolve_path(p)):
+            raise HTTPException(400, f"file path outside the data directories: {p}")
     who = data.pop("registered_by")
     bbox = data.pop("coverage_bbox")
     with acting_as(who):
@@ -243,6 +285,7 @@ def patch_dataset(dataset_id: str, body: DatasetPatch, db: Session = Depends(get
             if v is not None:
                 setattr(d, k, v)
         if body.update_check is not None:
+            _check_update_url(body.update_check)
             d.update_check_json = _json.dumps(body.update_check)
         db.commit()
     return registry.dataset_dict(db, d, full=True)

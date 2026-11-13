@@ -196,3 +196,21 @@ def test_aq_series_bounds_accept_zoned_iso_and_human_form():
     assert _bound("Mon 2026-11-02 2:51 AM IST", "start") == pd.Timestamp("2026-11-02T02:51:00+05:30")
     with pytest.raises(ValueError):
         _bound("next week", "start")
+
+
+# ── API path / URL confinement ───────────────────────────────────────────────
+
+def test_import_root_confined(client):
+    r = client.post("/api/datasets/import", json={"root": "/etc", "dry_run": True})
+    assert r.status_code == 400
+
+
+def test_registered_file_paths_confined_and_update_url_ssrf(client):
+    did = "qa_conf_test"
+    client.post("/api/datasets", json={"id": did, "title": "QA", "created_by": "qa"})
+    for bad in ("/etc/passwd", "../../../etc/passwd", "raw/../../../../etc/hostname"):
+        r = client.post(f"/api/datasets/{did}/versions", json={"registered_by": "qa", "files": [{"path": bad}]})
+        assert r.status_code == 400, (bad, r.text)
+    for url in ("file:///etc/passwd", "http://127.0.0.1:8000/x", "http://169.254.169.254/latest", "ftp://example.org/x"):
+        r = client.patch(f"/api/datasets/{did}", json={"edited_by": "qa", "update_check": {"method": "http_head", "url": url}})
+        assert r.status_code == 400, (url, r.text)

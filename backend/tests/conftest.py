@@ -10,6 +10,8 @@ from pathlib import Path
 
 _tmpdir = tempfile.mkdtemp(prefix="twincity-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmpdir) / 'test.db'}"
+# tests import synthetic data trees from the temp dir: allow it as an import root (the API refuses other paths)
+os.environ.setdefault("URBANOS_IMPORT_ROOTS", tempfile.gettempdir())
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
