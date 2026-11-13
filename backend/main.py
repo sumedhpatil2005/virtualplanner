@@ -17,6 +17,8 @@ from api.planning_router import router as planning_router  # planning_* + audit_
 from planning.audit import install_triggers, current_actor
 from api.coordination_router import router as coordination_router  # coordination/subsurface/env tables (additive)
 from coordination.seed import seed_coordination
+from api.datasets_router import router as datasets_router  # ds_* dataset registry tables (additive)
+from datasets.seed import seed_registry
 
 # Initialize database tables and the mandatory base scenario
 Base.metadata.create_all(bind=engine)
@@ -26,6 +28,7 @@ ensure_base_scenario()
 with SessionLocal() as _s:
     seed_traffic_data(_s)
 seed_coordination(SessionLocal)  # cited permission distances + environment catalogue (idempotent, audited)
+seed_registry(SessionLocal)  # dataset registry: datasets in the app, gaps, features (idempotent; mirrors catalogues)
 
 app = FastAPI(
     title="TwinCity Backend Service",
@@ -65,6 +68,7 @@ app.include_router(traffic_data_router, prefix="/api")
 app.include_router(feasibility_router, prefix="/api")
 app.include_router(planning_router, prefix="/api")
 app.include_router(coordination_router, prefix="/api")
+app.include_router(datasets_router, prefix="/api")
 
 @app.get("/")
 def read_root():
