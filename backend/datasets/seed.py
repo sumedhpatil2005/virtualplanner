@@ -220,7 +220,7 @@ FEATURES = [
       ("flood_lines", None, S, True, "WRD blue/red lines"), ("protected_monuments", None, S, True, "ASI limits"),
       ("dp_road_lines", None, S, False, "RoW"), ("utilities", None, S, False, "utility records"), ("boreholes", None, S, False, "ground data")]),
     ("underground.alignment_profile", "underground", "Underground", "Underground alignment long-section with ground line", None, None,
-     [("dem", None, S, True, "ground line (else flat datum, UNKNOWN)"), ("boreholes", None, S, False, "strata on profile")]),
+     [("dem", None, S, True, "ground line (else flat datum, UNKNOWN). Needs bare earth: Copernicus GLO-30 / NASADEM are DSMs (buildings, trees included) — screening only"), ("boreholes", None, S, False, "strata on profile")]),
     ("underground.utility_conflicts", "underground", "Underground", "Utility conflict screening", None, None,
      [("utilities", None, S, True, "utility records with depth + QL"), ("metro_alignment", "osm_local_index", S, False, "OSM metro centrelines")]),
     ("underground.metro_clearance", "underground", "Underground", "Metro vertical clearance check", None, None,
