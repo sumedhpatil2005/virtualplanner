@@ -2,16 +2,7 @@ import React, { useEffect } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { useSelectedId } from '../../hooks/useAppMode';
-import { loadOverlayMeta, sampleReadout, setCursorReadout, setTerrainOverlay, useTerrainOverlayStore, type Readout, type TerrainOverlayKey } from './terrainOverlay';
-
-/** A representative plan point of a city object: the point itself, or the middle vertex of a line/polygon. */
-export function repPoint(o: { coordinates?: unknown }): [number, number] | null {
-  const c = o.coordinates;
-  if (!Array.isArray(c) || c.length === 0) return null;
-  if (typeof c[0] === 'number') return [c[0] as number, c[1] as number];
-  const mid = c[Math.floor(c.length / 2)] as number[];
-  return Array.isArray(mid) && typeof mid[0] === 'number' ? [mid[0], mid[1]] : null;
-}
+import { loadOverlayMeta, repPoint, sampleReadout, setCursorReadout, setTerrainOverlay, useTerrainOverlayStore, type Readout, type TerrainOverlayKey } from './terrainOverlay';
 
 const LABEL: Record<TerrainOverlayKey, string> = { hillshade: 'Hillshade (DEM)', slope: 'Slope classes (DEM)' };
 const fmt = (r: Readout | null) => !r ? '—'

@@ -123,3 +123,13 @@ export function setCursorReadout(on: boolean): void {
     }, 250);
   }, ScreenSpaceEventType.MOUSE_MOVE);
 }
+
+/** A representative plan point of a city object: the point itself, or the middle vertex of a line/polygon. */
+export function repPoint(o: { coordinates?: unknown }): [number, number] | null {
+  const c = o.coordinates;
+  if (!Array.isArray(c) || c.length === 0) return null;
+  if (typeof c[0] === 'number') return [c[0] as number, c[1] as number];
+  const mid = c[Math.floor(c.length / 2)] as number[];
+  return Array.isArray(mid) && typeof mid[0] === 'number' ? [mid[0], mid[1]] : null;
+}
+
