@@ -68,3 +68,33 @@ def raster_check(path: Path, bbox4326=None) -> dict:
                 "min": float(a.min()) if a.count() else None, "max": float(a.max()) if a.count() else None,
                 "bbox_coverage": round(bbox_coverage_fraction(b, bbox4326 or PUNE_BBOX), 4),
                 "is_cog": src.profile.get("tiled", False) and bool(src.overviews(1))}
+
+
+def priority_flood_epsilon(dem: np.ndarray, valid: np.ndarray | None = None, eps: float = 1e-3) -> np.ndarray:
+    """Barnes et al. (2014) Priority-Flood + epsilon: fills depressions AND imposes a tiny gradient on flats so
+    every valid cell drains to the domain boundary (grid edge or invalid/nodata neighbour). Returns float64."""
+    import heapq
+
+    z = dem.astype("float64").copy()
+    if valid is None:
+        valid = np.isfinite(z)
+    h, w = z.shape
+    seen = ~valid.copy()
+    heap = []
+    pad = np.pad(valid, 1, constant_values=False)
+    interior = pad[1:-1, 1:-1] & pad[:-2, 1:-1] & pad[2:, 1:-1] & pad[1:-1, :-2] & pad[1:-1, 2:] \
+        & pad[:-2, :-2] & pad[:-2, 2:] & pad[2:, :-2] & pad[2:, 2:]
+    for y, x in zip(*np.where(valid & ~interior)):
+        heapq.heappush(heap, (z[y, x], int(y), int(x)))
+        seen[y, x] = True
+    nb = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
+    while heap:
+        c, y, x = heapq.heappop(heap)
+        for dy, dx in nb:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and not seen[ny, nx]:
+                seen[ny, nx] = True
+                if z[ny, nx] <= c:
+                    z[ny, nx] = c + eps
+                heapq.heappush(heap, (z[ny, nx], ny, nx))
+    return z

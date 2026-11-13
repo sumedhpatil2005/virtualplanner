@@ -13,9 +13,12 @@ from pathlib import Path
 
 import numpy as np
 
+if not hasattr(np, "in1d"):  # pysheds 0.5 still calls np.in1d (removed in NumPy 2.4)
+    np.in1d = np.isin  # type: ignore[attr-defined]
+
 from ._common import (DERIVED_DIR, ENGINEERING_EPSG, PUNE_BBOX, download, file_entry, now_ist,
                       one_degree_tiles, raw_dir, today_ist, write_manifest, write_processing)
-from ._raster import diff_stats, hillshade, raster_check, slope_degrees, write_cog
+from ._raster import diff_stats, hillshade, priority_flood_epsilon, raster_check, slope_degrees, write_cog
 from .licences import licence_block
 
 COP_URL = ("https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N{lat:02d}_00_E{lon:03d}_00_DEM/"
@@ -26,6 +29,7 @@ VERSION = "v1"
 STREAM_THRESHOLD_KM2 = 1.0      # contributing area that starts a mapped stream
 OUTLET_THRESHOLD_KM2 = 10.0     # edge outlets whose catchments are delineated
 UTM_RES = 30.0
+EPSILON_M = 1e-3            # gradient imposed per cell across flats during conditioning
 
 
 def cop_tile_urls(bbox=PUNE_BBOX) -> list[str]:
@@ -34,6 +38,28 @@ def cop_tile_urls(bbox=PUNE_BBOX) -> list[str]:
 
 def km2_to_cells(km2: float, cell_m: float) -> int:
     return max(1, int(round(km2 * 1e6 / (cell_m * cell_m))))
+
+
+D8_OFFSETS = {64: (-1, 0), 128: (-1, 1), 1: (0, 1), 2: (1, 1), 4: (1, 0), 8: (1, -1), 16: (0, -1), 32: (-1, -1)}
+
+
+def drainage_outlets(fdir: np.ndarray, acc: np.ndarray, valid: np.ndarray, min_cells: int) -> list[tuple[int, int]]:
+    """Valid cells with acc >= min_cells whose D8 receiver is off-grid / invalid, or that have no direction
+    (pysheds marks sinks/flats with 0, -1, -2). Sorted by accumulation, largest first."""
+    h, w = fdir.shape
+    res = []
+    ys, xs = np.where(valid & (acc >= min_cells))
+    for y, x in zip(ys.tolist(), xs.tolist()):
+        d = int(fdir[y, x])
+        if d not in D8_OFFSETS:
+            res.append((y, x))
+            continue
+        dy, dx = D8_OFFSETS[d]
+        ny, nx = y + dy, x + dx
+        if not (0 <= ny < h and 0 <= nx < w) or not valid[ny, nx]:
+            res.append((y, x))
+    res.sort(key=lambda p: -acc[p])
+    return res
 
 
 def acquire() -> Path:
@@ -112,8 +138,9 @@ def process() -> Path:
     fill_val = np.nanmin(dem)
     demf = np.where(np.isfinite(dem), dem, fill_val)
     hs = hillshade(demf, UTM_RES, UTM_RES)
+    hs[~np.isfinite(dem)] = 0
     p8 = prof.copy(); p8.update(dtype="uint8", nodata=0)
-    fhs = write_cog(out / "hillshade_epsg32643.tif", np.maximum(hs, 1), p8)
+    fhs = write_cog(out / "hillshade_epsg32643.tif", np.where(np.isfinite(dem), np.maximum(hs, 1), 0).astype("uint8"), p8)
     sl = slope_degrees(demf, UTM_RES, UTM_RES)
     sl[~np.isfinite(dem)] = np.nan
     fsl = write_cog(out / "slope_deg_epsg32643.tif", sl, prof)
@@ -121,11 +148,17 @@ def process() -> Path:
     # ---- hydrology (pysheds) ----
     from pysheds.grid import Grid
 
-    grid = Grid.from_raster(str(f32643))
-    r = grid.read_raster(str(f32643))
-    pit = grid.fill_pits(r)
-    flooded = grid.fill_depressions(pit)
-    infl = grid.resolve_flats(flooded)
+    # Conditioning: Priority-Flood+epsilon (own implementation, see _raster.py) because pysheds 0.5
+    # resolve_flats leaves unresolved flats (-1/-2) on the flattened river surfaces of COP-DEM.
+    cond = priority_flood_epsilon(dem, np.isfinite(dem), eps=EPSILON_M)
+    pc = prof.copy(); pc.update(dtype="float64", nodata=np.nan)
+    fcond = out / "dem_hydro_conditioned_pfeps_epsg32643_float64.tif"
+    import rasterio as _rio
+    with _rio.open(fcond, "w", **{**pc, "driver": "GTiff"}) as dst:
+        dst.write(cond, 1)
+    grid = Grid.from_raster(str(fcond))
+    infl = grid.read_raster(str(fcond))
+    flooded = infl
     dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
     fdir = grid.flowdir(infl, dirmap=dirmap)
     acc = grid.accumulation(fdir, dirmap=dirmap)
@@ -145,15 +178,11 @@ def process() -> Path:
     fstr.write_text(json.dumps(streams))
     # catchments for edge outlets with large contributing area
     othr = km2_to_cells(OUTLET_THRESHOLD_KM2, UTM_RES)
-    edge = np.zeros_like(acc_a, bool)
-    edge[0, :] = edge[-1, :] = True
-    edge[:, 0] = edge[:, -1] = True
-    ys, xs = np.where(edge & (acc_a > othr))
-    order = np.argsort(-acc_a[ys, xs])
+    valid = np.isfinite(dem)
+    fd_a = np.asarray(fdir)
     labels = np.zeros(acc_a.shape, "int32")
     outlets = []
-    for k in order:
-        y, x = int(ys[k]), int(xs[k])
+    for y, x in drainage_outlets(fd_a, acc_a, valid, othr):
         if labels[y, x]:
             continue
         c = np.asarray(grid.catchment(x=x, y=y, fdir=fdir, dirmap=dirmap, xytype="index"), bool)
@@ -187,7 +216,7 @@ def process() -> Path:
     except Exception as e:  # pragma: no cover
         cmp = {"skipped": repr(e)}
         fdiff = None
-    outputs = [f4326, f32643, fhs, fsl, ffill, ffd, facc, fstr, fcat, out / "catchment_outlets.json"] + ([fdiff] if fdiff else [])
+    outputs = [f4326, f32643, fhs, fsl, ffill, fcond, ffd, facc, fstr, fcat, out / "catchment_outlets.json"] + ([fdiff] if fdiff else [])
     validation = {"rasters": [raster_check(p) for p in outputs if p.suffix == ".tif"],
                   "stream_features": len(streams["features"]), "catchments": len(outlets),
                   "catchments_area_km2": round(sum(o["area_km2"] for o in outlets), 1),
@@ -195,7 +224,7 @@ def process() -> Path:
                   "depression_fill_mean_m": float(np.nanmean(filled - demf)),
                   "depression_fill_max_m": float(np.nanmax(filled - demf))}
     write_processing(out, pipeline="datasets.pipelines.elevation", inputs=tiles, parameters={
-        "bbox": PUNE_BBOX, "utm_res_m": UTM_RES, "resampling": "bilinear", "hydro_lib": "pysheds 0.5 (fill_pits, fill_depressions, resolve_flats, D8)",
+        "bbox": PUNE_BBOX, "utm_res_m": UTM_RES, "resampling": "bilinear", "hydro_conditioning": "Priority-Flood+epsilon (Barnes 2014), eps=%g m" % EPSILON_M, "hydro_lib": "pysheds 0.5 D8 flowdir/accumulation/catchment/extract_river_network",
         "stream_threshold_km2": STREAM_THRESHOLD_KM2, "outlet_threshold_km2": OUTLET_THRESHOLD_KM2},
         outputs=outputs, validation=validation, suitability="screening",
         notes="DSM (buildings/trees included): flow paths in dense urban fabric follow rooftops/tree canopy, not drains. "
