@@ -11,6 +11,8 @@ import { createPortal } from 'react-dom';
  */
 export const AnchoredPopover: React.FC<{
   anchor: HTMLElement | null;
+  /** Optional element whose top the popover aligns to (e.g. the active tool), while 'anchor' sets the side. */
+  alignTop?: HTMLElement | null;
   open: boolean;
   onClose?: () => void;
   placement?: 'right' | 'below';
@@ -18,7 +20,7 @@ export const AnchoredPopover: React.FC<{
   label: string;
   testId?: string;
   children: React.ReactNode;
-}> = ({ anchor, open, onClose, placement = 'right', width = 280, label, testId, children }) => {
+}> = ({ anchor, alignTop, open, onClose, placement = 'right', width = 280, label, testId, children }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
 
@@ -32,7 +34,7 @@ export const AnchoredPopover: React.FC<{
       if (placement === 'right') {
         left = r.right + m;
         if (left + width > vw - m) left = Math.max(m, r.left - width - m); // flip to the left side
-        top = r.top;
+        top = alignTop ? alignTop.getBoundingClientRect().top : r.top;
       } else {
         left = Math.min(Math.max(m, r.left), vw - width - m);
         top = r.bottom + m;
@@ -47,7 +49,7 @@ export const AnchoredPopover: React.FC<{
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => { ro?.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
-  }, [open, anchor, placement, width]);
+  }, [open, anchor, alignTop, placement, width]);
 
   useEffect(() => {
     if (!open || !onClose) return;
