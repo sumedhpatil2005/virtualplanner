@@ -109,4 +109,19 @@ harnesses that clicked it from any state must click `open-planning` first). `#sc
 
 ## 7. Verification
 
-See the report at the end of the task for the run results; screenshots: `/workspace/work/urbanos/shots/after/shell-*.png`.
+Run 2026-11-13 on this branch (worktree uos-wt-shell), backend on a copy of twincity.db, Chromium 156 + SwiftShader.
+
+- `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. `oxlint src`: 0 errors (7 pre-existing warnings, none in new files). `vite build`: OK.
+- vitest, one file at a time, all pass (103 tests): RoadAnalysisPanelPieces 16, TimelineStalePanel 3, TimeOfDay 4,
+  ThroughTrafficOff 1, ScenarioPanelPieces 8, LaneBottleneckCard 4, LaneScopeStore 3, JunctionEditing 29, StartupTest 2,
+  HonestControls 17, SimulateFlow 7, EditingWorkflow 9. **UNIT-TESTED** (existing tests; no new unit tests for the shell).
+- Playwright (`/workspace/work/uos-shell-e2e/shell_check.py`) at 1440×900, 1024×768, 390×844: all 7 workspaces, select a
+  road (Explore → InfoPanel; Design → PropertiesPanel), Simulate a road (SimulationPanel opens; its Close returns the shell to
+  Explore/view), Projects (PlanningPanel) and Data (TrafficDataPanel), alternative popover (exactly one `#scenario-select`),
+  palette "flyover" → Enter (Design / build / draw_flyover), Reports PDF link fetched → 200 application/pdf.
+  Layout checks on every step: no overlap between top bar, rail, context, inspector; nothing off-screen; no horizontal
+  overflow in panels; at 1024 and 390 every shell/panel button ≥ 40 px (0 smaller). **BROWSER-VERIFIED.** Screenshots
+  `/workspace/work/urbanos/shots/after/shell-<WxH>-*.png` were viewed. Console errors seen were environmental only (Google
+  Fonts blocked, Cesium ion 401 for asset 2 via the sandbox proxy).
+- Not browser-verified: Investigation Requirements Document generate/download from Reports (no saved assessment in the
+  test DB); Alt+1…7; drawer expand; light theme (no toggle).

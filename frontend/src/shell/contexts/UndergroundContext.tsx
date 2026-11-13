@@ -86,9 +86,9 @@ export const UndergroundContext: React.FC = () => {
       </PanelSection>
       <PanelSection title="Not available yet">
         <ul className="space-y-1 text-label text-text-2">
-          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown" />Utility records (ASCE 38 quality levels): not imported · Unknown</li>
-          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown" />Boreholes / geology: not imported · Unknown</li>
-          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown" />Tunnels and depth profiles: no tool yet</li>
+          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown shrink-0" />Utility records (ASCE 38 quality levels): not imported · Unknown</li>
+          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown shrink-0" />Boreholes / geology: not imported · Unknown</li>
+          <li className="flex items-center gap-2"><CircleHelp size={14} aria-hidden className="text-unknown shrink-0" />Tunnels and depth profiles: no tool yet</li>
         </ul>
       </PanelSection>
       <Disclosure>
