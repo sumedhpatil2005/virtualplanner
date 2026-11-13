@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from database.connection import get_db
 from models.models import (CityObjectEntity, ScenarioEntity, AreaEntity, ScenarioObjectChangeEntity,
@@ -114,73 +115,72 @@ def get_objects(scenario_id: Optional[str] = None, db: Session = Depends(get_db)
         ))
     return results
 
+def _write_row(existing, obj: CityObjectSchema):
+    """Copies a saved object's fields onto its row."""
+    existing.name = obj.name
+    existing.type = obj.type
+    existing.layer_id = obj.layerId
+    existing.scenario_id = obj.scenarioId
+    existing.geometry_geojson = json.dumps(obj.coordinates)
+    existing.properties_json = json.dumps(obj.properties)
+    existing.updated_at = datetime.datetime.utcnow()
+
+
 @router.post("/objects", status_code=status.HTTP_201_CREATED)
 def save_object(obj: CityObjectSchema, db: Session = Depends(get_db)):
+    """Saves an object: creates its row, or updates the row with its id (an upsert, so saving twice is not an error)."""
     existing = db.query(CityObjectEntity).filter(CityObjectEntity.id == obj.id).first()
     _refuse_base_move(existing, obj)
 
-    geom_str = json.dumps(obj.coordinates)
-    props_str = json.dumps(obj.properties)
-
     if existing:
-        existing.name = obj.name
-        existing.type = obj.type
-        existing.layer_id = obj.layerId
-        existing.scenario_id = obj.scenarioId
-        existing.geometry_geojson = geom_str
-        existing.properties_json = props_str
-        existing.updated_at = datetime.datetime.utcnow()
+        _write_row(existing, obj)
     else:
-        new_entity = CityObjectEntity(
-            id=obj.id,
-            type=obj.type,
-            name=obj.name,
-            layer_id=obj.layerId,
-            scenario_id=obj.scenarioId,
-            geometry_geojson=geom_str,
-            properties_json=props_str
-        )
-        db.add(new_entity)
-
-    db.commit()
+        db.add(CityObjectEntity(id=obj.id, type=obj.type, name=obj.name, layer_id=obj.layerId, scenario_id=obj.scenarioId,
+                                geometry_geojson=json.dumps(obj.coordinates), properties_json=json.dumps(obj.properties)))
+    try:
+        db.commit()
+    except IntegrityError:
+        # Another save of the same id created the row between the lookup and this insert (two requests for one new
+        # object at once): this save becomes an update of that row instead of a UNIQUE-constraint error
+        db.rollback()
+        existing = db.query(CityObjectEntity).filter(CityObjectEntity.id == obj.id).first()
+        if existing is None:
+            raise
+        _refuse_base_move(existing, obj)
+        _write_row(existing, obj)
+        db.commit()
     return {"status": "success", "message": "Object saved successfully"}
 
 @router.post("/objects/batch", status_code=status.HTTP_201_CREATED)
 def save_objects_batch(objs: List[CityObjectSchema], db: Session = Depends(get_db)):
-    # Rows already saved, looked up a few hundred at a time rather than one query per object
-    ids = [obj.id for obj in objs]
-    saved = {}
-    for i in range(0, len(ids), 500):
-        for row in db.query(CityObjectEntity).filter(CityObjectEntity.id.in_(ids[i:i + 500])):
-            saved[row.id] = row
-    for obj in objs:
-        _refuse_base_move(saved.get(obj.id), obj)
-    for obj in objs:
-        existing = saved.get(obj.id)
-        geom_str = json.dumps(obj.coordinates)
-        props_str = json.dumps(obj.properties)
+    # One save per id: an id sent twice in a batch keeps its last version
+    latest = list({obj.id: obj for obj in objs}.values())
 
-        if existing:
-            existing.name = obj.name
-            existing.type = obj.type
-            existing.layer_id = obj.layerId
-            existing.scenario_id = obj.scenarioId
-            existing.geometry_geojson = geom_str
-            existing.properties_json = props_str
-            existing.updated_at = datetime.datetime.utcnow()
-        else:
-            new_entity = CityObjectEntity(
-                id=obj.id,
-                type=obj.type,
-                name=obj.name,
-                layer_id=obj.layerId,
-                scenario_id=obj.scenarioId,
-                geometry_geojson=geom_str,
-                properties_json=props_str
-            )
-            db.add(new_entity)
+    def apply():
+        # Rows already saved, looked up a few hundred at a time rather than one query per object
+        ids = [obj.id for obj in latest]
+        saved = {}
+        for i in range(0, len(ids), 500):
+            for row in db.query(CityObjectEntity).filter(CityObjectEntity.id.in_(ids[i:i + 500])):
+                saved[row.id] = row
+        for obj in latest:
+            _refuse_base_move(saved.get(obj.id), obj)
+        for obj in latest:
+            existing = saved.get(obj.id)
+            if existing:
+                _write_row(existing, obj)
+            else:
+                db.add(CityObjectEntity(id=obj.id, type=obj.type, name=obj.name, layer_id=obj.layerId,
+                                        scenario_id=obj.scenarioId, geometry_geojson=json.dumps(obj.coordinates),
+                                        properties_json=json.dumps(obj.properties)))
+        db.commit()
 
-    db.commit()
+    try:
+        apply()
+    except IntegrityError:
+        # Another save created some of these rows meanwhile: saved again, they are updates of those rows
+        db.rollback()
+        apply()
     return {"status": "success", "message": f"{len(objs)} objects saved successfully"}
 
 

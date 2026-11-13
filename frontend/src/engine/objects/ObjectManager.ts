@@ -76,8 +76,56 @@ export class ObjectManager {
     };
   }
 
+  /**
+   * Each object's saves and deletes, sent one at a time in order: a create still in flight when the object is edited
+   * (or deleted) is followed by the edit's request, never raced by it, and edits made meanwhile are sent as one, the
+   * latest. Two saves of a new object at once both inserted it on the server (the second a UNIQUE-constraint 500), and
+   * an earlier save arriving last could overwrite a later edit.
+   */
+  private writes = new Map<string, { running: Promise<void>; next?: { send: () => Promise<void>; done: Promise<void>; resolve: () => void; reject: (e: unknown) => void } }>();
+
+  private queueWrite(id: string, send: () => Promise<void>): Promise<void> {
+    const slot = this.writes.get(id);
+    if (!slot) {
+      const running = send().finally(() => this.nextWrite(id));
+      this.writes.set(id, { running });
+      return running;
+    }
+    if (slot.next) {
+      // An edit already waiting is replaced by this later one: only the latest version is sent
+      slot.next.send = send;
+      return slot.next.done;
+    }
+    let resolve!: () => void, reject!: (e: unknown) => void;
+    const done = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    slot.next = { send, done, resolve, reject };
+    return done;
+  }
+
+  private nextWrite(id: string) {
+    const slot = this.writes.get(id);
+    if (!slot) return;
+    const next = slot.next;
+    if (!next) { this.writes.delete(id); return; }
+    slot.next = undefined;
+    slot.running = next.send().then(next.resolve, next.reject).finally(() => this.nextWrite(id));
+  }
+
+  /** Settles when no save or delete of these objects is in flight or waiting (their outcome is reported where sent). */
+  private async writesSettled(ids: string[]) {
+    for (;;) {
+      const pending = ids.map(id => this.writes.get(id)).filter(Boolean).map(s => (s!.next?.done ?? s!.running).catch(() => undefined));
+      if (pending.length === 0) return;
+      await Promise.all(pending);
+    }
+  }
+
+  /** Whether a save or delete of this object is in flight or waiting (tests). */
+  public hasPendingWrite(id: string) { return this.writes.has(id); }
+
   public async syncPost(obj: CityObject) {
-    await apiPost('/api/objects', this.mapToSchema(obj));
+    const payload = this.mapToSchema(obj);
+    await this.queueWrite(obj.id, () => apiPost('/api/objects', payload).then(() => undefined));
   }
 
   /** Writes changes of a proposal to base objects (POST /api/scenarios/{id}/changes). Base rows are not written. */
@@ -87,15 +135,19 @@ export class ObjectManager {
   }
 
   public async syncDelete(id: string) {
-    await apiDelete(`/api/objects/${id}`);
+    await this.queueWrite(id, () => apiDelete(`/api/objects/${id}`).then(() => undefined));
   }
 
   public async syncDeleteMultiple(ids: string[]) {
+    // Sent after any single save of these objects still in flight, so a save arriving late cannot bring one back
+    await this.writesSettled(ids);
     await apiDeleteBatch('/api/objects', ids);
   }
 
   public async syncPostMultiple(objs: CityObject[]) {
-    await apiPostBatch('/api/objects/batch', objs.map(o => this.mapToSchema(o)));
+    const payload = objs.map(o => this.mapToSchema(o));
+    await this.writesSettled(objs.map(o => o.id));
+    await apiPostBatch('/api/objects/batch', payload);
   }
 
   /** Ids of OpenStreetMap roads the user deleted. */
