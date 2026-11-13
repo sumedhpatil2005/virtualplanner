@@ -8,15 +8,15 @@ interface Mark {
   target: string; // value of the data-coach attribute
   title: string;
   text: string;
-  side: 'above' | 'below' | 'left';
+  side: 'above' | 'below' | 'left' | 'right';
 }
 
 const MARKS: Mark[] = [
   {
     target: 'mode-switch',
-    title: 'View · Build · Simulate',
-    text: 'View shows the details of what you built. Build draws roads, flyovers, metro and buildings. Simulate runs traffic around any road you click.',
-    side: 'below',
+    title: 'Workspaces',
+    text: 'Explore the city, Design proposals, check Underground and Environment data, Simulate traffic, coordinate Projects and export Reports. Ctrl/⌘K searches everything.',
+    side: 'right',
   },
 ];
 
@@ -82,7 +82,9 @@ export const CoachMarks: React.FC = () => {
             ? { left: r.left, bottom: window.innerHeight - r.top + 14 }
             : m.side === 'below'
               ? { left: r.left, top: r.bottom + 14 }
-              : { right: window.innerWidth - r.left + 14, top: Math.max(16, r.top + 80) };
+              : m.side === 'right'
+                ? { left: Math.min(r.right + 14, window.innerWidth - 336), top: Math.max(16, Math.min(r.top + 40, window.innerHeight - 200)) }
+                : { right: window.innerWidth - r.left + 14, top: Math.max(16, r.top + 80) };
         return (
           <React.Fragment key={m.target}>
             {/* Highlight ring around the target */}

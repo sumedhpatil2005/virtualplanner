@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "cesium/Build/Cesium/Widgets/widgets.css";
+@import "./styles/tokens.css";
 
 /* Animation utilities used across the UI (animate-fade-in, animate-scale-in, animate-spin-slow).
    Opacity/scale only — never `transform` — so they don't fight translate-based centering. */
@@ -33,9 +34,9 @@ html, body, #root {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: #0b0f19; /* Dark Navy slate background */
-  color: #f8fafc;
-  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-1);
+  font-family: var(--font-ui);
 }
 
 /* Premium Glassmorphic Panels */
@@ -73,162 +74,293 @@ html, body, #root {
   background: rgba(148, 163, 184, 0.5);
 }
 
-/* Cesium UI Overrides to maintain the TwinCity Theme */
-.cesium-viewer {
-  font-family: inherit;
+/* ================================================================================================================
+   UrbanOS shell (docs/urbanos/UX_ARCHITECTURE.md §2, PRODUCT_UX_RESEARCH §5.4; doc: SHELL_AND_DESIGN_SYSTEM.md).
+   These rules are unlayered on purpose: they win over Tailwind utilities, which is how existing panels (fixed
+   22/27 rem floating cards) are fitted into the docked regions without editing them.
+   ================================================================================================================ */
+
+.uos-shell {
+  position: fixed; inset: 0; overflow: hidden; z-index: 0;
+  display: grid;
+  grid-template-columns: var(--rail-w) auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  grid-template-areas: "top top top top" "rail ctx stage insp";
+  background: var(--bg-app); color: var(--text-1);
+  font-family: var(--font-ui); font-size: var(--fs-body); line-height: var(--lh-body);
 }
 
-/* Cesium's home / 2D-3D / base-layer / fullscreen controls default to the top-right
-   corner, where the Properties panel covers them. Keep them clear of our panels
-   and below the centred drawing HUD. */
-.cesium-viewer-toolbar {
-  top: 4.5rem !important;
-  right: 1rem !important;
+/* ---- Top bar ---- */
+.uos-topbar {
+  grid-area: top; display: flex; align-items: center; gap: var(--sp-3);
+  padding: 0 var(--sp-3); background: var(--surface-1); border-bottom: 1px solid var(--border); min-width: 0; z-index: 40;
 }
+.uos-wordmark { font-size: var(--fs-heading); font-weight: 700; letter-spacing: -.01em; color: var(--text-1); white-space: nowrap; }
+.uos-ws-title { border-left: 1px solid var(--border); padding-left: var(--sp-2); }
+.uos-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; max-width: 100%;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); cursor: pointer;
+}
+.uos-chip:hover { background: var(--surface-3); }
+.uos-search {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; flex: 0 1 320px; min-width: 0;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); cursor: pointer;
+  font-size: var(--fs-label);
+}
+.uos-search:hover { color: var(--text-1); }
+.uos-search-text { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uos-kbd { font-family: var(--font-mono); font-size: var(--fs-meta); padding: 1px 5px; border-radius: var(--r-sm); border: 1px solid var(--border-strong); color: var(--text-2); }
+.uos-trust-slot { display: flex; align-items: center; }
+.uos-popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: 320px; max-height: calc(100dvh - 64px); overflow-y: auto;
+  border-radius: var(--r-lg); box-shadow: var(--shadow-float); border: 1px solid var(--border); background: var(--surface-1);
+}
+.uos-popover > div { border-radius: var(--r-lg) !important; box-shadow: none !important; border: 0 !important; background: var(--surface-1) !important; backdrop-filter: none; }
 
-/* Beside the panel, below the Mode bar's row (at top: 1rem the centred Mode bar covered it at 1,024-1,366 px) */
-.panel-open .cesium-viewer-toolbar {
-  top: 4.5rem !important;
-  right: 24rem !important;
+/* ---- Rail ---- */
+.uos-rail {
+  grid-area: rail; display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) 0;
+  background: var(--surface-1); border-right: 1px solid var(--border); overflow-y: auto; z-index: 30;
 }
-/* Wide windows: the centred Mode bar ends well left of it, and Build's centred toolbar sits at 4.25rem */
-@media (min-width: 1500px) {
-  .panel-open .cesium-viewer-toolbar { top: 1rem !important; }
+.uos-rail-btn {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 56px; margin: 0 4px; border-radius: var(--r-md); color: var(--text-2); cursor: pointer; transition: background var(--motion), color var(--motion);
 }
+.uos-rail-btn:hover { background: var(--surface-2); color: var(--text-1); }
+.uos-rail-btn.is-active { background: var(--surface-3); color: var(--text-1); }
+.uos-rail-btn.is-active::before { content: ""; position: absolute; left: -4px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.uos-rail-btn.is-active svg { color: var(--accent); }
+.uos-rail-label { font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; letter-spacing: -.02em; white-space: nowrap; max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
 
-/* Fullscreen button: out from under the panel */
-.cesium-viewer-fullscreenContainer {
-  bottom: 1rem !important;
-  right: 1.25rem !important;
+/* ---- Context panel ---- */
+.uos-context {
+  grid-area: ctx; width: var(--context-w); display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface-1); border-right: 1px solid var(--border); z-index: 25; animation: fade-in var(--motion) both;
 }
+.uos-shell[data-context-wide] .uos-context { width: 432px; }
+.uos-context-header { display: flex; align-items: center; gap: var(--sp-2); height: 44px; padding: 0 var(--sp-2) 0 var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.uos-context-header h2 { flex: 1; }
+.uos-context-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-4); overscroll-behavior: contain; }
+.uos-context-body.is-flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 
-.panel-open .cesium-viewer-fullscreenContainer {
-  right: 24.25rem !important;
+/* ---- Stage (map) ---- */
+.uos-stage { grid-area: stage; position: relative; overflow: hidden; min-width: 0; }
+.uos-map { position: absolute; inset: 0; user-select: none; }
+.uos-compass { position: absolute; left: var(--sp-3); bottom: var(--sp-3); z-index: 20; }
+.uos-shell:has(.uos-drawer) .uos-compass { bottom: calc(40px + var(--sp-3)); }
+.uos-shell:has(.uos-drawer.is-open) .uos-compass { bottom: calc(var(--drawer-h) + var(--sp-3)); }
+.uos-reopen {
+  position: absolute; left: var(--sp-3); top: var(--sp-3); z-index: 20; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
+  border-radius: var(--r-lg); background: var(--map-scrim); border: 1px solid var(--border); color: var(--text-1); font-size: var(--fs-label); font-weight: 500;
+  box-shadow: var(--shadow-float); backdrop-filter: blur(8px); cursor: pointer;
 }
+.uos-toast {
+  position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 10000; display: flex; align-items: center; gap: 12px;
+  max-width: min(32rem, calc(100% - 2rem)); padding: 10px 12px 10px 16px; border-radius: var(--r-lg); border: 1px solid var(--border-strong);
+  background: var(--surface-1); color: var(--text-1); box-shadow: var(--shadow-float); font-size: var(--fs-body);
+}
+.uos-toast[data-type="error"] { border-color: var(--fail); }
+.uos-toast[data-type="success"] { border-color: var(--measured); }
+.uos-toast-close { color: var(--text-2); cursor: pointer; display: grid; place-items: center; min-width: 28px; min-height: 28px; }
+.uos-toast-close:hover { color: var(--text-1); }
+.uos-shell:has(.uos-drawer.is-open) .uos-toast { bottom: calc(var(--drawer-h) + 16px); }
 
-/* The wide panels: Simulate, the junction editor and Traffic data (27rem); Feasibility (24rem) takes the same room */
-:is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .cesium-viewer-toolbar {
-  right: 29rem !important;
-}
+/* Cesium's own buttons sit in the map's top-right corner, clear of every panel because the map is its own column */
+.cesium-viewer { font-family: inherit; }
+.cesium-viewer-toolbar { top: var(--sp-3) !important; right: var(--sp-3) !important; }
+.cesium-viewer-fullscreenContainer { bottom: var(--sp-3) !important; right: var(--sp-3) !important; }
+.uos-shell:has(.uos-drawer) .cesium-viewer-fullscreenContainer { bottom: calc(40px + var(--sp-3)) !important; }
+.uos-shell:has(.uos-drawer.is-open) .cesium-viewer-fullscreenContainer { bottom: calc(var(--drawer-h) + var(--sp-3)) !important; }
+.cesium-viewer-bottom { display: none !important; /* credits are shown by Cesium's credit display elsewhere; logos hidden */ }
 
-:is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .cesium-viewer-fullscreenContainer {
-  right: 29.25rem !important;
-}
+.selection-box { border: 1px dashed #6366f1; background: rgba(99, 102, 241, 0.15); position: absolute; pointer-events: none; z-index: 9999; }
 
-.cesium-viewer-bottom {
-  display: none !important; /* Hide Cesium logos and credit bar for cleaner UI */
-}
-
-/* Custom styles for select/rect rendering */
-.selection-box {
-  border: 1px dashed #6366f1;
-  background: rgba(99, 102, 241, 0.15);
-  position: absolute;
-  pointer-events: none;
-  z-index: 9999;
-}
-
-/* Build's tools. Wide windows: centred under the Mode bar (fixed, so centred on the window although the toolbar
-   lives in the top-left column). Otherwise in the top-left column's own flow, under Traffic data, four tools per row
-   (4 x 4rem fits the column's 18rem), so it can never sit under the scenario box however tall that grows. The
-   centred toolbar (about 57rem) runs under a 22rem panel below 1,680 px and a 27rem panel below 1,810 px. */
-.build-toolbar { position: fixed; top: 4.25rem; left: 50%; transform: translateX(-50%); }
-@media (max-width: 1560px) {
-  .build-toolbar { position: static; transform: none; }
-  .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
-}
-@media (max-width: 1700px) {
-  .panel-open .build-toolbar { position: static; transform: none; }
-  .panel-open .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
-}
-@media (max-width: 1830px) {
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .build-toolbar { position: static; transform: none; }
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .build-toolbar [data-coach="toolbar"] > div:first-child { display: grid; grid-template-columns: repeat(4, 4rem); }
-}
-/* The top-left column (name, scenario, versions, Traffic data, Build's tools) scrolls rather than running off the
-   window or under the Layers button */
-.top-left-dock { max-height: calc(100dvh - 6.5rem); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
-
-.simulation-hud { max-width: calc(100vw - 25rem); }
+.simulation-hud { max-width: calc(100% - 2rem); }
 @media (max-width: 1050px) {
   .simulation-hud > div:nth-child(2) { gap: .65rem; padding: .65rem; }
   .simulation-hud > div:nth-child(2) > div:nth-last-child(2) { display: none; }
 }
-@media (max-width: 760px) {
-  .simulation-hud { display: none; }
+
+/* ---- Inspector ---- */
+.uos-inspector { grid-area: insp; display: flex; min-height: 0; z-index: 25; background: var(--surface-1); border-left: 1px solid var(--border); animation: fade-in var(--motion) both; }
+.uos-inspector > aside, .uos-embed-panel > aside {
+  height: 100%; max-height: 100%; border-radius: 0 !important; border-width: 0 !important; box-shadow: none !important;
+  backdrop-filter: none !important; background: var(--surface-1) !important; animation: none;
+}
+.uos-embed-panel > aside { width: 100% !important; }
+
+/* ---- Bottom drawer ---- */
+.uos-drawer {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 22; display: flex; flex-direction: column;
+  background: var(--surface-1); border-top: 1px solid var(--border);
+}
+.uos-drawer.is-open { height: var(--drawer-h); }
+.uos-drawer-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); height: 40px; padding: 0 var(--sp-2) 0 var(--sp-3); flex-shrink: 0; }
+.uos-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--sp-3) var(--sp-3); }
+
+/* ---- Design-system primitives (components/ui) ---- */
+.uos-panel { display: flex; flex-direction: column; min-height: 0; height: 100%; background: var(--surface-1); }
+.uos-panel-header { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.uos-panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }
+.uos-panel-footer { padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); display: flex; gap: var(--sp-2); justify-content: flex-end; }
+
+.uos-icon-btn {
+  position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border-radius: var(--r-md); color: var(--text-2); cursor: pointer; transition: background var(--motion), color var(--motion);
+}
+.uos-icon-btn-sm { width: 32px; height: 32px; }
+.uos-icon-btn:hover, .uos-icon-btn.is-active { background: var(--surface-3); color: var(--text-1); }
+.uos-icon-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Tooltip: visible on hover and on keyboard focus; text also in aria-label */
+.uos-tip-text {
+  position: absolute; z-index: 70; pointer-events: none; opacity: 0; transition: opacity 120ms ease-out;
+  padding: 4px 8px; border-radius: var(--r-sm); background: var(--text-1); color: var(--bg-app);
+  font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; white-space: nowrap;
+}
+.uos-tip:hover .uos-tip-text, .uos-tip:focus-visible .uos-tip-text { opacity: 1; transition-delay: 300ms; }
+.uos-tip:focus-visible .uos-tip-text { transition-delay: 0ms; }
+.uos-tip[data-tip="bottom"] .uos-tip-text { top: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.uos-tip[data-tip="top"] .uos-tip-text { bottom: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.uos-tip[data-tip="left"] .uos-tip-text { right: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+.uos-tip[data-tip="right"] .uos-tip-text { left: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+
+.uos-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.uos-tab {
+  position: relative; height: 36px; padding: 0 12px; font-size: var(--fs-label); font-weight: 500; color: var(--text-2);
+  cursor: pointer; white-space: nowrap; border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.uos-tab:hover { color: var(--text-1); background: var(--surface-2); }
+.uos-tab.is-active { color: var(--text-1); }
+.uos-tab.is-active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+.uos-drawer .uos-tabs { border-bottom: 0; }
+
+.uos-disclosure { border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.uos-disclosure-summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: var(--fs-label); font-weight: 500; color: var(--text-2); min-height: 28px; }
+.uos-disclosure-summary::-webkit-details-marker { display: none; }
+.uos-disclosure-summary:hover { color: var(--text-1); }
+.uos-disclosure-body { padding: var(--sp-2) 0 0 20px; }
+
+.uos-metric { padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
+.uos-empty { display: flex; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--r-md); border: 1px dashed var(--border-strong); background: var(--surface-2); }
+.uos-card { padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--border); }
+.uos-row { display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; padding: 6px 8px; border-radius: var(--r-md); }
+button.uos-row { cursor: pointer; }
+button.uos-row:hover { background: var(--surface-2); }
+.uos-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-md); cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-1); font-size: var(--fs-label); font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+.uos-btn:hover { background: var(--surface-3); }
+.uos-btn:disabled { opacity: .5; cursor: not-allowed; }
+.uos-btn-sm { height: 30px; padding: 0 10px; }
+.uos-link { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.uos-banner-fail { display: flex; gap: var(--sp-2); padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--fail); background: color-mix(in srgb, var(--fail) 10%, var(--surface-1)); color: var(--text-1); font-size: var(--fs-label); }
+.uos-banner-fail svg { color: var(--fail); }
+.uos-table { width: 100%; border-collapse: collapse; font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+.uos-table th { text-align: left; font-weight: 500; color: var(--text-2); padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1); }
+.uos-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text-1); }
+.uos-table .num { text-align: right; }
+.uos-table tbody tr:hover td { background: var(--surface-2); }
+:where(.uos-shell) :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---- Existing components embedded in the shell ---- */
+.uos-embed-layers > div { width: 100% !important; height: auto !important; max-height: none; padding: 0 !important; background: none !important; border: 0 !important; box-shadow: none !important; backdrop-filter: none !important; }
+.uos-embed-layers > div > div:first-child { display: none; } /* its own "Layer Registry" title: the section heading replaces it */
+.uos-embed-card > div { background: var(--surface-2) !important; box-shadow: none !important; backdrop-filter: none !important; border-radius: var(--r-md) !important; border-color: var(--border) !important; }
+.uos-embed-toolbar [data-coach="toolbar"] { width: auto; flex-wrap: wrap; z-index: auto; }
+.uos-embed-toolbar [data-coach="toolbar"] * { animation: none; }
+.uos-embed-toolbar [data-coach="toolbar"] > div:first-child {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; background: var(--surface-2) !important;
+  box-shadow: none !important; backdrop-filter: none !important; border-radius: var(--r-md) !important; border-color: var(--border) !important;
+}
+.uos-embed-toolbar [data-coach="toolbar"] > div:first-child > .relative { display: contents; }
+.uos-embed-toolbar [data-coach="toolbar"] > div:first-child > .relative > button { width: auto; min-height: 48px; }
+/* A tool's settings/hint card: a full-width row under the tool rows instead of a floating box */
+.uos-embed-toolbar [data-coach="toolbar"] > div:first-child > .relative > div.absolute {
+  position: static; grid-column: 1 / -1; order: 99; width: auto; transform: none; translate: none; margin-top: 4px;
+  box-shadow: none; backdrop-filter: none; background: var(--surface-1);
 }
 
-/* Mode bar (21rem wide with labels, 9.25rem as icons): centred while it fits between the top-left column (to 19rem)
-   and the right panel (22rem, or 27rem for Simulate, the junction editor and Traffic data); else just right of the
-   top-left column with its labels (to 1,250 px with the 27rem panel, 1,090 px with the 22rem panel, 960 px with
-   none); else right of the column as icons only (down to 920 px; under that see "Narrow windows") */
-.mode-bar-wrap { top: 1rem; left: 50%; transform: translateX(-50%); }
-@media (max-width: 960px) {
-  .mode-bar-wrap { left: 19.5rem; transform: none; }
-}
-@media (max-width: 1090px) {
-  .panel-open .mode-bar-wrap { left: 19.5rem; transform: none; }
-}
-@media (max-width: 1250px) {
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar-wrap { left: 19.5rem; transform: none; }
-}
-@media (max-width: 1101px) {
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel])) .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-@media (max-width: 1021px) {
-  .panel-open .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
-  .panel-open .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* ---- Command palette ---- */
+.uos-palette-backdrop { position: fixed; inset: 0; z-index: 95000; background: rgba(0, 0, 0, .45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.uos-palette { width: min(600px, calc(100vw - 24px)); max-height: 70vh; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--surface-1); border: 1px solid var(--border-strong); box-shadow: var(--shadow-float); overflow: hidden; }
+.uos-palette-input { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; border-bottom: 1px solid var(--border); }
+.uos-palette-input input { flex: 1; min-width: 0; background: transparent; outline: none; color: var(--text-1); font-size: var(--fs-heading); }
+.uos-palette-input input::placeholder { color: var(--text-3); }
+.uos-palette-list { flex: 1; overflow-y: auto; padding: 6px; }
+.uos-palette-group { padding: 8px 8px 4px; font-size: var(--fs-meta); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.uos-palette-item { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: var(--r-md); cursor: pointer; }
+.uos-palette-item.is-active { background: var(--surface-3); }
+.uos-palette-item.is-active .text-text-3 { color: var(--text-2); } /* text-3 is below 4.5:1 on dark surface-3 */
+.uos-palette-foot { padding: 8px 14px; border-top: 1px solid var(--border); }
+
+/* ---- Laptop 1025–1279: narrower panels (§5.4) ---- */
+@media (min-width: 1025px) and (max-width: 1279.98px) {
+  .uos-shell { --context-w: 296px; }
 }
 
-/* ---- Narrow windows (under 920 px: portrait tablets and phones) ----
-   One panel at a time as a bottom sheet across the full width (the panel dock's single child); the Mode bar becomes a
-   column of 44 px icons in the top-right corner with Cesium's buttons (enlarged to 44 px) under it, both above the
-   sheet; Layers and the compass sit just above the sheet, and opening Layers puts the sheet away until Layers closes.
-   Controls in the floating boxes get at least 44 x 44 px (WCAG 2.2 SC 2.5.5 Target Size (Enhanced)). */
-@media (max-width: 919.98px) {
-  :root { --sheet-h: 50dvh; }
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .mode-bar-wrap { top: 1rem; right: 1rem; left: auto; transform: none; }
-  .mode-bar { flex-direction: column; }
-  .mode-bar button { width: 44px; height: 44px; padding: 0; justify-content: center; }
-  .mode-bar .mode-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* ---- Tablet 768–1024: rail stays; context panel and inspector OVERLAY the map, one at a time (the store enforces
+   one-at-a-time); touch targets ≥ 40 px ---- */
+@media (max-width: 1024.98px) {
+  .uos-shell { grid-template-columns: 72px 0 minmax(0, 1fr) 0; --rail-w: 72px; }
+  .uos-context, .uos-inspector { position: absolute; top: var(--topbar-h); bottom: 0; box-shadow: var(--shadow-float); }
+  .uos-context { left: 72px; width: min(var(--context-w), calc(100vw - 72px - 2rem)); }
+  .uos-shell[data-context-wide] .uos-context { width: min(432px, calc(100vw - 72px - 2rem)); }
+  .uos-inspector { right: 0; max-width: calc(100vw - 72px); }
+  .uos-inspector > aside { max-width: 100%; }
+  .uos-rail-btn { margin: 0 1px; }
+  .uos-rail-label { font-size: 10px; max-width: 70px; } /* §5.4 tablet rail: 10–11 px labels */
+  .uos-search-text { display: none; }
+  .uos-search { flex: 0 0 auto; }
+  .uos-ws-title { display: none; }
+  .uos-shell :is(.uos-context, .uos-inspector, .uos-topbar, .uos-popover, .uos-drawer) :is(button, select, [role=button], [role=tab], summary, a.uos-btn),
+  .uos-shell :is(.uos-context, .uos-inspector, .uos-popover) input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height: 40px; }
+  .uos-shell :is(.uos-context, .uos-inspector, .uos-topbar, .uos-popover) :is(button, [role=button], [role=tab]) { min-width: 40px; }
+  .uos-shell .uos-icon-btn-sm { width: 40px; height: 40px; }
+  .uos-palette-item { min-height: 44px; }
+}
 
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .cesium-viewer-toolbar {
-    top: 11rem !important; right: 1rem !important; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+/* ---- Phone (< 768): the rail becomes a bottom tab bar; the context panel or the inspector is a bottom sheet above
+   it, one at a time; the whole sheet scrolls as one (the old < 920 px sheet rules, kept for the embedded panels) ---- */
+@media (max-width: 767.98px) {
+  .uos-shell {
+    --sheet-h: 52dvh; --tabbar-h: 56px;
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--tabbar-h);
+    grid-template-areas: "top" "stage" "rail";
   }
+  .uos-topbar { gap: var(--sp-2); padding: 0 var(--sp-2); }
+  .uos-wordmark { font-size: var(--fs-body); }
+  .uos-rail { flex-direction: row; padding: 0; border-right: 0; border-top: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; }
+  .uos-rail-btn { flex: 1 0 70px; margin: 2px 1px; min-height: 0; }
+  .uos-rail-btn.is-active::before { left: 10px; right: 10px; top: -2px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
+  .uos-rail-label { font-size: 10px; max-width: 70px; } /* 7 x 72 px > 390 px: the tab bar scrolls sideways */
+  .uos-context, .uos-inspector {
+    position: absolute; left: 0; right: 0; top: auto; bottom: var(--tabbar-h); height: var(--sheet-h); width: 100% !important; max-width: none;
+    border-radius: 14px 14px 0 0; border: 1px solid var(--border); border-bottom: 0; box-shadow: 0 -8px 24px rgba(0,0,0,.35);
+  }
+  .uos-inspector > aside { width: 100% !important; overflow-y: auto; overscroll-behavior: contain; }
+  .uos-inspector > aside > * { flex-shrink: 0; }
+  .uos-inspector > aside > .overflow-y-auto { overflow: visible; flex: none; }
+  .uos-inspector > aside > :last-child:not(:first-child):not(.overflow-y-auto) { position: sticky; bottom: 0; z-index: 2; background: var(--surface-1); }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .uos-compass { bottom: calc(var(--sheet-h) + var(--sp-3)); }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .uos-toast { bottom: calc(var(--sheet-h) + 1rem); }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .cesium-viewer-fullscreenContainer { bottom: calc(var(--sheet-h) + .75rem) !important; }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .simulation-hud { display: none; }
+  .uos-popover { position: fixed; left: 8px; right: 8px; top: calc(var(--topbar-h) + 4px); width: auto; max-height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - 12px); }
+  .uos-search { padding: 0 8px; }
+  .uos-search .uos-kbd { display: none; }
+  .uos-chip { padding: 0 8px; }
+  .uos-chip .text-label { max-width: 7.5rem; }
+  .uos-drawer.is-open { height: var(--sheet-h); }
+  .cesium-viewer-toolbar { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .cesium-viewer-toolbar > * { margin: 0 !important; }
   .cesium-viewer-toolbar .cesium-toolbar-button, .cesium-viewer-toolbar .cesium-sceneModePicker-wrapper { width: 44px !important; height: 44px !important; }
   .cesium-viewer-toolbar .cesium-toolbar-button .cesium-svgPath-svg { left: 6px; top: 6px; width: 32px; height: 32px; }
   .cesium-viewer-toolbar .cesium-baseLayerPicker-selected { width: 100%; height: 100%; }
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div) .cesium-viewer-fullscreenContainer {
-    right: 1rem !important; bottom: 4.5rem !important; width: 44px; height: 44px;
-  }
-  :is(.panel-wide-open, .panel-open:has([data-testid=feasibility-panel]), .panel-open, div).panel-open:not(.layers-open) .cesium-viewer-fullscreenContainer { bottom: calc(var(--sheet-h) + .75rem) !important; }
-
-  .panel-dock { top: auto; bottom: 1rem; right: 1rem; }
-  .panel-open .panel-dock { left: 0; right: 0; bottom: 0; height: var(--sheet-h); align-items: stretch; justify-content: flex-end; }
-  .panel-open .panel-dock > * { width: 100%; max-width: 100%; max-height: 100%; border-radius: 1rem 1rem 0 0; border-bottom-width: 0; }
-  .layers-open .panel-dock { display: none; }
-  /* In the sheet the whole panel scrolls as one (a tall header such as Simulate's would otherwise leave its own
-     scrolling body a few pixels high); a footer after the body stays pinned to the sheet's bottom edge */
-  .panel-open .panel-dock > * { overflow-y: auto; overscroll-behavior: contain; }
-  .panel-open .panel-dock > * > * { flex-shrink: 0; }
-  .panel-open .panel-dock > * > .overflow-y-auto { overflow: visible; flex: none; }
-  .panel-open .panel-dock > * > :last-child:not(:first-child):not(.overflow-y-auto) { position: sticky; bottom: 0; z-index: 2; background: rgb(2 6 23 / .97); }
-
-  .panel-open:not(.layers-open) .layers-dock, .panel-open:not(.layers-open) .compass-dock { bottom: calc(var(--sheet-h) + .75rem); }
-  .layers-dock > .animate-fade-in > * { max-height: calc(100dvh - 22rem); }
-
-  .top-left-dock { width: min(18rem, calc(100vw - 6rem)); max-height: calc(100dvh - 6.5rem); }
-  /* above the compass, which sits on the sheet */
-  .panel-open:not(.layers-open) .top-left-dock { max-height: calc(100dvh - var(--sheet-h) - 6.5rem); }
-
-  .simulation-hud { max-width: calc(100vw - 2rem); }
-  .panel-open .simulation-hud { bottom: calc(var(--sheet-h) + 5.5rem); }
-  .panel-open .toast-dock { bottom: calc(var(--sheet-h) + 1rem); }
-
-  .pointer-events-auto :is(button, select, [role=button], [role=tab], summary),
-  .pointer-events-auto input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height: 44px; min-width: 44px; }
-  .pointer-events-auto label:has(> input[type=checkbox], > input[type=radio]) { min-height: 44px; }
-  .pointer-events-auto :is(button, [role=button], [role=tab]) { min-width: 44px; }
+  .uos-shell :is(.uos-context, .uos-inspector, .uos-topbar, .uos-popover, .uos-rail) :is(button, select, [role=button], [role=tab], summary),
+  .uos-shell :is(.uos-context, .uos-inspector, .uos-popover) input:not([type=checkbox]):not([type=radio]):not([type=hidden]) { min-height: 44px; min-width: 44px; }
+  .uos-shell :is(.uos-context, .uos-inspector) label:has(> input[type=checkbox], > input[type=radio]) { min-height: 44px; }
+  .uos-shell .uos-icon-btn-sm { width: 44px; height: 44px; }
+  .simulation-hud { display: none; }
 }

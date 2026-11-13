@@ -33,9 +33,9 @@ const ENTITY_LABEL: Record<string, string> = {
   evidence: 'Evidence', review: 'Review', document: 'Investigation document', pcu_set: 'PCU set', vehicle_class: 'Vehicle class',
 };
 
-export const PlanningPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this project directly (command palette). */ initialOpenId?: string | null }> = ({ onClose, initialOpenId }) => {
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [user, setUserState] = useState(() => localStorage.getItem('td-user') ?? '');
   const setUser = (v: string) => { setUserState(v); localStorage.setItem('td-user', v); };

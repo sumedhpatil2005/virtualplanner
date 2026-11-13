@@ -79,7 +79,7 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   /* shell geometry (§5.4) */
   --topbar-h: 44px;
-  --rail-w: 64px;
+  --rail-w: 76px; /* 64 in the spec; 76 so "Underground"/"Environment" fit at 11 px without truncation, even in wide fallback fonts */
   --context-w: 320px;
   --inspector-w: 360px;
   --drawer-h: 240px;

@@ -15,7 +15,7 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 };
 
-const READ_ONLY_MESSAGE = 'Roads cannot be changed while simulating. Switch to Build to edit.';
+const READ_ONLY_MESSAGE = 'Roads cannot be changed while simulating. Open Design (Alt+2) to edit.';
 
 /**
  * Simulation mode keys. Esc clears the study area, then leaves the mode; editing
@@ -134,7 +134,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       const tool = toolByHotkey(key);
       if (tool) {
         if (tool.mode !== 'select' && !engineInstance.isPlanningModeActive()) {
-          (window as any).showToast?.(`"${tool.label}" is a Build tool. Switch to Build at the top to use it.`, 'info');
+          (window as any).showToast?.(`"${tool.label}" is a Design tool. Open Design (Alt+2) to use it.`, 'info');
           return;
         }
         editing.setMode(tool.mode);
