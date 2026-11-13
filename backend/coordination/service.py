@@ -291,7 +291,7 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                 continue
             for a in segs:
                 for b in G.candidates(trees[layer], lsegs, a, radius):
-                    r = G.evaluate_pair(a, b, rules, screening_radius_m)
+                    r = G.evaluate_pair(a, b, rules, screening_radius_m, b_is_proposal=(layer == "project_element"))
                     if r["class"] == "no_conflict_within_available_data" and not r["permission_triggers"]:
                         continue
                     key = (layer, b.owner)

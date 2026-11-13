@@ -178,11 +178,16 @@ def applicable_rules(rules: Iterable[dict], ka: str, kb: str) -> list[dict]:
             or (_kind_match(r["subject_kind"], kb) and _kind_match(r["other_kind"], ka))]
 
 
-def evaluate_pair(a: Segment, b: Segment, rules: list[dict], screening_radius_m: float) -> dict:
-    """Classify one segment pair. Returns class, distances, reasons, permission triggers, rule ids used."""
+def evaluate_pair(a: Segment, b: Segment, rules: list[dict], screening_radius_m: float, b_is_proposal: bool = True) -> dict:
+    """Classify one segment pair. Returns class, distances, reasons, permission triggers, rule ids used.
+    Engineering clearances apply symmetrically. A permission distance is directional: subject_kind is the WORK, other_kind
+    the protected asset; it fires for a's work near b, and for b's work near a only when b is itself a proposal (an existing
+    baseline asset or record is not a work that needs a permission)."""
     rs = applicable_rules(rules, a.kind, b.kind)
     eng = [r for r in rs if r["rule_type"] == "engineering_clearance"]
-    perm = [r for r in rs if r["rule_type"] == "permission_distance"]
+    perm = [r for r in rules if r["rule_type"] == "permission_distance" and (
+        (_kind_match(r["subject_kind"], a.kind) and _kind_match(r["other_kind"], b.kind))
+        or (b_is_proposal and _kind_match(r["subject_kind"], b.kind) and _kind_match(r["other_kind"], a.kind)))]
     d = float(a.geom.distance(b.geom))
     reasons: list[str] = []
     h_vals = [r["horizontal_m"] for r in eng if r.get("horizontal_m") is not None]

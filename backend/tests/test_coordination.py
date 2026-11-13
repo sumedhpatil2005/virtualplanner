@@ -342,13 +342,15 @@ def test_rule_defaults_are_cited_permission_distances_only(client):
 def test_proposals_checked_against_baseline_roads(client):
     p = _project(client)
     fly = _el(client, p, "flyover", _line(73.8625, 18.4940, 73.8625, 18.4960), width_m=12, z_min_m=6.5, z_max_m=8.0, certainty="hypothetical")
-    tun = _el(client, p, "tunnel", _line(73.8630, 18.4940, 73.8630, 18.4960), width_m=8, z_min_m=-20, z_max_m=-12)
+    tun = _el(client, p, "metro_tunnel", _line(73.8630, 18.4940, 73.8630, 18.4960), width_m=8, z_min_m=-20, z_max_m=-12)
     run = _detect(client, p)
     f = _by(run, fly["id"], "coord_base_road")[0]
     assert f["b_type"] == "baseline_road" and f["class"] == "vertically_separated" and f["vertical_gap_m"] == pytest.approx(6.5)
     t = _by(run, tun["id"], "coord_base_road")[0]
     # base road structure depth is not recorded -> UNKNOWN, so a tunnel under it cannot be cleared
     assert t["class"] == "potential_conflict" and t["evidence"]["b"]["z_min_m"] is None and t["evidence"]["b"]["z_max_m"] == 0
+    # an existing road is not a work: the metro NOC distance (directional) does not fire for it
+    assert t["permission_triggers"] == []
 
 
 def test_osm_metro_baseline_when_index_present(client):
