@@ -73,26 +73,35 @@ def derived_dir(dataset_id: str, version: str) -> Path:
 
 
 def polite_sleep() -> None:
-    wait = MIN_REQUEST_INTERVAL_S - (time.time() - _last_request[0])
+    wait = globals()['MIN_REQUEST_INTERVAL_S'] - (time.time() - _last_request[0])
     if wait > 0:
         time.sleep(wait)
     _last_request[0] = time.time()
 
 
-def http_download(url: str, dest: Path, data: bytes | None = None, timeout: int = 180) -> dict:
-    """Stream url to dest (rate limited). Returns response headers + status."""
-    polite_sleep()
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+def http_download(url: str, dest: Path, data: bytes | None = None, timeout: int = 180, retries: int = 3) -> dict:
+    """Stream url to dest (rate limited, retried on truncated transfers). Returns headers + status."""
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        polite_sleep()
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT})
         tmp = dest.with_suffix(dest.suffix + ".part")
-        with open(tmp, "wb") as out:
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                out.write(chunk)
-        tmp.replace(dest)
-        return {"status": resp.status, "headers": {k.lower(): v for k, v in resp.headers.items()}}
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with open(tmp, "wb") as out:
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                tmp.replace(dest)
+                return {"status": resp.status, "headers": {k.lower(): v for k, v in resp.headers.items()},
+                        "attempts": attempt + 1}
+        except Exception as e:  # IncompleteRead, timeouts, resets
+            last_exc = e
+            tmp.unlink(missing_ok=True)
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"download failed after {retries} attempts: {url}") from last_exc
 
 
 def manifest_entry(path: Path, url: str, *, retrieved_at: str | None = None, http: dict | None = None,
