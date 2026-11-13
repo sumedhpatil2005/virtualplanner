@@ -52,6 +52,30 @@ def _con() -> Optional[sqlite3.Connection]:
     return con
 
 
+def _reset() -> None:
+    cached = getattr(_LOCAL, "con", None)
+    if cached is not None:
+        try:
+            cached[1].close()
+        except Exception:  # noqa: BLE001
+            pass
+    _LOCAL.con = None
+
+
+def _retry(fn):
+    """One retry on a fresh connection when SQLite reports a read error (seen once on the network filesystem right after
+    the index file was replaced: pages of the old and new file mixed in one connection)."""
+    def wrapper(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except sqlite3.DatabaseError:
+            _reset()
+            return fn(*a, **kw)
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
+
+
 def status() -> dict:
     p = index_path()
     if p is None:
@@ -66,6 +90,7 @@ def _has(con, table: str) -> bool:
     return con.execute("select 1 from sqlite_master where name=?", (table,)).fetchone() is not None
 
 
+@_retry
 def layers() -> list[dict]:
     con = _con()
     if con is None:
@@ -88,6 +113,7 @@ def layer(lid: str) -> Optional[dict]:
     return next((l for l in layers() if l["id"] == lid), None)
 
 
+@_retry
 def query(lid: str, bbox: Iterable[float], limit: int = DEFAULT_CAP, where: Optional[dict] = None) -> dict:
     """Features of one layer intersecting bbox (by R*Tree bbox, then exact geometry). Capped: `total_in_bbox` counts R*Tree
     candidates (an upper bound on intersecting features), `returned` is what is sent, `not_shown` the difference."""
@@ -121,6 +147,7 @@ def query(lid: str, bbox: Iterable[float], limit: int = DEFAULT_CAP, where: Opti
             "features": feats}
 
 
+@_retry
 def features_near(lid: str, bbox: Iterable[float], where: Optional[dict] = None, max_features: int = 50000):
     """(fid, ext_id, props, shapely geometry) for coordination; raises KeyError when the layer is missing."""
     import shapely
