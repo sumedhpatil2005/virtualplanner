@@ -78,7 +78,12 @@ Small edits outside owned files: `AppShell.tsx` (one import + `underground: UNDE
   X-ray, Profile (11 crossings, 1 UNKNOWN marker, ground line), Cross-section at 25 %, CSV utility import with stated
   coverage (1440), conflict check (14 potential conflicts with baseline roads — road depth UNKNOWN — and 1 "no conflict
   within available data" for the covered utility layer), leave → globe restored. No horizontal overflow in the panel.
-  Screenshots `/workspace/work/urbanos/shots/after/underground-<WxH>-0[1-6]-*.png` (viewed).
+  Screenshots `/workspace/work/urbanos/shots/after/underground-<WxH>-0[1-6]-*.png` (viewed; 1024 has no 05-records, the
+  import was exercised at 1440). 3D: `underground-alignments` data source holds the `polylineVolume` + UNKNOWN-span line +
+  plan trace; the buried tube and an imported utility record at −3 m are visible in 02/04/05. The 1024 run reused the DB of
+  the 1440 run, so its findings include "Other project" potential conflicts (cross-project detection seen working).
+- Shell observation (not changed, AppShell layout is not mine): at 1024×768 the context panel overlays the drawer's tab
+  strip; the drawer tabs are reachable only after collapsing the panel (harness does this).
 - Sandbox limitation: Cesium globe tiles never render here (ion imagery 401 → `globe._surface._tilesToRender = 0`), so
   `globe.pick` returns nothing and **mouse clicks cannot place points in this sandbox for any drawing tool**. The harness
   converts screen points with `camera.pickEllipsoid` and calls `editing.addDrawingPoint` / `finalizeDrawing` — the same
