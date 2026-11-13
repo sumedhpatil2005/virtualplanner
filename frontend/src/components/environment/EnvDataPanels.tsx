@@ -52,7 +52,7 @@ export const LandcoverAreasPanel: React.FC = () => {
     run(envDataApi.landcoverAreasPolygon(g, 'footprint'), `Footprint of “${prop.name || prop.type}” (centreline ± width/2, approximate)`, 'footprint');
   };
   return (
-    <div className="space-y-1.5" data-testid="env-landcover-areas">
+    <div className="space-y-1.5 min-w-0 [overflow-wrap:anywhere]" data-testid="env-landcover-areas">
       <div className="flex flex-wrap gap-2">
         <button type="button" className="uos-btn uos-btn-sm" data-testid="env-lc-view" onClick={view} disabled={busy}>Class areas: current view</button>
         <button type="button" className="uos-btn uos-btn-sm" data-testid="env-lc-footprint" onClick={footprint} disabled={busy || !prop}
@@ -139,7 +139,7 @@ export const AirQualityPanel: React.FC = () => {
   }, [sid, param, agg, st]);
   const partial = series ? series.points.filter(p => series.samples_per_full_bucket && p.n < series.samples_per_full_bucket).length : 0;
   return (
-    <div className="space-y-1.5" data-testid="env-air-panel">
+    <div className="space-y-1.5 min-w-0 [overflow-wrap:anywhere]" data-testid="env-air-panel">
       {!stations && !err && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading stations…</p>}
       <Err e={err} id="env-air-error" />
       {stations && (
@@ -187,7 +187,7 @@ export const RainfallPanel: React.FC = () => {
   const top = useMemo(() => cell ? [...cell.daily_max_by_year].sort((a, b) => b.mm - a.mm).slice(0, 5) : [], [cell]);
   const chirpsYears = s ? Object.entries(s.chirps_box.annual_total_mm).filter(([y]) => +y >= 2000) : [];
   return (
-    <div className="space-y-2" data-testid="env-rain-panel">
+    <div className="space-y-2 min-w-0 [overflow-wrap:anywhere]" data-testid="env-rain-panel">
       <p className="text-label font-semibold" style={{ color: 'var(--warn, #E8B04A)' }} data-testid="env-rain-statement">Descriptive statistics only — not IDF curves, not design storms.</p>
       {!s && !err && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading rainfall…</p>}
       <Err e={err} id="env-rain-error" />

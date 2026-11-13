@@ -10,7 +10,7 @@
  */
 import { create } from 'zustand';
 import {
-  Cartesian2, Cartesian3, Color, CustomDataSource, HeightReference, ImageryLayer, LabelStyle, Math as CesiumMath, NearFarScalar,
+  Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Math as CesiumMath, NearFarScalar,
   Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
@@ -152,9 +152,9 @@ async function drawTrees(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType
     for (const p of res.points) {
       ds.entities.add({
         id: `env_overlay_tree_${p.id}`, name: p.common_name ?? p.botanical_name ?? 'Tree',
-        position: Cartesian3.fromDegrees(p.lon, p.lat),
+        position: lift(p.lon, p.lat),
         point: { pixelSize: 6, color: p.is_rare === 1 ? Color.fromCssColorString('#c0ca33') : TREE_COLOR, outlineColor: Color.BLACK, outlineWidth: 1,
-          heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+          disableDepthTestDistance: Number.POSITIVE_INFINITY },
         description: `${p.botanical_name ?? 'species UNKNOWN'} (${p.common_name ?? '—'}); girth ${p.girth_cm ?? '?'} cm, height ${p.height_m ?? '?'} m, ` +
           `canopy ${p.canopy_dia_m ?? '?'} m; ${p.condition ?? 'condition UNKNOWN'}; ${p.ownership ?? ''}; ward ${p.ward ?? '?'}. PMC tree census 2019 (as published).`,
       });
@@ -165,12 +165,12 @@ async function drawTrees(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType
     const maxN = Math.max(1, ns[Math.floor(ns.length * 0.9)] ?? 1);
     for (const c of res.clusters) {
       ds.entities.add({
-        id: `env_overlay_treecl_${c.lon.toFixed(5)}_${c.lat.toFixed(5)}`, position: Cartesian3.fromDegrees(c.lon, c.lat),
+        id: `env_overlay_treecl_${c.lon.toFixed(5)}_${c.lat.toFixed(5)}`, position: lift(c.lon, c.lat),
         point: { pixelSize: 5 + 17 * Math.sqrt(Math.min(1, c.n / maxN)), color: TREE_COLOR.withAlpha(0.7), outlineColor: Color.WHITE, outlineWidth: 1,
-          heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+          disableDepthTestDistance: Number.POSITIVE_INFINITY },
         label: res.clusters.length <= 400 && c.n >= maxN * 0.5 ? { text: `${c.n >= 1000 ? `${(c.n / 1000).toFixed(c.n >= 10000 ? 0 : 1)}k` : c.n} trees`, font: '11px sans-serif',
           fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3, style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.CENTER,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY, heightReference: HeightReference.CLAMP_TO_GROUND } : undefined,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY } : undefined,
       });
     }
   }
@@ -195,12 +195,12 @@ async function drawStations(v: Viewer, l: EnvDataLayer, alive: () => boolean) {
     if (s.lon == null || s.lat == null) continue;
     drawn++;
     ds.entities.add({
-      id: `env_overlay_aq_${s.station_id}`, name: s.name, position: Cartesian3.fromDegrees(s.lon, s.lat),
+      id: `env_overlay_aq_${s.station_id}`, name: s.name, position: lift(s.lon, s.lat),
       point: { pixelSize: 11, color: s.has_series ? STATION_COLOR : Color.GRAY, outlineColor: Color.BLACK, outlineWidth: 1.5,
-        heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        disableDepthTestDistance: Number.POSITIVE_INFINITY },
       label: { text: s.name.replace(/, Pune.*$/, ''), font: '12px sans-serif', fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3,
         style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: new Cartesian2(0, -10),
-        heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, translucencyByDistance: new NearFarScalar(2e4, 1, 2e5, 0.6) },
+        disableDepthTestDistance: Number.POSITIVE_INFINITY, translucencyByDistance: new NearFarScalar(2e4, 1, 2e5, 0.6) },
     });
   }
   await swapSource(v, l.id, ds, alive);

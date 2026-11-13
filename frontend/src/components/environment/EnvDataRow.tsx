@@ -41,7 +41,7 @@ const StatusLine: React.FC<{ l: EnvDataLayer; variant: string | null }> = ({ l, 
   return (
     <p className="text-meta flex items-start gap-1" style={{ color: l.status === 'missing' ? 'var(--unknown, #9AA4B2)' : 'var(--warn, #E8B04A)' }}
       data-testid={`env-data-status-${l.id}`} data-status={l.status}>
-      <Icon size={11} aria-hidden className="mt-0.5 shrink-0" /><span><span className="font-semibold">{STATUS_LABEL[l.status]}</span> · {l.status_reason}</span>
+      <Icon size={11} aria-hidden className="mt-0.5 shrink-0" /><span className="min-w-0 [overflow-wrap:anywhere]"><span className="font-semibold">{STATUS_LABEL[l.status]}</span> · {l.status_reason}</span>
     </p>
   );
 };
@@ -54,7 +54,7 @@ export const EnvDataRow: React.FC<{ l: EnvDataLayer }> = ({ l }) => {
   const legend = legendOf(l, variant);
   const toggle = hasMapToggle(l);
   return (
-    <li className="rounded-md border border-border px-2 py-1.5 space-y-1" data-testid={`env-data-${l.id}`} data-status={l.status} data-shown={on ? 'true' : 'false'}>
+    <li className="rounded-md border border-border px-2 py-1.5 space-y-1 min-w-0 [overflow-wrap:anywhere]" data-testid={`env-data-${l.id}`} data-status={l.status} data-shown={on ? 'true' : 'false'}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1 space-y-0.5">
           <p className="text-body text-text-1 leading-snug">{l.name}</p>
