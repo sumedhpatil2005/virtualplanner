@@ -27,7 +27,13 @@ OB_TILE_URL = "https://storage.googleapis.com/open-buildings-data/v3/polygons_s2
 OB_TILES_INDEX = "https://openbuildings-public-dot-gweb-research.uw.r.appspot.com/public/tiles.geojson"
 OB_THRESHOLDS = "https://storage.googleapis.com/open-buildings-data/v3/score_thresholds_s2_level_4.csv"
 MS_LINKS = "https://bfppub.blob.core.windows.net/%24web/2026-08-13/dataset-links.csv"
-OSM_INDEX = Path(os.environ.get("TWINCITY_OSM_INDEX", Path(__file__).resolve().parents[2] / "data/osm/osm_index.db"))
+def _osm_index_path() -> Path:
+    """TWINCITY_OSM_INDEX (same env the app honours), else backend/data/osm/osm_index.db (gitignored, built locally)."""
+    env = os.environ.get("TWINCITY_OSM_INDEX")
+    return Path(env) if env else Path(__file__).resolve().parents[2] / "data/osm/osm_index.db"
+
+
+OSM_INDEX = _osm_index_path()
 VERSION = "v1"
 SAMPLE_N = 3000
 SEED = 42

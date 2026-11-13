@@ -28,19 +28,42 @@ SCL_VALID = (4, 5, 6, 7, 11)
 
 # ---------- pure functions (unit-tested) ----------
 def norm_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """(a-b)/(a+b) in float32; NaN where a+b == 0 or either input is NaN."""
+    """(a-b)/(a+b) in float32; NaN where a+b <= 0 or either input is NaN. Inputs must be >= 0."""
     a = a.astype("float32")
     b = b.astype("float32")
     s = a + b
     with np.errstate(divide="ignore", invalid="ignore"):
-        out = np.where(s != 0, (a - b) / s, np.nan)
+        out = np.where(s > 0, (a - b) / s, np.nan)
     return out.astype("float32")
 
 
 def to_reflectance(dn: np.ndarray, scale: float, offset: float, nodata: int = 0) -> np.ndarray:
-    r = dn.astype("float32") * scale + offset
+    """DN -> surface reflectance; negative values (dark targets after the -0.1 offset of baseline >= 04.00)
+    are clipped to 0 so normalised differences stay within [-1, 1]."""
+    r = np.clip(dn.astype("float32") * scale + offset, 0.0, None)
     r[dn == nodata] = np.nan
     return r
+
+
+def effective_offset(dn: np.ndarray, scale: float, declared_offset: float, nodata: int = 0) -> float:
+    """Earth Search v1 declares offset -0.1 (BOA_ADD_OFFSET of baseline >= 04.00) but some COGs are already
+    harmonised (no +1000 in DN). If >= 1% of valid DNs are below the offset magnitude, the offset cannot be
+    present (reflectance would be negative), so return 0.0; otherwise the declared offset."""
+    v = dn[dn != nodata]
+    if declared_offset >= 0 or v.size == 0:
+        return declared_offset
+    return 0.0 if np.percentile(v, 1) < (-declared_offset / scale) else declared_offset
+
+
+def agreement(pred: np.ndarray, ref: np.ndarray, valid: np.ndarray) -> dict:
+    """Binary agreement of pred vs ref (both bool) over valid pixels: precision, recall, F1, IoU."""
+    p, r = pred[valid], ref[valid]
+    tp = float((p & r).sum()); fp = float((p & ~r).sum()); fn = float((~p & r).sum())
+    prec = tp / (tp + fp) if tp + fp else float("nan")
+    rec = tp / (tp + fn) if tp + fn else float("nan")
+    f1 = 2 * prec * rec / (prec + rec) if prec + rec else float("nan")
+    return {"precision": round(prec, 3), "recall": round(rec, 3), "f1": round(f1, 3),
+            "iou": round(tp / (tp + fp + fn), 3) if tp + fp + fn else float("nan")}
 
 
 def valid_mask_from_scl(scl: np.ndarray, valid=SCL_VALID) -> np.ndarray:
@@ -128,6 +151,7 @@ def process(raw: Path | None = None) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     inputs, outputs, validation = [], [], {}
     masks = {}
+    offsets_used: dict = {}
     ref_profile = None
     for label, item_id in SCENES.items():
         bands = {}
@@ -143,7 +167,13 @@ def process(raw: Path | None = None) -> Path:
                 else:
                     arr = src.read(1)
             rb = meta[p.name].get("raster_band_meta", {})
-            bands[key] = arr if key == "scl" else to_reflectance(arr, rb.get("scale", 1e-4), rb.get("offset", 0.0))
+            if key != "scl":
+                sc = rb.get("scale", 1e-4)
+                off = effective_offset(arr, sc, rb.get("offset", 0.0))
+                offsets_used[f"{item_id}:{bname}"] = {"declared": rb.get("offset"), "applied": off}
+                bands[key] = to_reflectance(arr, sc, off)
+            else:
+                bands[key] = arr
         valid = valid_mask_from_scl(bands["scl"]) & np.isfinite(bands["red"])
         idx = {
             "ndvi": norm_diff(bands["nir"], bands["red"]),
@@ -180,12 +210,24 @@ def process(raw: Path | None = None) -> Path:
     px_ha = abs(prof["transform"].a * prof["transform"].e) / 1e4
     validation["change"] = {k: round(float((ch == v).sum()) * px_ha, 1) for k, v in
                             {"stable_nonbuilt_ha": 1, "stable_built_ha": 2, "gain_ha": 3, "loss_ha": 4}.items()}
+    # Measurable check: 2025 rule vs ESA WorldCover 2021 built-up (also a model output -> agreement, not accuracy)
+    wcp = DERIVED_DIR / "landcover_worldcover2021" / "v1" / "worldcover2021_epsg32643_10m.tif"
+    if wcp.exists():
+        from rasterio.warp import Resampling as _R, reproject as _rp
+        wc = np.zeros(b1.shape, "uint8")
+        with rasterio.open(wcp) as w:
+            _rp(w.read(1), wc, src_transform=w.transform, src_crs=w.crs, dst_transform=ref_profile["transform"],
+                dst_crs=ref_profile["crs"], resampling=_R.nearest)
+        vv = v1 & (wc > 0)
+        validation["rule_vs_worldcover2021_builtup"] = {"recent_2025": agreement(b1, wc == 50, vv),
+                                                        "baseline_2019": agreement(b0, wc == 50, v0 & (wc > 0))}
     validation["crs"] = str(ref_profile["crs"])
+    validation["offsets"] = offsets_used
     validation["pixel_m"] = prof["transform"].a
     write_processing(out, pipeline="datasets.pipelines.sentinel2", inputs=inputs,
                      parameters={"scenes": SCENES, "scl_valid": SCL_VALID,
                                  "builtup_rule": "NDBI>0 & NDVI<0.25 & MNDWI<0 (screening rule, not validated)",
-                                 "swir16_resampling": "nearest 20m->10m"},
+                                 "swir16_resampling": "nearest 20m->10m", "negative_reflectance": "clipped to 0"},
                      outputs=outputs, validation=validation, suitability="screening",
                      notes="Indices are DERIVED single-date values; built-up change mixes real change with "
                            "phenology/soil-moisture differences and has NOT been accuracy-assessed. "
