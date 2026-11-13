@@ -154,3 +154,19 @@ demand profile" heading uses the token heading style. Text walls moved under the
 unchanged, data-testids unchanged): SimulationPanel "What the distance means", TrafficDataPanel "How datasets are used"
 and import "File format". FeasibilityPanel's one-line screening disclaimer and SimulationPanel/TrafficDataPanel
 headers stay visible (honesty notices, one sentence). No engine logic, backend or test expectation changed.
+
+### 8.1 Verification (2026-11-13)
+- `npx tsc -p tsconfig.app.json --noEmit` 0 errors · `oxlint src` 0 errors (8 warnings, none in changed files) · `vite build` OK.
+- vitest, one file at a time (**UNIT-TESTED**): RoadAnalysisPanelPieces 16, TimelineStalePanel 3, ScenarioPanelPieces 8,
+  HonestControls 20, DesignTools 7, UndergroundWorkspace 12, EnvExploreModel 7, ProjectsWorkspace 10, HonestyBadges 8 — all
+  pass; new `engine/testing/ShellOverlay.test.ts` 4 pass (dual-overlay rule, Environment keeps context at 1024, portrait
+  selection rule, phone drawer/sheet exclusivity).
+- **BROWSER-VERIFIED** (`/workspace/work/uos-polish-e2e/polish_check.py`, backend :8318 on a copy of twincity.db, static
+  :4518, Chromium + SwiftShader) at 1440×900, 1024×768, 768×1024, 390×844: all 7 workspaces with an object selected, the
+  Underground and Simulate drawers open. On every step: context ∩ inspector = ∅, neither covers the drawer, every drawer tab
+  and the drawer body hit-test inside the drawer, nothing off-screen, no horizontal overflow, 0 shell/panel buttons
+  < 40 px at ≤ 1024. 1024: dual overlay in Explore/Design/Underground/Environment, 303 px of map between panels; Explore
+  search → summary kept; Environment "Screen …" → FeasibilityPanel opens with the inspector still open. 768/390: selection
+  keeps the Explore/Environment panel, "Open details" opens the inspector. Screenshots (viewed)
+  `/workspace/work/urbanos/shots/after/polish-<WxH>-*.png`.
+- Known: at 390 px the drawer tab strip scrolls sideways ("Through the day" is off-screen until scrolled; reachable).
