@@ -25,7 +25,10 @@ const who = () => localStorage.getItem('td-user') ?? '';
 export const DataCatalogueOverlay: React.FC = () => {
   const open = useDataCatalogue(s => s.open);
   const workspace = useShellStore(s => s.workspace);
-  if (!open || workspace !== 'reports') return null;
+  const visible = open && workspace === 'reports';
+  // the catalogue is a full view over the stage: it takes the inspector's column while open (shell one-overlay rule)
+  useEffect(() => { if (visible) useShellStore.getState().setInspectorOpen(false); }, [visible]);
+  if (!visible) return null;
   return <DataCatalogueView />;
 };
 

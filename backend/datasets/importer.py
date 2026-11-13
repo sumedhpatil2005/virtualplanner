@@ -23,7 +23,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from .models import DsDatasetVersionEntity, DsFileEntity, DsProcessingRunEntity
+from .models import DsDatasetEntity, DsDatasetVersionEntity, DsFileEntity, DsProcessingRunEntity
 from .quality import run_checks
 from .registry import add_version, ensure_dataset, ensure_source, find_version_by_fingerprint, fingerprint, new_id
 import re
@@ -200,15 +200,19 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
 
     if source_id:
         access = _first(m, "access_method", default=_first(src_meta, "access_method"))
+        file_urls = [f.get("url") for f in (m.get("files") or []) if isinstance(f, dict) and f.get("url")]
         if access not in ACCESS_METHODS:
             if access:
                 warnings.append(f"access method '{access}' not in vocabulary")
-            access = "download" if _first(m, "url", "source_url", "download_url") else "manual"
+            access = "download" if (_first(m, "url", "source_url", "download_url") or file_urls) else "manual"
+            if not _first(m, "access_method"):
+                warnings.append(f"access method inferred as '{access}'")
         ensure_source(db, source_id, name=str(_first(src_meta, "name") or (m["dataset"] if isinstance(m.get("dataset"), str) else None)
                                               or _first(m, "publisher", "provider") or source_id),
                       publisher=str(_first(src_meta, "publisher") or _first(m, "publisher", "provider")
                                     or _first(lic_meta, "publisher") or "UNKNOWN"),
-                      url=str(_first(src_meta, "url", "homepage") or _first(m, "source_url", "url", default="")),
+                      url=str(_first(src_meta, "url", "homepage") or _first(m, "source_url", "url", "stac_api")
+                              or _first(lic_meta, "access_url") or (file_urls[0] if file_urls else "")),
                       access_method=access, licence_text=lic, licence_url=lic_url,
                       robots_notes=str(_first(m, "robots", "robots_txt", default=_first(src_meta, "robots", default="")) or ""),
                       tos_notes=str(_first(m, "tos", "terms", default=_first(src_meta, "tos", default="")) or ""),
@@ -287,6 +291,19 @@ def register_dir(db: Session, d: str, kind: str, root: str) -> dict:
     unmatched = [i.get("path") for i in inputs if i.get("sha256") and not i.get("version_id")]
     if unmatched:
         warnings.append(f"{len(unmatched)} input(s) not found in the registry by sha256 (lineage incomplete)")
+
+    if proc:
+        in_ds = []
+        for i in inputs:
+            pv = db.get(DsDatasetVersionEntity, i["version_id"]) if i.get("version_id") else None
+            if pv and pv.dataset_id not in in_ds:
+                in_ds.append(pv.dataset_id)
+        dso = db.get(DsDatasetEntity, dataset_id)
+        if dso is not None and not dso.description and in_ds:
+            dso.description = f"Derived by {_first(proc, 'pipeline', 'script', default='UNKNOWN')} from: {', '.join(in_ds)}."
+        srcs = {db.get(DsDatasetEntity, x).source_id for x in in_ds if db.get(DsDatasetEntity, x) is not None}
+        if dso is not None and dso.source_id is None and len(srcs) == 1 and None not in srcs:
+            dso.source_id = srcs.pop()
 
     extra = {k: v for k, v in m.items() if k not in KNOWN}
     stats = {"manifest_extra": extra} if extra else {}

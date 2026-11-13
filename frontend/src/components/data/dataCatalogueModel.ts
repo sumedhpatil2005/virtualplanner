@@ -82,8 +82,9 @@ export function formatBytes(n: number | null | undefined): string {
 export function provenanceRows(d: DsDataset): [string, string][] {
   const v = d.active_version;
   const s = d.source;
+  const derivedHere = !s && (v?.processing_runs?.length ?? 0) > 0;
   return [
-    ['Publisher', orUnknown(s?.publisher)],
+    ['Publisher', derivedHere ? 'derived in this project (see inputs in the processing history)' : orUnknown(s?.publisher)],
     ['Source URL', orUnknown(s?.url || v?.http?.url)],
     ['Access', orUnknown(s?.access_method)],
     ['Licence', orUnknown(v?.licence_text ?? s?.licence_text)],
