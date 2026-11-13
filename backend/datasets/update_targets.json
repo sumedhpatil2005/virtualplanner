@@ -1,0 +1,66 @@
+{
+  "_doc": "Machine-checkable update endpoints for `python -m datasets.update_monitor` (docs/urbanos/DATA_INGESTION_ARCHITECTURE.md §6). Read-only metadata probes: HEAD, a CKAN package_show, a STAC search with limit=1, a GitHub latest-release query, or a Geofabrik region page. Nothing is ever downloaded or replaced; a newer upstream is recorded as an update_check row with result 'update_available' for a reviewer. Keys are registry dataset ids. 'baseline' says where the acquired state is read from: 'manifest' = the http headers / CKAN fields the raw manifest recorded for the same URL (latest raw/<dataset_id>/<date>/manifest.json); 'active_version' = the registry's active version; otherwise the first update check recorded for that URL is the reference. Entries with method 'none' are listed so the catalogue can state WHY a source is not machine-checkable. Written 2026-11-13 IST from the raw manifests on disk.",
+  "_host_min_delay_s": {"nwdp.nwic.gov.in": 10.0, "zenodo.org": 10.0},
+  "_default_min_delay_s": 1.0,
+  "datasets": {
+    "osm_geofabrik_western_zone": {"method": "geofabrik", "page": "https://download.geofabrik.de/asia/india/western-zone.html",
+      "state_url": "https://download.geofabrik.de/asia/india/western-zone-updates/state.txt", "baseline": "active_version",
+      "note": "Geofabrik robots.txt disallows *.osm.pbf, state.txt and *updates* for all agents: the region HTML page ('contains all OSM data up to …') is read instead; the .pbf is never probed."},
+    "copernicus_dem_glo30": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N18_00_E073_00_DEM/Copernicus_DSM_COG_10_N18_00_E073_00_DEM.tif",
+      "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N18_00_E074_00_DEM/Copernicus_DSM_COG_10_N18_00_E074_00_DEM.tif"]},
+    "esa_worldcover_2021_v200": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_N18E072_Map.tif"],
+      "note": "Detects a change to the acquired 2021 v200 tile only; a new WorldCover release would be published under a new path (not discoverable by HEAD)."},
+    "jrc_gsw": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/download2024/Aggregated/VER1-5/occurrence/occurrence_70E_20N_v1_5_2024.tif",
+      "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/download2024/Aggregated/VER1-5/extent/extent_70E_20N_v1_5_2024.tif",
+      "https://s3.waw4-1.cloudferro.com/swift/v1/global-surface-water/download2024/Aggregated/VER1-5/seasonality/seasonality_70E_20N_v1_5_2024.tif"]},
+    "ms_global_ml_buildings": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://bfppub.blob.core.windows.net/%24web/2026-08-13/dataset-links.csv"],
+      "note": "Index of the 2026-08-13 release only; a later release is published under a new dated path (not discoverable by HEAD)."},
+    "google_open_buildings_v3": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://storage.googleapis.com/open-buildings-data/v3/score_thresholds_s2_level_4.csv",
+      "https://storage.googleapis.com/open-buildings-data/v3/polygons_s2_level_4_gzip/3bd_buildings.csv.gz"]},
+    "nasadem_pc": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n18e073.tif",
+      "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n18e074.tif"]},
+    "datameet_municipal_wards": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://raw.githubusercontent.com/datameet/Municipal_Spatial_Data/master/PCMC/pcmc-electoral-wards.geojson",
+      "https://raw.githubusercontent.com/datameet/Municipal_Spatial_Data/master/Pune/pune-electoral-wards_2022.geojson"]},
+    "cpcb_caaqms_station_list": {"method": "http_head", "baseline": "manifest", "urls": ["https://app.cpcbccr.com/ccr_docs/caaqms_list_All_India.pdf"]},
+    "nwdp_india_wris": {"method": "http_head", "baseline": "manifest", "urls": [
+      "https://nwdp.nwic.gov.in/dataset/aab57261-b0d1-487b-8f9f-7ae2fb16637a/resource/bb185a88-c7c3-483f-b06e-784ce5322ff8/download/ground_water_level_manual_quarterly_maharashtra_1970_2025.csv",
+      "https://nwdp.nwic.gov.in/dataset/956add67-cba9-41a5-9d5c-96d73db44aef/resource/0e7180fa-5282-4df6-bead-8ca7a7557e74/download/gwl_manual_quarterly_cgwb_mh_1991_2020.csv",
+      "https://nwdp.nwic.gov.in/dataset/956add67-cba9-41a5-9d5c-96d73db44aef/resource/073029e8-492d-416c-9857-3ad3e27c69a6/download/gwl_manual_quarterly_cgwb_mh_2021_2025.csv",
+      "https://nwdp.nwic.gov.in/dataset/9380580f-9bf0-4708-9773-0cea3cbc595a/resource/8752174f-1d17-4aaf-8058-2eb396f50157/download/rainfall_districtwise_daily_imd.csv"],
+      "note": "NWDP robots.txt Crawl-Delay 10 s. The IMD district rainfall resource is re-published daily (a daily series, not a revision)."},
+    "nwdp_meta": {"method": "ckan", "api": "https://nwdp.nwic.gov.in/api/3/action", "baseline": "stored_package_json", "packages": [
+      "ground-water-level-manual-monthly-maharashtra-ground-water-department", "ground-water-level-telemetry-daily-maharashtra-gw",
+      "gwl-manual-quarterly-central-ground-water-board-department", "rainfall-daily-imd"]},
+    "opencity_pune": {"method": "ckan", "api": "https://data.opencity.in/api/3/action", "baseline": "manifest", "packages": "from_manifest",
+      "note": "One package_show per CKAN dataset the manifest lists (ckan_dataset); acquired resource last_modified (ckan_last_modified_utc) compared per resource. OpenCity serves a Cloudflare challenge to scripted clients (recorded at acquisition): a refusal is recorded as an error and never bypassed; check in a browser."},
+    "sentinel2_l2a_earthsearch": {"method": "stac_latest", "api": "https://earth-search.aws.element84.com/v1", "collection": "sentinel-2-l2a",
+      "bbox": [73.70, 18.40, 74.05, 18.70], "baseline": "manifest",
+      "note": "Time series: a newer scene over Pune almost always exists (5-day revisit). 'update available' means a newer acquisition date, not a revision of the acquired scenes."},
+    "imd_gridded_rainfall_025": {"method": "http_head", "baseline": "first_check", "urls": ["https://imdpune.gov.in/cmpg/Griddata/Rainfall_25_Bin.html"],
+      "note": "The yearly grids are served by a POST form (not probed); the listing page's headers are the only cheap signal."},
+    "pmc_autodcr_geoserver_probe": {"method": "http_head", "baseline": "first_check", "urls": ["https://iwmsgis.pmc.gov.in/geoserver/AutoDCR/ows?service=WFS&version=1.1.0&request=GetCapabilities"],
+      "note": "Capabilities metadata only; layer data not acquired (permission requested, MISSING_DATA_AND_COLLECTION_PLAN)."},
+    "pmc_opendata_portal_catalogue": {"method": "http_head", "baseline": "first_check", "urls": ["https://opendataapi.pmc.gov.in/datasets?page=0&size=300"]},
+    "bhuvan_ogc_capabilities": {"method": "http_head", "baseline": "first_check", "urls": ["https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&request=GetCapabilities"]},
+    "mendeley_pune_2023_counts": {"method": "http_head", "baseline": "first_check", "urls": ["https://data.mendeley.com/datasets/xnf2k6n288/1"],
+      "note": "Version-1 page; a new Mendeley version gets a new URL (…/2)."},
+    "observed_counts_pune_west_2026": {"method": "http_head", "baseline": "first_check", "urls": ["https://zenodo.org/records/21712996"],
+      "note": "The Zenodo record is the cross-check source (Kureshi et al. 2026) of these counts. Zenodo robots.txt disallows /api for all agents: the record page is probed (Crawl-delay 10 s)."},
+    "hbefa4_sumo_coefficients": {"method": "github_release", "repo": "eclipse-sumo/sumo", "baseline": "first_check",
+      "note": "Coefficients ship with SUMO; a new SUMO release may change them. The SUMO version the coefficients were taken from is not recorded in the registry (UNKNOWN), so the first check is the reference."},
+    "chirps_v2_climateserv": {"method": "none", "reason": "ClimateSERV serves per-request jobs (no stable resource to probe); CHIRPS extends daily. Re-run the chirps pipeline for newer days. data.chc.ucsb.edu robots.txt disallows all agents."},
+    "soilgrids_250m_v2": {"method": "none", "reason": "WCS GetCoverage computes a coverage (a probe would be a download); SoilGrids 2.0 is a fixed release."},
+    "bhuvan_wms_samples": {"method": "none", "reason": "Rendered WMS map images (pictures), not data; nothing to compare."},
+    "cesium_ion_imagery": {"method": "none", "reason": "Streamed under the Cesium ion ToS; never stored, no version to compare."},
+    "cesium_world_terrain": {"method": "none", "reason": "Streamed under the Cesium ion ToS; never stored, no version to compare."},
+    "arai_2007_emission_factors": {"method": "none", "reason": "2007 report; no online endpoint recorded."},
+    "cmp2008_river_screenline": {"method": "none", "reason": "Values transcribed from the 2008 CMP PDF (historical document)."}
+  }
+}

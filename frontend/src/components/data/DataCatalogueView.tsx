@@ -153,6 +153,11 @@ const ProvenanceCard: React.FC<{ id: string; onChanged: () => void }> = ({ id, o
         <DataStatus name={d.title} value={dataStatusValue(d)} />
         {d.description && <p className="text-label text-text-2">{d.description}</p>}
         {d.limitations && <p className="text-label" style={{ color: TONE_COLOR.warn }}>{d.limitations}</p>}
+        {d.update_status?.result === 'update_available' && (
+          <p className="text-label" style={{ color: TONE_COLOR.warn }} data-testid="update-available-note" title={d.update_status.detail}>
+            Update available upstream (checked {d.update_status.checked_at?.slice(0, 16).replace('T', ' ') ?? UNKNOWN} UTC) — not downloaded; acquire, register and review it before use.
+          </p>
+        )}
         {d.pending_version_ids.length > 0 && (
           <p className="text-label" style={{ color: TONE_COLOR.warn }} data-testid="pending-note">
             {d.pending_version_ids.length} newer version(s) pending review — the active version is unchanged until a reviewer activates one.

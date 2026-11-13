@@ -32,9 +32,13 @@ export interface DsVersion {
   supersedes_id: string | null; reviewed_by: string | null; reviewed_at: string | null; review_note: string | null; created_at: string | null;
   quality_checks: QualityCheck[]; files?: DsFile[]; processing_runs?: ProcessingRun[]; coverage_geojson?: unknown;
 }
+export type UpdateResult = 'update_available' | 'unchanged' | 'changed' | 'first_seen' | 'error' | 'not_checkable';
+export interface UpdateStatus {
+  result: UpdateResult; checked_at: string | null; detail: string; url: string | null; urls_checked: number; results: Partial<Record<UpdateResult, number>>;
+}
 export interface UpdateCheck {
   id: string; dataset_id: string; method: string; url: string | null; etag: string | null; last_modified: string | null;
-  catalogue_modified: string | null; result: 'unchanged' | 'changed' | 'first_seen' | 'error' | 'not_checkable'; detail: string;
+  catalogue_modified: string | null; result: UpdateResult; detail: string;
   new_version_id: string | null; checked_by: string; checked_at: string | null;
 }
 export interface RecommendedSource { name: string; publisher: string; url: string; licence: string; notes?: string }
@@ -42,6 +46,8 @@ export interface DsDataset {
   id: string; title: string; description: string; theme: string; source_id: string | null; source: DsSource | null;
   catalogue_ref: string | null; backs_catalogue: string[]; recommended_sources: RecommendedSource[]; limitations: string;
   max_age_days: number | null; update_check: { method?: string; url?: string }; origin: string;
+  /** Latest update-monitor verdict across the probed URLs; null/absent = never checked. Nothing is downloaded by a check. */
+  update_status?: UpdateStatus | null;
   status: DatasetStatus; active_version_id: string | null; pending_version_ids: string[]; version_count: number;
   active_version: DsVersion | null; versions?: DsVersion[]; update_checks?: UpdateCheck[]; used_by_features?: string[];
 }

@@ -239,7 +239,8 @@ def dataset_dict(db: Session, d: DsDatasetEntity, full: bool = False) -> dict:
            "source": source_dict(db.get(DsSourceEntity, d.source_id)) if d.source_id else None,
            "catalogue_ref": d.catalogue_ref, "backs_catalogue": _j(d.backs_catalogue_json, []),
            "recommended_sources": _j(d.recommended_sources_json, []), "limitations": d.limitations,
-           "max_age_days": d.max_age_days, "update_check": _j(d.update_check_json, {}), "origin": d.origin, **st}
+           "max_age_days": d.max_age_days, "update_check": _j(d.update_check_json, {}), "origin": d.origin,
+           "update_status": update_status(db, d.id), **st}
     act = db.get(DsDatasetVersionEntity, st["active_version_id"]) if st["active_version_id"] else None
     out["active_version"] = version_dict(db, act, full=full) if act else None
     if full:
@@ -249,6 +250,26 @@ def dataset_dict(db: Session, d: DsDatasetEntity, full: bool = False) -> dict:
         out["used_by_features"] = sorted({dep.feature_id for dep in db.scalars(select(DsFeatureDependencyEntity).where(
             (DsFeatureDependencyEntity.dataset_id == d.id) | ((DsFeatureDependencyEntity.dataset_id.is_(None)) & (DsFeatureDependencyEntity.theme == d.theme))))})
     return out
+
+
+UPDATE_STATUS_ORDER = ("update_available", "changed", "error", "unchanged", "first_seen", "not_checkable")
+
+
+def update_status(db: Session, dataset_id: str) -> dict | None:
+    """The latest update-check verdict per probed URL, folded into one status (update_available > changed > error >
+    unchanged > first_seen > not_checkable). None = never checked."""
+    rows = db.scalars(select(DsUpdateCheckEntity).where(DsUpdateCheckEntity.dataset_id == dataset_id)
+                      .order_by(DsUpdateCheckEntity.checked_at, DsUpdateCheckEntity.id)).all()
+    if not rows:
+        return None
+    per_url: dict[str, DsUpdateCheckEntity] = {}
+    for r in rows:
+        per_url[r.url or ""] = r
+    rank = {k: i for i, k in enumerate(UPDATE_STATUS_ORDER)}
+    best = min(per_url.values(), key=lambda r: rank.get(r.result, len(rank)))
+    return {"result": best.result, "checked_at": best.checked_at.isoformat() + "Z" if best.checked_at else None,
+            "detail": best.detail, "url": best.url, "urls_checked": len(per_url),
+            "results": {k: sum(1 for r in per_url.values() if r.result == k) for k in UPDATE_STATUS_ORDER if any(r.result == k for r in per_url.values())}}
 
 
 def update_check_dict(u: DsUpdateCheckEntity) -> dict:

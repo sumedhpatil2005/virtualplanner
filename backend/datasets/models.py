@@ -172,13 +172,13 @@ class DsUpdateCheckEntity(Base):
 
     id = Column(String, primary_key=True)
     dataset_id = Column(String, nullable=False, index=True)
-    method = Column(String, nullable=False)           # http_head|ckan|none
+    method = Column(String, nullable=False)           # http_head|ckan|ckan_url|stac_latest|github_release|geofabrik|none
     url = Column(Text, nullable=True)
     etag = Column(String, nullable=True)
     last_modified = Column(String, nullable=True)
     catalogue_modified = Column(String, nullable=True)
     content_length = Column(String, nullable=True)
-    result = Column(String, nullable=False)           # unchanged|changed|first_seen|error|not_checkable
+    result = Column(String, nullable=False)           # unchanged|changed|update_available|first_seen|error|not_checkable
     detail = Column(Text, nullable=False, default="")
     new_version_id = Column(String, nullable=True)
     checked_by = Column(String, nullable=False, default="system")
