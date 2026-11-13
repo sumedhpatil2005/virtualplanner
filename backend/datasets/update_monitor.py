@@ -56,12 +56,13 @@ class HostDown(Exception):
     pass
 
 
-def _http(method: str, url: str, timeout: float = 15.0) -> tuple[int, dict, bytes]:
-    """(status, lower-cased headers, body) — HTTP error statuses are returned, not raised; network failures raise."""
+def _http(method: str, url: str, timeout: float = 15.0, headers: dict | None = None) -> tuple[int, dict, bytes]:
+    """(status, lower-cased headers, body) — HTTP error statuses are returned, not raised (the reason phrase is kept as
+    header '_reason'); network failures raise."""
     why = non_public_reason(url)
     if why:
         raise ValueError(why)
-    req = urllib.request.Request(url, method=method, headers={"User-Agent": UA, "Accept": "*/*"})
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": UA, "Accept": "*/*", **(headers or {})})
     try:
         with urllib.request.build_opener(_PublicRedirects).open(req, timeout=timeout) as r:  # noqa: S310 (public http(s) only)
             body = r.read(MAX_BODY) if method == "GET" else b""
@@ -71,7 +72,7 @@ def _http(method: str, url: str, timeout: float = 15.0) -> tuple[int, dict, byte
             body = e.read(20_000)
         except Exception:  # noqa: BLE001
             body = b""
-        return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, body
+        return e.code, {**{k.lower(): v for k, v in (e.headers or {}).items()}, "_reason": str(e.reason or "")[:200]}, body
 
 
 HTTP: Callable[..., tuple[int, dict, bytes]] = _http   # monkeypatched in tests
@@ -158,7 +159,7 @@ class Fetcher:
                 rd = d
         return max(1.0, self.default_delay, float(self.host_delays.get(host, 0.0)), float(rd or 0.0))
 
-    def _raw(self, method: str, url: str) -> tuple[int, dict, bytes]:
+    def _raw(self, method: str, url: str, headers: dict | None = None) -> tuple[int, dict, bytes]:
         host = urllib.parse.urlsplit(url).hostname or ""
         if host in self.down:
             raise HostDown(self.down[host])
@@ -168,7 +169,7 @@ class Fetcher:
         self.last[host] = self.clock()
         self.requests.append((method, url))
         try:
-            return HTTP(method, url, self.timeout)
+            return HTTP(method, url, self.timeout, headers) if headers else HTTP(method, url, self.timeout)
         except ValueError:
             raise
         except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as e:
@@ -193,7 +194,7 @@ class Fetcher:
         rules, _d, note = self._robots(url)
         return robots_allows(rules, url), note
 
-    def fetch(self, method: str, url: str) -> tuple[int, dict, bytes]:
+    def fetch(self, method: str, url: str, headers: dict | None = None) -> tuple[int, dict, bytes]:
         """Robots-checked, rate-limited request. Raises PermissionError (robots), HostDown, ValueError (SSRF)."""
         why = non_public_reason(url)
         if why:
@@ -201,12 +202,12 @@ class Fetcher:
         ok, note = self.allowed(url)
         if not ok:
             raise PermissionError(f"robots.txt disallows {urllib.parse.urlsplit(url).path} for automated agents ({note})")
-        status, headers, body = self._raw(method, url)
+        status, h, body = self._raw(method, url, headers)
         if status in REFUSAL_CODES:
             host = urllib.parse.urlsplit(url).hostname or ""
-            cf = " (Cloudflare challenge)" if ("cf-mitigated" in headers or "cloudflare" in str(headers.get("server", "")).lower()) else ""
+            cf = " (Cloudflare challenge)" if ("cf-mitigated" in h or "cloudflare" in str(h.get("server", "")).lower()) else ""
             self.down[host] = f"host refused automated access earlier in this run (HTTP {status}{cf}); not retried, not bypassed"
-        return status, headers, body
+        return status, h, body
 
 
 # ── baselines (what was acquired) ──────────────────────────────────────────────────────────────────────────────────
@@ -314,24 +315,25 @@ def compare(seen: dict, known: dict | None) -> tuple[str, str]:
 
 
 # ── probes ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-def _ok(status: int) -> None:
+def _ok(status: int, headers: dict | None = None) -> None:
     if not (200 <= status < 300):
-        raise RuntimeError(f"HTTP {status}")
+        why = (headers or {}).get("_reason")
+        raise RuntimeError(f"HTTP {status}" + (f" {why}" if why else ""))
 
 
-def probe_http_head(f: Fetcher, url: str) -> dict:
-    status, h, _ = f.fetch("HEAD", url)
+def probe_http_head(f: Fetcher, url: str, accept_encoding: str | None = None) -> dict:
+    status, h, _ = f.fetch("HEAD", url, {"Accept-Encoding": accept_encoding} if accept_encoding else None)
     if status in (405, 501):
         raise RuntimeError(f"HTTP {status}: HEAD not supported; a GET would download the resource — not done")
-    _ok(status)
+    _ok(status, h)
     return {k: v for k, v in {"etag": h.get("etag"), "last_modified": h.get("last-modified"),
-                              "content_length": h.get("content-length")}.items() if v}
+                              "content_length": h.get("content-length"), "content_encoding": h.get("content-encoding")}.items() if v}
 
 
 def probe_ckan(f: Fetcher, api: str, package: str) -> dict:
     url = f"{api.rstrip('/')}/package_show?id={urllib.parse.quote(package)}"
-    status, _h, body = f.fetch("GET", url)
-    _ok(status)
+    status, h, body = f.fetch("GET", url)
+    _ok(status, h)
     doc = json.loads(body.decode("utf-8"))
     if not doc.get("success", True):
         raise RuntimeError("CKAN success=false")
@@ -343,8 +345,8 @@ def probe_ckan(f: Fetcher, api: str, package: str) -> dict:
 def probe_stac_latest(f: Fetcher, api: str, collection: str, bbox: list[float]) -> dict:
     q = urllib.parse.urlencode({"collections": collection, "bbox": ",".join(str(x) for x in bbox), "limit": 1,
                                 "sortby": "-properties.datetime"})
-    status, _h, body = f.fetch("GET", f"{api.rstrip('/')}/search?{q}")
-    _ok(status)
+    status, h, body = f.fetch("GET", f"{api.rstrip('/')}/search?{q}")
+    _ok(status, h)
     feats = json.loads(body.decode("utf-8")).get("features") or []
     if not feats:
         raise RuntimeError("STAC search returned no items for the bbox")
@@ -353,8 +355,17 @@ def probe_stac_latest(f: Fetcher, api: str, collection: str, bbox: list[float]) 
 
 
 def probe_github_release(f: Fetcher, repo: str) -> dict:
-    status, _h, body = f.fetch("GET", f"https://api.github.com/repos/{repo}/releases/latest")
-    _ok(status)
+    """Latest published release; a repository that publishes tags only (404 on releases/latest) falls back to the first
+    entry of the tags API (GitHub's order, not a semantic-version sort: the detail says so)."""
+    status, h, body = f.fetch("GET", f"https://api.github.com/repos/{repo}/releases/latest")
+    if status == 404:
+        status, h, body = f.fetch("GET", f"https://api.github.com/repos/{repo}/tags?per_page=1")
+        _ok(status, h)
+        tags = json.loads(body.decode("utf-8")) or []
+        if not tags:
+            raise RuntimeError("repository has no releases and no tags")
+        return {"tag": tags[0].get("name"), "tag_source": "tags API (repository publishes no GitHub releases)"}
+    _ok(status, h)
     d = json.loads(body.decode("utf-8"))
     return {"tag": d.get("tag_name"), "published_at": d.get("published_at")}
 
@@ -518,12 +529,28 @@ def run_item(db: Session, f: Fetcher, item: dict, checked_by: str = CHECKED_BY) 
         db.flush()
         return row
     seen = {k: v for k, v in seen.items() if v not in (None, "", {})}
+    m = item["method"]
+    known, src = acquired_reference(db, item)
+    cmp_keys = lambda d: {k: v for k, v in d.items() if k not in ("cloud_cover", "content_encoding", "tag_source")}  # noqa: E731
+    result, why = compare(cmp_keys(seen), known)
+    if (m == "http_head" and result == "update_available" and known and not any(k in why for k in DATE_KEYS)
+            and not seen.get("content_encoding")):
+        # identity-only difference: the acquisition may have stored the gzip representation (python-requests sends
+        # Accept-Encoding: gzip; its ETag / Content-Length describe the compressed body). Compare that representation too.
+        try:
+            gz = {k: v for k, v in probe_http_head(f, item["url"], "gzip").items() if v}
+        except Exception:  # noqa: BLE001
+            gz = None
+        if gz and gz.get("content_encoding"):
+            r2, why2 = compare(cmp_keys(gz), known)
+            if r2 != "update_available":
+                seen, result, why = gz, r2, why2 + " (gzip representation, as the acquisition recorded it)"
     row.etag, row.last_modified, row.content_length = seen.get("etag"), seen.get("last_modified"), seen.get("content_length")
     row.catalogue_modified = (seen.get("metadata_modified") or seen.get("latest_datetime") or seen.get("data_up_to")
                               or (f"{seen.get('tag')} ({seen.get('published_at')})" if seen.get("tag") else None))
-    known, src = acquired_reference(db, item)
-    result, why = compare({k: v for k, v in seen.items() if k != "cloud_cover"}, known)
     row.result = result
+    if seen.get("tag_source"):
+        why += f" [tag from the {seen['tag_source']}]"
     extra = f" Latest scene {seen.get('latest_id')} (cloud {seen.get('cloud_cover')}%)." if m == "stac_latest" else ""
     tail = " Not downloaded: acquire with the pipeline, register with the importer (pending review) and activate explicitly." if result == "update_available" else ""
     nres = f" {len(seen['resources'])} resource(s) listed upstream." if seen.get("resources") else ""

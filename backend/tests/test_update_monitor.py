@@ -65,7 +65,7 @@ class FakeHTTP:
     def __init__(self, routes):
         self.routes, self.calls = routes, []
 
-    def __call__(self, method, url, timeout=15.0):
+    def __call__(self, method, url, timeout=15.0, headers=None):
         self.calls.append((method, url))
         for key, resp in self.routes.items():
             if url.endswith(key) or key == url:
@@ -274,3 +274,36 @@ def test_gov_processing_records_git_dirty_and_old_files_report_unknown(tmp_path)
     (old / "processing.json").write_text(json.dumps({"pipeline": "t", "git_commit": "UNKNOWN", "inputs": [], "outputs": []}))
     rows = {r["derived"]: r for r in PC.check(Path(tmp_path))["rows"]}
     assert rows["t_old/v1"]["git_dirty_datasets"] == "UNKNOWN (not recorded)"
+
+
+def test_gzip_representation_and_tags_fallback(db, monkeypatch):
+    did = _dataset(db, versions=1)
+    url = "https://raw.invalid/repo/master/wards.geojson"
+    _manifest(db, did, [{"file": "wards.geojson", "url": url, "http_headers": {"Etag": 'W/"gz1"', "Content-Length": "42"}}])
+    gh = _dataset(db)
+    targets = {"datasets": {did: {"method": "http_head", "baseline": "manifest", "urls": [url]},
+                            gh: {"method": "github_release", "repo": "synthetic/tagsonly", "baseline": "first_check"}}}
+
+    class EncHTTP(FakeHTTP):
+        def __call__(self, method, u, timeout=15.0, headers=None):
+            if u == url:
+                self.calls.append((method, u, (headers or {}).get("Accept-Encoding")))
+                return (200, {"etag": 'W/"gz1"', "content-length": "42", "content-encoding": "gzip"}, b"") if (headers or {}).get("Accept-Encoding") == "gzip" \
+                    else (200, {"etag": '"plain1"', "content-length": "168"}, b"")
+            return super().__call__(method, u, timeout, headers)
+    fake = EncHTTP({"/repos/synthetic/tagsonly/releases/latest": (404, {"_reason": "Not Found"}, b""),
+                    "/repos/synthetic/tagsonly/tags?per_page=1": (200, {}, b'[{"name": "v1_28_0"}]')})
+    monkeypatch.setattr(UM, "HTTP", fake)
+    rows = {r["dataset_id"]: r for r in UM.run(db, only=[did, gh], targets=targets, fetcher=_fetcher()[0])["rows"]}
+    assert rows[did]["result"] == "unchanged" and "gzip representation" in rows[did]["detail"]   # no false 'update available'
+    assert rows[gh]["result"] == "first_seen" and "tags API" in rows[gh]["detail"]
+    fake.routes["/repos/synthetic/tagsonly/tags?per_page=1"] = (200, {}, b'[{"name": "v1_29_0"}]')
+    assert UM.run(db, only=[gh], targets=targets, fetcher=_fetcher()[0])["rows"][0]["result"] == "update_available"
+
+
+def test_error_keeps_reason_phrase(db, monkeypatch):
+    did = _dataset(db)
+    url = "https://blob.invalid/c/x.tif"
+    monkeypatch.setattr(UM, "HTTP", FakeHTTP({url: (409, {"_reason": "Public access is not permitted on this storage account."}, b"")}))
+    r = UM.run(db, only=[did], targets={"datasets": {did: {"method": "http_head", "urls": [url]}}}, fetcher=_fetcher()[0])["rows"][0]
+    assert r["result"] == "error" and "409 Public access is not permitted" in r["detail"]

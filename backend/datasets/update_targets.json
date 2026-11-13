@@ -22,9 +22,7 @@
     "google_open_buildings_v3": {"method": "http_head", "baseline": "manifest", "urls": [
       "https://storage.googleapis.com/open-buildings-data/v3/score_thresholds_s2_level_4.csv",
       "https://storage.googleapis.com/open-buildings-data/v3/polygons_s2_level_4_gzip/3bd_buildings.csv.gz"]},
-    "nasadem_pc": {"method": "http_head", "baseline": "manifest", "urls": [
-      "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n18e073.tif",
-      "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n18e074.tif"]},
+    "nasadem_pc": {"method": "none", "reason": "The Planetary Computer blob refuses anonymous requests (HTTP 409 'Public access is not permitted on this storage account', seen 2026-11-13 IST); it needs a Planetary Computer SAS token, which the monitor does not request. NASADEM v001 is a fixed product (SRTM, February 2000)."},
     "datameet_municipal_wards": {"method": "http_head", "baseline": "manifest", "urls": [
       "https://raw.githubusercontent.com/datameet/Municipal_Spatial_Data/master/PCMC/pcmc-electoral-wards.geojson",
       "https://raw.githubusercontent.com/datameet/Municipal_Spatial_Data/master/Pune/pune-electoral-wards_2022.geojson"]},
@@ -54,7 +52,7 @@
     "observed_counts_pune_west_2026": {"method": "http_head", "baseline": "first_check", "urls": ["https://zenodo.org/records/21712996"],
       "note": "The Zenodo record is the cross-check source (Kureshi et al. 2026) of these counts. Zenodo robots.txt disallows /api for all agents: the record page is probed (Crawl-delay 10 s)."},
     "hbefa4_sumo_coefficients": {"method": "github_release", "repo": "eclipse-sumo/sumo", "baseline": "first_check",
-      "note": "Coefficients ship with SUMO; a new SUMO release may change them. The SUMO version the coefficients were taken from is not recorded in the registry (UNKNOWN), so the first check is the reference."},
+      "note": "Coefficients ship with SUMO; a new SUMO release may change them. SUMO publishes git tags, not GitHub releases (releases/latest = 404): the tags API is read. The SUMO version the coefficients were taken from is not recorded in the registry (UNKNOWN), so the first check is the reference."},
     "chirps_v2_climateserv": {"method": "none", "reason": "ClimateSERV serves per-request jobs (no stable resource to probe); CHIRPS extends daily. Re-run the chirps pipeline for newer days. data.chc.ucsb.edu robots.txt disallows all agents."},
     "soilgrids_250m_v2": {"method": "none", "reason": "WCS GetCoverage computes a coverage (a probe would be a download); SoilGrids 2.0 is a fixed release."},
     "bhuvan_wms_samples": {"method": "none", "reason": "Rendered WMS map images (pictures), not data; nothing to compare."},
