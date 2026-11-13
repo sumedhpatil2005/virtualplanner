@@ -18,6 +18,7 @@ from planning.audit import install_triggers, current_actor
 from api.coordination_router import router as coordination_router  # coordination/subsurface/env tables (additive)
 from coordination.seed import seed_coordination
 from api.datasets_router import router as datasets_router  # ds_* dataset registry tables (additive)
+from api.infra_router import router as infra_router  # municipal infrastructure + buildings index (read-only, additive)
 from datasets.seed import seed_registry
 from api.terrain_router import router as terrain_router  # DEM sampling + subsurface evidence (read-only, no tables)
 
@@ -71,6 +72,7 @@ app.include_router(planning_router, prefix="/api")
 app.include_router(coordination_router, prefix="/api")
 app.include_router(datasets_router, prefix="/api")
 app.include_router(terrain_router, prefix="/api")
+app.include_router(infra_router, prefix="/api")
 
 @app.get("/")
 def read_root():
