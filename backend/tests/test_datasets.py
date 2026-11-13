@@ -244,3 +244,37 @@ def test_subsurface_and_traffic_datasets_mirrored(client):
     assert client.get(f"/api/coordination/subsurface/datasets/{sid}").status_code == 200
     f = _feature(client, "underground.utility_conflicts")
     assert next(d for d in f["dependencies"] if d["theme"] == "utilities")["state"] != "satisfied"
+
+
+def test_manifest_shapes_written_by_acquisition_agents(client, root):
+    """The shape the 2026-11-13 acquisition pipelines write (files[] with per-file headers, classification text, licence dict,
+    processing run_at + parameters.bbox). Content SYNTHETIC."""
+    d = os.path.join(root, "raw", "test_shape_dem_src", "2026-11-13")
+    sha = _w(os.path.join(d, "tile.tif"), b"SYNTHETIC tile")
+    _w(os.path.join(d, "manifest.json"), {
+        "source_id": "test_shape_dem_src", "dataset": "SYNTHETIC DEM title", "classification": "observed (DSM)",
+        "licence": {"publisher": "SYNTHETIC agency", "licence_name": "SYNTHETIC free licence", "quote": "free to use", "url": "https://example.invalid/l",
+                    "attribution_required": "© SYNTHETIC", "verified_at": "Fri 2026-11-13 9:30 PM IST (UTC+05:30)"},
+        "files": [{"filename": "tile.tif", "url": "https://example.invalid/tile.tif", "retrieved_at": "Fri 2026-11-13 9:07 PM IST (UTC+05:30)",
+                   "http_headers": {"ETag": "\"e1\"", "Last-Modified": "Mon, 09 May 2022 14:07:11 GMT"}, "size_bytes": 14, "sha256": sha}],
+        "manifest_updated_at": "Fri 2026-11-13 9:07 PM IST (UTC+05:30)", "vertical_datum": "EGM2008"})
+    dd = os.path.join(root, "derived", "test_shape_elevation", "v1")
+    osha = _w(os.path.join(dd, "dem_epsg32643.tif"), b"SYNTHETIC derived")
+    _w(os.path.join(dd, "processing.json"), {
+        "pipeline": "datasets.pipelines.elevation", "git_commit": "abc", "run_at": "Fri 2026-11-13 9:11 PM IST (UTC+05:30)",
+        "classification": "derived", "suitability": "screening", "inputs": [{"path": os.path.join(d, "tile.tif"), "sha256": sha}],
+        "parameters": {"bbox": [73.7, 18.4, 74.05, 18.7]}, "outputs": [{"path": "dem_epsg32643.tif", "sha256": osha}],
+        "validation": {"nan_stat": float("nan")}})
+    client.post("/api/datasets/import", json={"root": root})
+    raw = _ds(client, "test_shape_dem_src")
+    v = raw["active_version"]
+    assert raw["title"] == "SYNTHETIC DEM title" and raw["theme"] == "dem"
+    assert v["data_class"] == "observed" and v["suitability"] is None          # not stated → not assumed
+    assert v["licence_text"].startswith("SYNTHETIC free licence") and "free to use" in v["licence_text"]
+    assert v["http"]["etag"] == "\"e1\"" and v["retrieved_at"].startswith("Fri 2026-11-13 9:07 PM IST")
+    assert raw["source"]["publisher"] == "SYNTHETIC agency" and "EGM2008" in v["notes"]
+    der = _ds(client, "test_shape_elevation")
+    dv = der["active_version"]
+    assert der["theme"] == "dem" and dv["crs"].startswith("EPSG:32643") and dv["coverage_bbox"] == [73.7, 18.4, 74.05, 18.7]
+    assert dv["processing_runs"][0]["finished_at"].startswith("Fri 2026-11-13 9:11") and dv["stats"]["validation"]["nan_stat"] is None
+    assert {c["check"]: c["status"] for c in dv["quality_checks"]}["crs"] == "pass"
