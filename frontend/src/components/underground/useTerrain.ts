@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { terrainApi, type SubsurfaceEvidence, type TerrainProfile } from '../../lib/terrainApi';
 
-export type Loadable<T> = { state: 'idle' | 'loading' } | { state: 'ok'; data: T } | { state: 'error'; error: string };
+export type Loadable<T> = { state: 'idle' } | { state: 'loading' } | { state: 'ok'; data: T } | { state: 'error'; error: string };
 
 const cache = new Map<string, Promise<unknown>>();
 

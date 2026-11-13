@@ -13,6 +13,7 @@ import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter'
 import { cityStats, groupLayers, osmIdOf, searchObjects, summarise, typeLabel } from '../../components/explore/exploreModel';
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import type { OverlayKey } from '../../components/environment/envCatalogue';
+import { TerrainSection } from '../../components/explore/TerrainSection';
 
 function useLayers(): Layer[] {
   const [layers, setLayers] = useState<Layer[]>(() => engineInstance.layers.getAll());
@@ -64,6 +65,7 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
         </ul>
         <p className="text-meta text-text-3">Other environmental data: see Environment (most is not imported, UNKNOWN).</p>
       </section>
+      <TerrainSection />
       <section aria-label="Proposals">
         <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-0.5">Proposals</h4>
         <p className="text-label text-text-2" data-testid="explore-proposals">{proposals === 0 ? 'No proposed objects in this alternative.' : `${proposals.toLocaleString()} proposed or changed object${proposals === 1 ? '' : 's'} in this alternative (shown on their own layers above).`}</p>
