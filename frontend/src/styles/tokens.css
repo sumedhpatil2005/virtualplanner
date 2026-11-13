@@ -1,0 +1,132 @@
+/*
+ * UrbanOS design tokens (docs/urbanos/UX_ARCHITECTURE.md §5, docs/urbanos/PRODUCT_UX_RESEARCH.md §5.1–5.3).
+ * Dark is the default theme; light is selected with <html data-theme="light">.
+ * Contrast ratios for every text/status token against surface-1/2/3 were computed in PRODUCT_UX_RESEARCH §5.1
+ * (WCAG 2.2 SC 1.4.3 / 1.4.11, https://www.w3.org/TR/WCAG22/). Constraints carried over from there:
+ *   - --text-3 must not sit on dark --surface-3 (4.4:1);
+ *   - light --measured must not sit on light --surface-3 (4.2:1). Badges sit on surface-1/2.
+ * Tailwind v4 utilities are generated from these through `@theme inline` below, e.g. bg-surface-1, text-text-2,
+ * border-border-strong, text-fail, rounded-ui-md, text-label, shadow-float. Spacing uses Tailwind's own 4 px scale
+ * (p-3 = 12 px), so no spacing utilities are generated. Existing radius names (rounded-lg …) are left untouched.
+ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* surfaces */
+  --bg-app: #0F1419;
+  --surface-1: #161B22;
+  --surface-2: #1E252E;
+  --surface-3: #283039;
+  --border: #333C47;
+  --border-strong: #4A5563;
+  --map-scrim: rgba(15, 20, 25, .72);
+  /* text + accent */
+  --text-1: #E6EAF0;
+  --text-2: #A9B3C1;
+  --text-3: #8B95A3;
+  --accent: #5AA2FF;
+  --accent-contrast: #0F1419;
+  /* certainty (value axis) */
+  --measured: #3FB950;
+  --estimated: #D29922;
+  --hypothetical: #B392F0;
+  --unknown: #9AA4B2;
+  /* status / trust (model axis) */
+  --fail: #FF6B61;
+  --warn: #E8833A;
+  /* elevation: only floating map controls and popovers */
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, .35);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-app: #F6F7F9;
+  --surface-1: #FFFFFF;
+  --surface-2: #F1F3F6;
+  --surface-3: #E6E9EE;
+  --border: #D5DAE1;
+  --border-strong: #8C96A3;
+  --map-scrim: rgba(255, 255, 255, .80);
+  --text-1: #1B1F24;
+  --text-2: #4A5563;
+  --text-3: #5F6875;
+  --accent: #0B63CE;
+  --accent-contrast: #FFFFFF;
+  --measured: #1A7F37;
+  --estimated: #8A5A00;
+  --hypothetical: #7A45D6;
+  --unknown: #57606A;
+  --fail: #C4202B;
+  --warn: #A84300;
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, .12);
+}
+
+:root {
+  /* 4-pt spacing scale (px) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  /* radius */
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px;
+  /* type scale (size / line-height); never below 11 px */
+  --fs-display: 24px; --lh-display: 32px;
+  --fs-title: 18px; --lh-title: 24px;
+  --fs-heading: 15px; --lh-heading: 20px;
+  --fs-body: 13px; --lh-body: 18px;
+  --fs-label: 12px; --lh-label: 16px;
+  --fs-meta: 11px; --lh-meta: 14px;
+  --fs-metric: 22px; --lh-metric: 26px;
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* shell geometry (§5.4) */
+  --topbar-h: 44px;
+  --rail-w: 64px;
+  --context-w: 320px;
+  --inspector-w: 360px;
+  --drawer-h: 240px;
+  --motion: 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion: 0ms linear; }
+}
+
+@theme inline {
+  --color-bg-app: var(--bg-app);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-map-scrim: var(--map-scrim);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-measured: var(--measured);
+  --color-estimated: var(--estimated);
+  --color-hypothetical: var(--hypothetical);
+  --color-unknown: var(--unknown);
+  --color-fail: var(--fail);
+  --color-warn: var(--warn);
+  --radius-ui-sm: var(--r-sm);
+  --radius-ui-md: var(--r-md);
+  --radius-ui-lg: var(--r-lg);
+  --shadow-float: var(--shadow-float);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-display);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-title);
+  --text-heading: var(--fs-heading);
+  --text-heading--line-height: var(--lh-heading);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
+  --text-label: var(--fs-label);
+  --text-label--line-height: var(--lh-label);
+  --text-meta: var(--fs-meta);
+  --text-meta--line-height: var(--lh-meta);
+  --text-metric: var(--fs-metric);
+  --text-metric--line-height: var(--lh-metric);
+}
