@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="t" id="t"><SimpleField name="objectid" type="int"></SimpleField><SimpleField name="start_inve" type="float"></SimpleField></Schema>
+<Folder><name>t</name>
+  <Placemark id="t.1"><name>pipe A</name>
+    <ExtendedData><SchemaData schemaUrl="#t"><SimpleData name="objectid">1</SimpleData><SimpleData name="start_inve">552.4</SimpleData></SchemaData></ExtendedData>
+    <MultiGeometry><LineString><coordinates>73.85,18.52 73.86,18.53</coordinates></LineString></MultiGeometry>
+  </Placemark>
+  <Placemark id="t.2">
+    <ExtendedData><Data name="kind"><value>chamber</value></Data></ExtendedData>
+    <Point><coordinates>73.8918744,18.43541796,0</coordinates></Point>
+  </Placemark>
+  <Placemark id="t.3">
+    <Polygon><outerBoundaryIs><LinearRing><coordinates>73.80,18.50 73.81,18.50 73.81,18.51 73.80,18.51</coordinates></LinearRing></outerBoundaryIs>
+    <innerBoundaryIs><LinearRing><coordinates>73.803,18.503 73.804,18.503 73.804,18.504 73.803,18.503</coordinates></LinearRing></innerBoundaryIs></Polygon>
+  </Placemark>
+  <Placemark id="t.4"><name>far away (Mumbai)</name><Point><coordinates>72.85,19.05</coordinates></Point></Placemark>
+  <Placemark id="t.5"><name>bow-tie (invalid)</name><Polygon><outerBoundaryIs><LinearRing><coordinates>73.90,18.60 73.91,18.61 73.91,18.60 73.90,18.61 73.90,18.60</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+  <Placemark id="t.6"><name>no geometry</name></Placemark>
+  <Placemark id="t.7"><name>dup of pipe A</name><LineString><coordinates>73.85,18.52 73.86,18.53</coordinates></LineString></Placemark>
+</Folder></Document></kml>

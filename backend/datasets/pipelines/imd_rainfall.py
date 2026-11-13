@@ -74,6 +74,17 @@ def extract(a: array.array, year: int, cells: list[tuple[float, float]]):
             yield day.isoformat(), lon, lat, (None if v <= UNDEF + 1 else round(float(v), 2))
 
 
+def flag_suspect_years(annual: dict, factor: float = 3.0) -> set:
+    """Cell-years whose annual total exceeds factor x the cell's median annual total.
+    Values are NOT altered; the flag is for reviewers (e.g. 2005 and 2009 at 74.0E 18.5N)."""
+    import statistics
+    by_cell: dict = {}
+    for (y, lon, lat), v in annual.items():
+        by_cell.setdefault((lon, lat), []).append(v)
+    med = {k: statistics.median(v) for k, v in by_cell.items()}
+    return {(y, lon, lat) for (y, lon, lat), v in annual.items() if v > factor * med[(lon, lat)]}
+
+
 def download(years: list[int], raw_date: str | None = None) -> Path:
     rd = gc.raw_dir(SOURCE_ID, raw_date)
     source = {"source_id": SOURCE_ID, "publisher": "India Meteorological Department (IMD) Pune, Climate Research and Services",
@@ -118,15 +129,17 @@ def process(raw: Path, years: list[int], version: str) -> Path:
     gj = out / "pune_cells.geojson"
     gj.write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
     ann = out / "pune_cells_annual_totals.csv"
+    suspect = flag_suspect_years(annual)
     with open(ann, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["year", "cell_lon", "cell_lat", "annual_mm"])
+        w.writerow(["year", "cell_lon", "cell_lat", "annual_mm", "qa_flag"])
         for (y, lon, lat), v in sorted(annual.items()):
-            w.writerow([y, lon, lat, round(v, 1)])
+            w.writerow([y, lon, lat, round(v, 1), "suspect_gt_3x_median" if (y, lon, lat) in suspect else ""])
     gc.write_processing(out, pipeline="datasets.pipelines.imd_rainfall", inputs=inputs,
                         parameters={"bbox": gc.PUNE_BBOX, "cells": cells, "years": years},
                         outputs=[csv_path, gj, ann],
                         validation={"rows": n, "undef_values": missing, "cells": len(cells),
+                                    "suspect_cell_years_gt_3x_median": sorted(f"{y}@{lon},{lat}" for y, lon, lat in suspect),
                                     "check": "file length == ndays*135*129*4 bytes for every year"},
                         notes="Values are IMD gridded analysis (derived from rain-gauge network). Cell ~27 km: screening only.")
     return out

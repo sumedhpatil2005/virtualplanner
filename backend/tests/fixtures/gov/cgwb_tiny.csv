@@ -1,0 +1,6 @@
+SlNo,Station,Agency,State LGD Code,State,District LGD Code,District,Tehsil,Block,Village,River,Basin,Tributary,Subtributary,SubSubtributary,Local River,Latitude,Longitude,RL_MSL,Data Acquisition Time,Groundwater Level Quarterly Manual (meter)
+1,Pune,CGWB,27,Maharashtra,490,Pune,HAVELI,-,Pune,-,-,-,-,-,-,18.53,73.85,,10-01-2020 06:00,4.07
+2,Pune,CGWB,27,Maharashtra,490,Pune,HAVELI,-,Pune,-,-,-,-,-,-,18.53,73.85,,10-01-2020 06:00,4.07
+3,Pune,CGWB,27,Maharashtra,490,Pune,HAVELI,-,Pune,-,-,-,-,-,-,18.53,73.85,,15-05-2020 06:00,
+4,Aad,CGWB,27,Maharashtra,487,Nashik,PEINT,-,-,-,-,-,-,-,-,20.20805556,73.59722222,,10-01-2020 06:00,4.07
+5,Pune,CGWB,27,Maharashtra,490,Pune,HAVELI,-,Pune,-,-,-,-,-,-,18.53,73.85,,15-08-2020 06:00,999
