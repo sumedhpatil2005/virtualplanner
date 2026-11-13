@@ -51,14 +51,21 @@ def sha256_file(path: str) -> str:
 
 
 def _parse_date(s: str | None) -> datetime.datetime | None:
+    """Wall-clock date/time of a metadata timestamp in its stated zone, naive (staleness is day-granular). Full timestamps
+    (ISO, human IST form, RFC 1123) go through timeutil.parse_ts; partial dates ('2021', '2021-06') fall back to
+    the regex (end of the stated period)."""
     if not s:
         return None
-    m = re.search(r"(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?", str(s).strip())  # ISO or "Mon 2026-11-02 2:51 AM IST"
+    from .timeutil import parse_ts
+    d = parse_ts(s)
+    if d is not None:
+        return d.replace(tzinfo=None)  # the calendar date as stated in its own zone (staleness is counted in days)
+    m = re.search(r"(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?", str(s).strip())
     if not m:
         return None
-    y, mo, d = int(m.group(1)), int(m.group(2) or 12), int(m.group(3) or 28)
+    y, mo, d2 = int(m.group(1)), int(m.group(2) or 12), int(m.group(3) or 28)
     try:
-        return datetime.datetime(y, mo, d)
+        return datetime.datetime(y, mo, d2)
     except ValueError:
         return None
 

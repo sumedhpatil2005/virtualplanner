@@ -32,6 +32,8 @@ from .vocab import ACCESS_METHODS, DATA_CLASSES, data_root, guess_theme, norm_th
 
 MANIFEST = "manifest.json"
 PROCESSING = "processing.json"
+import datetime as _dtm
+_EPOCH = _dtm.datetime(1970, 1, 1, tzinfo=_dtm.timezone.utc)
 OVERRIDES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classification_overrides.json")
 
 
@@ -320,7 +322,10 @@ def register_dir(db: Session, d: str, kind: str, root: str, overrides: dict | No
     if len(files) > 1:
         http["per_file"] = {os.path.basename(f["path"]): {k: v for k, v in (f.get("_http") or {}).items() if k.lower() in ("etag", "last-modified", "content-length")}
                             for f in files if f.get("_http")}
-    file_retrieved = sorted(str(f["_retrieved_at"]) for f in files if f.get("_retrieved_at"))
+    # chronological, not lexical: ISO and human-form ("Mon 2026-11-02 2:51 AM IST") values sort differently as strings
+    from .timeutil import parse_ts
+    file_retrieved = sorted((str(f["_retrieved_at"]) for f in files if f.get("_retrieved_at")),
+                            key=lambda x: (parse_ts(x) is not None, (parse_ts(x) or _EPOCH).timestamp()))
     out_files = _files({"files": (proc or {}).get("outputs")} if proc else {}, d) if proc else []
     roles = [dict(f, role="raw" if kind == "raw" else "derived") for f in files]
     have = {f["path"] for f in roles}

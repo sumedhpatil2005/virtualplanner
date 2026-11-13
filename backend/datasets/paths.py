@@ -48,12 +48,19 @@ def derived_dir() -> Path:
     return Path(v) if v else data_dir() / "derived"
 
 
+def version_key(name: str) -> tuple:
+    """Natural sort key for version directory names: v2 < v10, 2026-11-13 < 2026-12-01 (plain string sort put v10
+    before v9, so "latest" would silently pick an older version once a dataset reached v10)."""
+    import re
+    return tuple((0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.findall(r"\d+|\D+", name))
+
+
 def derived_versions(dataset_id: str) -> list[Path]:
-    """Version directories of a derived dataset that carry a processing.json, sorted by name."""
+    """Version directories of a derived dataset that carry a processing.json, in natural version order (latest last)."""
     base = derived_dir() / dataset_id
     if not base.is_dir():
         return []
-    return sorted(p for p in base.iterdir() if p.is_dir() and (p / "processing.json").exists())
+    return sorted((p for p in base.iterdir() if p.is_dir() and (p / "processing.json").exists()), key=lambda p: version_key(p.name))
 
 
 def derived_version_dir(dataset_id: str, version: str | None = None) -> Path | None:

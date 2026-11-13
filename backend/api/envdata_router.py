@@ -94,7 +94,10 @@ def tree_count(geometry: dict = Body(..., embed=True)):
     _layer("tree_census_2019")
     if not trees.db_path().exists():
         raise HTTPException(404, "tree index not built")
-    return trees.count_in_polygon(geometry)
+    try:
+        return trees.count_in_polygon(geometry)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.get("/air/stations")

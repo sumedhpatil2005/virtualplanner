@@ -20,12 +20,23 @@ _TS = re.compile(r"(\d{4}-\d{2}-\d{2}) (\d{1,2}):(\d{2}) (AM|PM)")
 
 
 def parse_ist(s: str) -> str | None:
-    """'Mon 2024-01-01 5:30 AM IST (UTC+05:30)' → '2024-01-01T05:30:00+05:30' (pure)."""
-    m = _TS.search(s or "")
-    if not m:
-        return None
-    h = int(m.group(2)) % 12 + (12 if m.group(4) == "PM" else 0)
-    return f"{m.group(1)}T{h:02d}:{m.group(3)}:00+05:30"
+    """Any supported timestamp ('Mon 2024-01-01 5:30 AM IST (UTC+05:30)', ISO with offset, ...) → ISO 8601 with offset,
+    or None. The stated zone is honoured (previously every human-form value was labelled +05:30 whatever it said)."""
+    from datasets.timeutil import iso, parse_ts
+    d = parse_ts(s)
+    return iso(d) if d else None
+
+
+def _bound(s: str, name: str, end: bool = False):
+    """start/end query value → aware pandas Timestamp in IST. A date-only end is inclusive of that whole day."""
+    import pandas as pd
+
+    from datasets.timeutil import is_date_only, parse_ts
+    d = parse_ts(s)
+    if d is None:
+        raise ValueError(f"{name} must be a date (YYYY-MM-DD) or ISO 8601 timestamp with zone")
+    t = pd.Timestamp(d).tz_convert("Asia/Kolkata")
+    return t + pd.Timedelta(days=1) if end and is_date_only(s.strip()) else t
 
 
 @lru_cache(maxsize=2)
@@ -69,7 +80,7 @@ def aq_stations() -> dict:
 
 
 def aq_series(station: str, param: str, agg: str = "day", start: str | None = None, end: str | None = None) -> dict:
-    import pandas as pd
+    from datasets.timeutil import is_date_only
     if param not in AQ_PARAMS:
         raise ValueError(f"unknown parameter {param}")
     df = aq_frame()
@@ -78,9 +89,10 @@ def aq_series(station: str, param: str, agg: str = "day", start: str | None = No
         raise LookupError(f"unknown station {station}")
     sub = df[df.station_id == station][["t", param]].dropna()
     if start:
-        sub = sub[sub.t >= pd.Timestamp(start, tz="Asia/Kolkata")]
+        sub = sub[sub.t >= _bound(start, "start")]
     if end:
-        sub = sub[sub.t < pd.Timestamp(end, tz="Asia/Kolkata") + pd.Timedelta(days=1)]
+        e = _bound(end, "end", end=True)
+        sub = sub[sub.t < e] if is_date_only(end.strip()) else sub[sub.t <= e]
     if agg == "raw":
         if len(sub) > 20000:
             raise ValueError("more than 20,000 samples; narrow the date range or use agg=hour/day")

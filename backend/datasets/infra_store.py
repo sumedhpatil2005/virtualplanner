@@ -33,7 +33,8 @@ def index_path() -> Optional[str]:
             continue
         base = os.path.join(r, "derived", "infra_index")
         if os.path.isdir(base):
-            for v in sorted(os.listdir(base), reverse=True):
+            from .paths import version_key
+            for v in sorted(os.listdir(base), key=version_key, reverse=True):
                 f = os.path.join(base, v, "infra_index.sqlite")
                 if os.path.exists(f):
                     return f
@@ -47,6 +48,8 @@ def _con() -> Optional[sqlite3.Connection]:
     cached = getattr(_LOCAL, "con", None)
     if cached is not None and cached[0] == p and os.path.getmtime(p) == cached[2]:
         return cached[1]
+    if cached is not None:
+        _reset()  # index replaced or moved: close the stale connection instead of leaking it
     con = sqlite3.connect(f"file:{p}?mode=ro", uri=True, check_same_thread=False)
     _LOCAL.con = (p, con, os.path.getmtime(p))
     return con
@@ -72,10 +75,12 @@ def _retry(fn):
             _reset()
             return fn(*a, **kw)
     wrapper.__name__ = fn.__name__
+    wrapper.__wrapped__ = fn
     wrapper.__doc__ = fn.__doc__
     return wrapper
 
 
+@_retry
 def status() -> dict:
     p = index_path()
     if p is None:

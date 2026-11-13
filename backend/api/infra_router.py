@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from datasets import infra_store as IS
+from datasets.paths import version_key
 from datasets.vocab import PUNE_BBOX, data_root
 
 router = APIRouter(prefix="/infra", tags=["infrastructure"])
@@ -43,7 +44,7 @@ def _census_path() -> Optional[str]:
             continue
         base = os.path.join(r, "derived", "census2011_pune_wards")
         if os.path.isdir(base):
-            for v in sorted(os.listdir(base), reverse=True):
+            for v in sorted(os.listdir(base), key=version_key, reverse=True):
                 f = os.path.join(base, v, "census2011_pune_wards.json")
                 if os.path.exists(f):
                     return f
@@ -54,7 +55,8 @@ def census_summary(full: bool = False) -> dict:
     p = _census_path()
     if p is None:
         return {"available": False, "mappable": False, "reason": "Census 2011 ward table not derived (python -m datasets.pipelines.census2011_wards)."}
-    d = json.load(open(p, encoding="utf-8"))
+    with open(p, encoding="utf-8") as fh:
+        d = json.load(fh)
     out = {"available": True, "title": d["title"], "vintage": d["vintage"], "mappable": d["mappable"], "not_mappable_reasons": d["not_mappable_reasons"],
            "wards": len(d["rows"]), "total_population": d["total_population"], "source": d["source"], "data_class": "observed",
            "suitability": "screening", "historical": True, "duplicate_ward_numbers": d.get("duplicate_ward_numbers", {})}
@@ -68,6 +70,23 @@ def census_summary(full: bool = False) -> dict:
     if full:
         out["rows"] = d["rows"]
     return out
+
+
+def parse_bbox(s: str) -> list[float]:
+    """minLon,minLat,maxLon,maxLat (WGS84) -> 4 floats. Rejects NaN/inf, out-of-range lon/lat, min >= max and boxes that
+    cross the antimeridian (min > max; never valid for the Pune study area). Explicit checks, not assert (stripped by -O)."""
+    import math
+    try:
+        box = [float(v) for v in s.split(",")]
+    except ValueError as e:
+        raise ValueError("bbox must be minLon,minLat,maxLon,maxLat (numbers)") from e
+    if len(box) != 4 or not all(math.isfinite(v) for v in box):
+        raise ValueError("bbox must be 4 finite numbers: minLon,minLat,maxLon,maxLat")
+    if not (-180 <= box[0] <= 180 and -180 <= box[2] <= 180 and -90 <= box[1] <= 90 and -90 <= box[3] <= 90):
+        raise ValueError("bbox out of range: lon in [-180, 180], lat in [-90, 90]")
+    if not (box[0] < box[2] and box[1] < box[3]):
+        raise ValueError("bbox must be minLon,minLat,maxLon,maxLat with min < max (antimeridian-crossing boxes unsupported)")
+    return box
 
 
 @router.get("/status")
@@ -93,10 +112,9 @@ def infra_layers():
 def infra_features(lid: str, bbox: str = Query(..., description="minLon,minLat,maxLon,maxLat (WGS84)"),
                    limit: int = Query(IS.DEFAULT_CAP, ge=1, le=IS.MAX_CAP), source: Optional[str] = None):
     try:
-        box = [float(v) for v in bbox.split(",")]
-        assert len(box) == 4 and box[0] < box[2] and box[1] < box[3]
-    except (ValueError, AssertionError) as e:
-        raise HTTPException(422, "bbox must be minLon,minLat,maxLon,maxLat with min < max") from e
+        box = parse_bbox(bbox)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     meta = IS.layer(lid)
     if meta is None:
         raise HTTPException(404, f"layer '{lid}' not in the infrastructure index (index built? URBANOS_DATA_DIR set?)")
@@ -134,7 +152,8 @@ def infra_doc(name: str):
     p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "docs", "urbanos", fn)
     if not os.path.exists(p):
         raise HTTPException(404, f"{fn} not found in this checkout")
-    return PlainTextResponse(open(p, encoding="utf-8").read(), media_type="text/plain; charset=utf-8")
+    with open(p, encoding="utf-8") as fh:
+        return PlainTextResponse(fh.read(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/traffic-counts")

@@ -14,6 +14,7 @@ from . import paths
 DATASET, VERSION, FILE = "pmc_tree_census_2019_index", "v1", "trees_index.sqlite"
 MAX_LIMIT = 5000
 MAX_CELLS = 1500
+MAX_POLYGON_CANDIDATES = 200_000  # count_in_polygon loads candidates into memory; a city-wide polygon was ~4M rows
 _local = threading.local()
 
 
@@ -93,10 +94,15 @@ def query(bbox: Sequence[float], limit: int = 2000) -> dict:
 
 def count_in_polygon(geom_4326: dict) -> dict:
     """Trees whose point lies inside a WGS84 polygon (used by feasibility screening's treesInFootprint slot)."""
-    from shapely.geometry import Point, shape
-    g = shape(geom_4326)
+    from shapely.geometry import Point
+
+    from .render import polygon_4326
+    g = polygon_4326(geom_4326)
     b = g.bounds
     c = _conn()
+    (cand,) = c.execute("SELECT count(*) FROM trees_rt r JOIN trees t ON t.id=r.id WHERE " + _WHERE, _args(b)).fetchone()
+    if cand > MAX_POLYGON_CANDIDATES:
+        raise ValueError(f"polygon too large: {cand:,} trees in its bounding box (limit {MAX_POLYGON_CANDIDATES:,}); draw a smaller area")
     rows = c.execute("""SELECT t.lon, t.lat, t.condition, t.is_rare FROM trees_rt r JOIN trees t ON t.id=r.id
                         WHERE """ + _WHERE, _args(b)).fetchall()
     from shapely.prepared import prep

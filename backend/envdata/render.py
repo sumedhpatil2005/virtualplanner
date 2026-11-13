@@ -29,8 +29,12 @@ def parse_bbox(s: str) -> list[float]:
         b = [float(v) for v in s.split(",")]
     except ValueError as e:
         raise ValueError("bbox must be minLon,minLat,maxLon,maxLat") from e
-    if len(b) != 4 or not (b[0] < b[2] and b[1] < b[3]) or not (-180 <= b[0] <= 180 and -90 <= b[1] <= 90):
-        raise ValueError("bbox must be minLon,minLat,maxLon,maxLat with min < max")
+    if len(b) != 4 or not all(np.isfinite(b)):
+        raise ValueError("bbox must be 4 finite numbers: minLon,minLat,maxLon,maxLat")
+    if not (-180 <= b[0] <= 180 and -180 <= b[2] <= 180 and -90 <= b[1] <= 90 and -90 <= b[3] <= 90):
+        raise ValueError("bbox out of range: lon in [-180, 180], lat in [-90, 90]")
+    if not (b[0] < b[2] and b[1] < b[3]):
+        raise ValueError("bbox must be minLon,minLat,maxLon,maxLat with min < max (antimeridian-crossing boxes unsupported)")
     return b
 
 
@@ -113,7 +117,8 @@ def render_png(layer: Layer, bbox: Sequence[float], width: int, variant: str | N
         return cp.read_bytes(), {**meta, "cache": "hit"}
     arr, nodata = _read_view(p, bbox, w, h, spec["mode"] == "categorical")
     data = _png(colourise(arr, spec, nodata))
-    tmp = cp.with_suffix(f".{os.getpid()}.tmp")
+    import threading
+    tmp = cp.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")  # per thread: concurrent misses on one key raced
     tmp.write_bytes(data)
     os.replace(tmp, cp)
     return data, {**meta, "cache": "miss"}
@@ -121,13 +126,31 @@ def render_png(layer: Layer, bbox: Sequence[float], width: int, variant: str | N
 
 # ── statistics ────────────────────────────────────────────────────────────────
 
+def polygon_4326(geom_4326) -> "object":
+    """Validate a GeoJSON Polygon/MultiPolygon in WGS84 and return the Shapely geometry. Raises ValueError (-> 422) for a
+    malformed object, non-finite or out-of-range coordinates, or an empty geometry (previously these surfaced as 500s)."""
+    from shapely.geometry import shape
+    if not isinstance(geom_4326, dict) or geom_4326.get("type") not in ("Polygon", "MultiPolygon"):
+        raise ValueError("geometry must be a GeoJSON Polygon or MultiPolygon (WGS84)")
+    try:
+        g = shape(geom_4326)
+    except Exception as e:  # noqa: BLE001 - shapely raises several types for malformed rings
+        raise ValueError(f"malformed {geom_4326.get('type')}: {e}") from e
+    if g.is_empty:
+        raise ValueError("geometry is empty")
+    import shapely
+    b = g.bounds
+    if not np.isfinite(shapely.get_coordinates(g)).all() or not all(np.isfinite(b)) or not (-180 <= b[0] <= b[2] <= 180 and -90 <= b[1] <= b[3] <= 90):
+        raise ValueError("coordinates must be finite lon/lat (lon in [-180, 180], lat in [-90, 90])")
+    return g
+
+
 def _utm_geom(geom_4326: dict):
     from pyproj import Transformer
-    from shapely.geometry import shape
 
     from coordination.geometry import reproject
     t = Transformer.from_crs("EPSG:4326", "EPSG:32643", always_xy=True)
-    return reproject(shape(geom_4326), t)
+    return reproject(polygon_4326(geom_4326), t)
 
 
 def landcover_areas(layer: Layer, geom_4326: dict) -> dict:
