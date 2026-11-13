@@ -119,7 +119,7 @@ def test_importer_registers_idempotent_and_unblocks_feature(client, root):
     assert ds["source"]["access_method"] == "download"
     after = _feature(client, "underground.alignment_profile")
     assert after["status"] == "ready", after
-    assert after["wired"] is False   # data ready, but the profile still uses a flat datum: shown, not hidden
+    assert after["wired"] is True    # profile ground line now reads the DEM via /api/terrain/profile (was False: flat datum)
     # second scan: nothing new
     rep2 = client.post("/api/datasets/import", json={"root": root}).json()
     assert {e["result"] for e in rep2["entries"] if "test_dem_src" in e["dir"]} == {"unchanged"}
