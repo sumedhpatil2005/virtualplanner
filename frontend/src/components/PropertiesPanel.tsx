@@ -189,6 +189,13 @@ export const PropertiesPanel: React.FC = () => {
       const uUpdates = updates as Partial<UtilityObject>;
       if (field === 'depth' || field === 'capacity') {
         (uUpdates as any)[field] = Number(value);
+      } else if (field === 'diameterMm') {
+        // blank or non-positive = unknown (null), never 0
+        const v = Number(value);
+        uUpdates.diameterMm = value === '' || value === null || !Number.isFinite(v) || v <= 0 ? null : v;
+      } else if (field === 'depthCertainty') {
+        uUpdates.depthCertainty = value as Certainty;
+        uUpdates.valueCertainty = { ...((selectedObj as UtilityObject).valueCertainty ?? {}), depth: value as Certainty };
       } else if (field === 'name') {
         uUpdates.name = value;
       }
@@ -569,7 +576,7 @@ const BuildingInspector: React.FC<{
           <span className="text-slate-100 font-bold capitalize mt-0.5">{b.state || 'Existing'}</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
-          <span className="text-xs text-slate-400 font-medium uppercase">Floors / Height</span>
+          <span className="text-xs text-slate-400 font-medium uppercase flex items-center gap-1.5">Floors / Height {b.valueCertainty?.floors && <CertaintyBadge certainty={b.valueCertainty.floors} />}</span>
           <span className="text-slate-100 font-bold mt-0.5">{b.floors} floors ({b.height}m)</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
@@ -949,7 +956,7 @@ const BuildingEditorDraft: React.FC<{
       {/* Height / Floors */}
       <div className="grid grid-cols-2 gap-2 bg-slate-950/40 p-2.5 rounded-lg border border-white/5">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Floors</label>
+          <label className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1.5">Floors {draft.valueCertainty?.floors && <CertaintyBadge certainty={draft.valueCertainty.floors} />}</label>
           <input
             type="number"
             value={draft.floors}
@@ -1846,12 +1853,32 @@ const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: (field: string, val:
   return (
     <div className="space-y-3.5">
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold">Lay Depth (meters)</label>
+        <label className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1.5">Depth (m) <CertaintyBadge certainty={u.depthCertainty ?? 'unknown'} note={u.depthCertainty ? undefined : 'Drawn before depth certainty was recorded.'} /></label>
         <input
           type="number"
           step="0.1"
           value={u.depth}
           onChange={(e) => onUpdate('depth', Number(e.target.value))}
+          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
+        />
+        <select value={u.depthCertainty ?? 'unknown'} onChange={(e) => onUpdate('depthCertainty', e.target.value)} aria-label="Depth certainty" data-testid="utility-depth-certainty"
+          className="bg-slate-900 border border-slate-700/50 rounded-lg p-1.5 text-xs text-slate-200 focus:outline-none">
+          <option value="hypothetical">Hypothetical (design / assumed)</option>
+          <option value="estimated">Estimated</option>
+          <option value="measured">Measured (survey / record)</option>
+          <option value="unknown">Unknown</option>
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-slate-400 uppercase font-semibold">Diameter (mm)</label>
+        <input
+          type="number"
+          min={1}
+          placeholder="Unknown"
+          value={u.diameterMm ?? ''}
+          onChange={(e) => onUpdate('diameterMm', e.target.value)}
+          data-testid="utility-diameter"
           className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
         />
       </div>
@@ -2207,6 +2234,8 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
 /* ─── Bridge Feasibility Report Panel ───────────────────────────────────────── */
 
 import type { FeasibilityResult, FeasibilityCheck } from '../engine/simulation/BridgeFeasibilityEngine';
+import { CertaintyBadge } from './ui/badges/CertaintyBadge';
+import type { Certainty } from './ui/badges/honesty';
 
 const statusIcon = (status: FeasibilityCheck['status']) => {
   if (status === 'pass') return '✅';

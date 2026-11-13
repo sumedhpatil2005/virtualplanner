@@ -46,7 +46,7 @@ export class LayerManager {
       { id: 'buildings', name: '3D Buildings', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'junctions', name: 'Junctions & Signals', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'metro', name: 'Elevated Metro Network', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
-      { id: 'demand_zones', name: 'Zoning Map', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
+      { id: 'demand_zones', name: 'Demand zones (traffic)', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'gateways', name: 'Gateways', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'water_util', name: 'Water Pipe Network', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
       { id: 'electric_util', name: 'Electric Grid', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
