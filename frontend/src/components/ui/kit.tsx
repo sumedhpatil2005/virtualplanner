@@ -125,7 +125,7 @@ export function Segmented<T extends string | number>({ options, value, onChange,
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-white/[0.04] border border-white/10 p-1">
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-y-1 rounded-xl bg-white/[0.04] border border-white/10 p-1">
       {options.map(o => (
         <button
           key={String(o.value)}

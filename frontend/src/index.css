@@ -388,3 +388,7 @@ button.uos-row:hover { background: var(--surface-2); }
   .uos-shell .uos-icon-btn-sm { width: 44px; height: 44px; }
   .simulation-hud { display: none; }
 }
+
+/* Environment → "Screen this proposal": the FeasibilityPanel fills the context column edge to edge (no card in a card) */
+.uos-context-body:has(> [data-testid=env-feasibility]) { padding: 0; }
+[data-testid=env-feasibility] > div { width: 100% !important; max-height: none; border-radius: 0 !important; border: 0 !important; box-shadow: none !important; backdrop-filter: none !important; background: var(--surface-1) !important; animation: none; }
