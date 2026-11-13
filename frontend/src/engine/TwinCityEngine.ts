@@ -395,6 +395,7 @@ export class TwinCityEngine {
     if (satellite) {
       for (let i = 0; i < viewer.imageryLayers.length; i++) {
         const layer = viewer.imageryLayers.get(i);
+        if ((layer as unknown as { __uosEnvOverlay?: boolean }).__uosEnvOverlay) continue; // Environment data overlays keep their own state
         layer.show = satellite.visible;
         layer.alpha = satellite.opacity;
       }

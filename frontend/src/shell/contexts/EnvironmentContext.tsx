@@ -7,7 +7,11 @@ import { DataStatus } from '../../components/ui/badges/DataStatus';
 import { TrustBadge } from '../../components/ui/badges/TrustBadge';
 import { FeasibilityPanel } from '../../components/FeasibilityPanel';
 import { coordinationApi, type EnvironmentLayer } from '../../lib/coordinationApi';
-import { groupCatalogue, dataStatusOf, MAP_TOGGLES } from '../../components/environment/envCatalogue';
+import { dataStatusOf, MAP_TOGGLES } from '../../components/environment/envCatalogue';
+import { envDataApi, type EnvDataLayer } from '../../lib/envDataApi';
+import { mergeCatalogue } from '../../components/environment/envDataModel';
+import { EnvDataRow } from '../../components/environment/EnvDataRow';
+import { AirQualityPanel, LandcoverAreasPanel, RainfallPanel } from '../../components/environment/EnvDataPanels';
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useSelectedId } from '../../hooks/useAppMode';
@@ -126,6 +130,8 @@ const EmissionsSummary: React.FC = () => {
 
 export const EnvironmentContext: React.FC = () => {
   const [layers, setLayers] = useState<EnvironmentLayer[] | null>(null);
+  const [envData, setEnvData] = useState<EnvDataLayer[]>([]);
+  const [envDataError, setEnvDataError] = useState<string | null>(null);
   const [note, setNote] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -140,6 +146,9 @@ export const EnvironmentContext: React.FC = () => {
       .then(j => { setLayers(j.layers); setNote(j.note); })
       .catch((e: Error) => setError(e.message || 'Backend unreachable'))
       .finally(() => setLoading(false));
+    envDataApi.catalogue()
+      .then(j => { setEnvData(j.layers); setEnvDataError(null); })
+      .catch((e: Error) => setEnvDataError(e.message || 'Backend unreachable'));
   };
   useEffect(load, []);
 
@@ -148,7 +157,8 @@ export const EnvironmentContext: React.FC = () => {
     return <div className="uos-embed-panel [&>div]:!w-full [&>div]:!rounded-none [&>div]:!border-0" data-testid="env-feasibility"><FeasibilityPanel obj={screenObj} onBack={() => setScreening(null)} /></div>;
   }
 
-  const groups = layers ? groupCatalogue(layers) : [];
+  const groups = layers ? mergeCatalogue(layers, envData) : [];
+  const hasEnv = (id: string) => envData.some(l => l.id === id && l.status === 'available');
   return (
     <div className="space-y-5">
       <PanelSection title="Constraint screening">
@@ -165,26 +175,41 @@ export const EnvironmentContext: React.FC = () => {
         aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Recheck data status"><RefreshCw size={12} aria-hidden />Recheck</button>}>
         {loading && !layers && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading the catalogue…</p>}
         {error && <p className="text-label text-warn" role="status" data-testid="env-catalogue-error">Catalogue unavailable ({error}). Every environmental layer is UNKNOWN until the backend answers.</p>}
+        {envDataError && <p className="text-label text-warn" role="status" data-testid="env-data-catalogue-error">Environment data catalogue unavailable ({envDataError}); real datasets are UNKNOWN until it answers.</p>}
         <div className="space-y-3" data-testid="environment-layers">
           {groups.map(g => (
             <section key={g.id} data-testid={`env-group-${g.id}`} aria-label={g.label}>
               <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-1 flex justify-between">
-                <span>{g.label}</span><span className="tabular-nums">{g.available}/{g.layers.length} available</span>
+                <span>{g.label}</span><span className="tabular-nums">{g.available}/{g.rows.length} available</span>
               </h4>
-              {g.layers.length === 0
+              {g.rows.length === 0
                 ? <p className="text-meta text-text-3 flex items-center gap-1.5"><CircleHelp size={12} aria-hidden className="text-unknown" />No dataset catalogued · UNKNOWN</p>
-                : <ul className="space-y-1.5">{g.layers.map(l => <LayerRow key={l.id} l={l} />)}</ul>}
+                : <ul className="space-y-1.5">{g.rows.map(r => r.kind === 'coord' ? <LayerRow key={r.layer.id} l={r.layer} /> : <EnvDataRow key={r.layer.id} l={r.layer} />)}</ul>}
             </section>
           ))}
         </div>
       </PanelSection>
+
+      {hasEnv('landcover_worldcover2021') && (
+        <PanelSection title="Land cover areas">
+          <LandcoverAreasPanel />
+        </PanelSection>
+      )}
+
+      {(hasEnv('air_cpcb_caaqms') || hasEnv('rain_imd_025')) && (
+        <PanelSection title="Stations & series">
+          {hasEnv('air_cpcb_caaqms') && <Disclosure summary="Air quality — measured at stations" data-testid="env-air-disclosure"><AirQualityPanel /></Disclosure>}
+          {hasEnv('rain_imd_025') && <Disclosure summary="Rainfall — IMD grid, CHIRPS, district" data-testid="env-rain-disclosure"><RainfallPanel /></Disclosure>}
+        </PanelSection>
+      )}
 
       <PanelSection title="Scene layers">
         <div className="flex items-center gap-2 text-label text-text-1"><span className="flex-1">Buildings (loaded city model)</span><EngineLayerToggle layerId="buildings" label="Buildings" /></div>
       </PanelSection>
 
       <Disclosure>
-        <p className="text-label text-text-2">Catalogue: GET /api/coordination/environment-layers. Status of OSM-derived rows is computed on read from the local files; everything else is “Not imported — UNKNOWN” and is never treated as no risk. Water, heritage and railway are drawn from GET /api/feasibility/site-data (the features screening reads); metro and buildings toggle the existing engine layers. OpenStreetMap data © OpenStreetMap contributors, ODbL.</p>
+        <p className="text-label text-text-2">Catalogue: GET /api/coordination/environment-layers. Status of OSM-derived rows is computed on read from the local files; everything else is “Not imported — UNKNOWN” and is never treated as no risk. Water, heritage and railway are drawn from GET /api/feasibility/site-data (the features screening reads); metro and buildings toggle the existing engine layers. OpenStreetMap data © OpenStreetMap contributors, ODbL.
+          Real datasets (land cover, Sentinel-2 indices, JRC surface water, DEM-derived streams/catchments, soil, tree census, air quality, rainfall): GET /api/env-data/catalogue; rasters are rendered by the backend for the camera view, vectors and trees come from capped bbox APIs (docs/urbanos/ENVIRONMENT_DATA.md). A covered “Not imported” row is replaced by the real dataset row.</p>
         {note && <p className="text-meta text-text-3 mt-1">{note}</p>}
       </Disclosure>
     </div>
