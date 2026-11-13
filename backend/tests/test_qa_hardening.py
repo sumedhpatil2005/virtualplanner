@@ -327,3 +327,25 @@ def test_stated_class_correction_registers_new_pending_version(client, monkeypat
     assert new["data_class"] == "inferred" and "SYNTHETIC ML" in new["notes"]
     rep2 = client.post("/api/datasets/import", json={"root": root}).json()  # idempotent
     assert next(x for x in rep2["entries"] if "t_ml_fp" in x["dir"])["result"] == "unchanged"
+
+
+def test_building_read_cap_is_reported_and_queries_per_box(monkeypatch):
+    from shapely.geometry import box as sbox
+
+    from coordination import service as S
+    from datasets import infra_store
+    calls = []
+    monkeypatch.setattr(infra_store, "status", lambda: {"available": True, "fingerprint": "x"})
+    monkeypatch.setattr(infra_store, "layer", lambda lid: {"id": lid, "bbox": [73.7, 18.4, 74.05, 18.7], "dataset_id": "buildings_comparison"})
+
+    def near(lid, b, where=None, max_features=0):
+        calls.append(tuple(b))
+        return [(i + int(b[0] * 1000), "e", {"source": "osm", "status": "osm", "height_m": None}, sbox(b[0], b[1], b[0] + 1e-4, b[1] + 1e-4))
+                for i in range(3)]
+    monkeypatch.setattr(infra_store, "features_near", near)
+    boxes = [(73.80, 18.50, 73.801, 18.501), (73.90, 18.60, 73.901, 18.601)]
+    segs, meta = S.building_segments(boxes)
+    assert calls == boxes and meta["read"] == 6 and meta["capped"] is False    # per box, not the union box
+    monkeypatch.setattr(S, "BUILDING_MAX", 2)
+    segs, meta = S.building_segments(boxes)
+    assert meta["capped"] is True and meta["read"] == 2

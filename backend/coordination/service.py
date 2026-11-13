@@ -256,10 +256,20 @@ def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dic
         return [], {"available": True, "bbox": meta_l.get("bbox")}
     from shapely.geometry import box as sbox, mapping
     from shapely.strtree import STRtree
-    qb = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
     rects = [sbox(*b) for b in boxes]
     tree = STRtree(rects)
-    feats = infra_store.features_near("buildings", qb, where={"status": BUILDING_STATUSES}, max_features=BUILDING_MAX)
+    # one bbox query per element box (the union box of a long or scattered project can hold most of the city), de-duplicated
+    feats, seen, capped = [], set(), False
+    for b in boxes:
+        part = infra_store.features_near("buildings", b, where={"status": BUILDING_STATUSES}, max_features=BUILDING_MAX + 1)
+        for f in part:
+            if f[0] not in seen:
+                seen.add(f[0])
+                feats.append(f)
+        if len(part) > BUILDING_MAX or len(feats) > BUILDING_MAX:
+            capped = True
+            feats = feats[:BUILDING_MAX]
+            break
     segs: list[G.Segment] = []
     for fid, ext, p, g in feats:
         if len(tree.query(g)) == 0:
@@ -270,7 +280,7 @@ def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dic
                                meta={"layer": "building", "source": p.get("source"), "source_id": p.get("source_id"), "data_class": p.get("data_class"),
                                      "confidence": p.get("confidence"), "osm_agreement": p.get("status"), "height_m": h,
                                      "height_basis": p.get("height_basis"), "foundation_depth": "UNKNOWN", "dataset_id": meta_l.get("dataset_id")})
-    return segs, {"available": True, "bbox": meta_l.get("bbox"), "read": len(feats), "capped": len(feats) >= BUILDING_MAX,
+    return segs, {"available": True, "bbox": meta_l.get("bbox"), "read": len(feats), "capped": capped,
                   "dataset_id": meta_l.get("dataset_id"), "index": st.get("fingerprint"),
                   "excluded": "ML footprints that agree with OSM (represented by the OSM footprint)"}
 
@@ -394,7 +404,10 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                           "OSM metro (local index; depth UNKNOWN)" if metro_meta and metro_meta.get("available") else "OSM metro index not available"),
             "subsurface_utility": (any(G.box_inside(e_box, d["coverage"]) for d in util_ds),
                                    "subsurface utility records; coverage = stated coverage of an imported dataset (none stated = UNKNOWN)"),
-            "building": (bool(bld_meta and bld_meta.get("available")) and G.box_inside(e_box, bld_meta.get("bbox")),
+            # a capped read is incomplete: never "no conflict" from it
+            "building": (bool(bld_meta and bld_meta.get("available")) and not bld_meta.get("capped") and G.box_inside(e_box, bld_meta.get("bbox")),
+                         ("building footprints read were capped at %d: the area is not fully checked — split the project or zoom" % BUILDING_MAX)
+                         if bld_meta and bld_meta.get("capped") else
                          "building footprints (OSM + Microsoft + Google index); no footprint overlaps — completeness of OSM and ML recall UNKNOWN"
                          if bld_meta and bld_meta.get("available") else "building footprint index not available"),
         }
