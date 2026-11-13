@@ -158,3 +158,13 @@ def test_tree_point_parse_and_rows(tmp_path):
     assert st["written"] == 2 and st["duplicate_id_dropped"] == 1 and st["outside_study_box"] == 1
     assert st["girth_cm_outside_1_2000"] == 1 and st["height_m_missing"] == 1
     assert st["geom_vs_northing_easting_mismatch"] == 1 and st["is_rare_true"] == 1
+
+
+def test_cpcb_station_line_and_timestamp_parsing():
+    from datasets.pipelines import cpcb_air_quality as aq
+    txt = ("Pune              Karve Road, Pune                                 MPCB                 18.5012     73.8166      #292\n"
+           "Mumbai            Colaba, Mumbai                                   MPCB                 18.9100     72.8200      #999\n")
+    st = aq.parse_station_lines(txt)
+    assert st == [{"station_id": "site_292", "name": "Karve Road, Pune", "agency": "MPCB", "city": "Pune", "lat": 18.5012, "lon": 73.8166}]
+    assert aq.parse_ts("2024-01-01T00:00:00.000000+0000") == "2024-01-01T05:30+05:30"
+    assert aq.parse_ts("not a time") is None
