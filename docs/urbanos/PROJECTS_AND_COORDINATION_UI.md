@@ -64,8 +64,24 @@ export-pdf, export-docx, audit-timeline`) and aria-label (`Planning projects`, `
 status, export: Overview; decision: Reviews & decisions (`ptab-decisions`); audit: Activity (`ptab-activity`). Reports keeps
 `reports-catalogue`, `report-project-{pdf|docx}-<id>`, `report-ird-{pdf|docx}-<id>`.
 
-## 6. Verification
-See §7 (filled at the end of the run).
+## 6. Verification (2026-11-13)
+- `npx tsc -p tsconfig.app.json --noEmit`: 0 errors. `oxlint src`: 0 errors, no warnings in new/changed files. `vite build`: OK.
+- vitest **UNIT-TESTED**: `engine/testing/ProjectsWorkspace.test.ts` 10 pass (element mapping incl. UNKNOWN depth, skips,
+  conflict grouping / open counts / other-side labels, stale UNKNOWN ≠ current, card summary, bounds, last-export);
+  HonestControls + StartupTest still pass (no vitest covered PlanningPanel before).
+- pytest **UNIT-TESTED**: `test_projects_workspace.py` 4 pass; full backend suite 115 passed, 3 skipped.
+- **BROWSER-VERIFIED** (`/workspace/work/uos-proj-e2e/proj_check.py`, backend copy on :8316, static build on :4516):
+  1440×900 — create project A, attach SYNTHETIC alternative A, ★ preferred, register 2 elements (flyover: bottom +6.5 m / top
+  UNKNOWN; station +12…+20 m); create overlapping project B, attach alternative B, register 2 elements, run detection →
+  classes conflict ×1, potential ×5, vertically separated ×2, unknown-no-coverage ×2; acknowledge the conflict with a note;
+  project A shows the same findings as "Shared with project …" (3 rows); record a decision ("Statutory approval: No");
+  Assessments, Datasets, Activity, Data (Traffic Data Manager) tabs; project PDF 200 application/pdf (35.8 kB), DOCX 200,
+  conflict CSV 200 text/csv with disclaimer; Reports "Last generated" updated after the exports. 1024×768 — cards, overview,
+  alternatives, conflicts, decisions, reports; fly-to: camera moved from (73.857, 18.520, 1500 m) to (73.777, 18.564, 576 m)
+  = the finding's location. No horizontal overflow in the context panel at either size.
+  Screenshots (viewed): `/workspace/work/urbanos/shots/after/projects-*-{1440x900,1024x768}.png`, `reports-*.png`.
+  The fly-to screenshot itself timed out under SwiftShader (render-on-demand harness), so fly-to is verified by camera
+  position, not by image. Console errors seen: blocked fonts / Cesium ion 401 (sandbox) and a minified "kre" message (not traced).
 
 ## 7. Not done / UNKNOWN
 - Compare of alternatives inside the project (swipe / metric delta table) is not built; "Open & compare in Design" reuses the
