@@ -1,0 +1,2877 @@
+{
+ "source": "https://data.opencity.in/api/3/action/package_search (fq=organization:pune-municipal-corporation rows=200 -> 40; fq=groups:pune rows=500 -> 57)",
+ "retrieved_at": "2026-11-13 (IST) via browser (Cloudflare challenge blocks scripted clients)",
+ "datasets": [
+  {
+   "name": "cbalance-life-cycle-carbon-footprint-auditing-reports-for-pune-townships",
+   "title": "cBalance Life-Cycle Carbon Footprint Auditing Reports for Pune Townships",
+   "organization": "ngo",
+   "license_title": "Creative Commons Attribution Share-Alike",
+   "metadata_modified": "2025-11-27T12:37:59.433865",
+   "publisher_url": "cBalance.in",
+   "resources": [
+    {
+     "name": "cBalance Life-Cycle Carbon Footprint Auditing Report for Zendewadi Township",
+     "format": "PDF",
+     "size": 2308913,
+     "last_modified": "2025-11-25T13:05:38.444233",
+     "url": "https://data.opencity.in/dataset/bbb6a0de-c8f4-4d26-bc9e-e6bcbfd3fc0e/resource/dfc8aef8-851c-41a9-a481-a0adc8d1cde6/download/781a36a3-d54e-4fdc-86a4-5b1a1d6db30c.pdf"
+    },
+    {
+     "name": "cBalance Life-Cycle Carbon Footprint Auditing Report for Lohegaon Township",
+     "format": "PDF",
+     "size": 3122463,
+     "last_modified": "2025-11-25T13:05:38.733899",
+     "url": "https://data.opencity.in/dataset/bbb6a0de-c8f4-4d26-bc9e-e6bcbfd3fc0e/resource/416f526b-15da-4af9-a92c-7ec713a1b972/download/12922b44-32ca-48eb-8466-062402bf91b6.pdf"
+    },
+    {
+     "name": "Designing Low Carbon Buildings Using India-specific Tools: Case Study of Orange County",
+     "format": "PDF",
+     "size": 1342172,
+     "last_modified": "2025-11-25T13:05:39.072518",
+     "url": "https://data.opencity.in/dataset/bbb6a0de-c8f4-4d26-bc9e-e6bcbfd3fc0e/resource/0492cda8-d990-4f8f-b75b-1e6869ea5ce1/download/a577a14e-8481-4761-8221-f40c893522e6.pdf"
+    }
+   ]
+  },
+  {
+   "name": "citizens-manifesto-for-maharashtra-s-municipal-elections-2025",
+   "title": "Citizens' Manifesto for Maharashtra's Municipal Elections 2025",
+   "organization": "academic-institution",
+   "license_title": "Creative Commons Non-Commercial (Any)",
+   "metadata_modified": "2025-12-08T10:16:11.146021",
+   "publisher_url": "praja.org",
+   "resources": [
+    {
+     "name": "Citizens Manifesto For Maharashtras Municipal Elections 2025",
+     "format": "PDF",
+     "size": 9780374,
+     "last_modified": "2025-12-08T10:00:50.923611",
+     "url": "https://data.opencity.in/dataset/3f31ed0f-f1f6-45b9-bbca-6a269e712eb3/resource/119badbb-8c3b-4287-bfed-f42dd6c5f257/download/citizens-manifesto-for-maharashtras-municipal-elections-2025_full-report.pdf"
+    }
+   ]
+  },
+  {
+   "name": "maharashtra-water-bodies-census-data",
+   "title": "Pune, Thane and Maharashtra Water Bodies Census Data",
+   "organization": "ministry-of-jal-shakti",
+   "license_title": "Creative Commons Non-Commercial (Any)",
+   "metadata_modified": "2025-11-27T12:37:46.836991",
+   "publisher_url": "https://jalshakti-dowr.gov.in/",
+   "resources": [
+    {
+     "name": "Pune Water Census Map 2023",
+     "format": "KML",
+     "size": 6758124,
+     "last_modified": "2025-11-25T15:11:21.410675",
+     "url": "https://data.opencity.in/dataset/abd62847-cb00-4f09-b54c-bd63ee140775/resource/66a4e135-2fc8-4bda-8216-ecc162eb9e29/download/20c62d61-11e7-4eee-8200-6dc0c3fe640b.kml"
+    },
+    {
+     "name": "Thane Water Census Map 2023",
+     "format": "KML",
+     "size": 2368829,
+     "last_modified": "2025-11-25T15:11:21.692466",
+     "url": "https://data.opencity.in/dataset/abd62847-cb00-4f09-b54c-bd63ee140775/resource/c94cfbc8-36a8-4f78-ad01-5dd32befdf16/download/3fc5f576-31c6-4cd5-8ff4-90cf76b92e56.kml"
+    },
+    {
+     "name": "Maharashtra Water Census Map 2023 - Part 1",
+     "format": "KML",
+     "size": 64240667,
+     "last_modified": "2025-11-25T15:11:22.512939",
+     "url": "https://data.opencity.in/dataset/abd62847-cb00-4f09-b54c-bd63ee140775/resource/ad724f80-98fb-4e21-af14-fb7055a6c234/download/02547faa-a5b6-4c57-9eca-9766edbf79ae.kml"
+    },
+    {
+     "name": "Maharashtra Water Census Map 2023 - Part 2",
+     "format": "KML",
+     "size": 60270412,
+     "last_modified": "2025-11-25T15:11:23.423464",
+     "url": "https://data.opencity.in/dataset/abd62847-cb00-4f09-b54c-bd63ee140775/resource/6bf92a55-78fe-4768-9c4f-c6ca0c663f1c/download/5b31dc97-1d4c-4bd4-9d0d-1636b9591df9.kml"
+    },
+    {
+     "name": "Maharashtra Water Census Map 2023 - Part 3",
+     "format": "KML",
+     "size": 55111421,
+     "last_modified": "2025-11-25T15:11:24.264907",
+     "url": "https://data.opencity.in/dataset/abd62847-cb00-4f09-b54c-bd63ee140775/resource/df2b83ec-a5d6-4da7-8a73-7b3e35c00981/download/40a9ca16-313b-4591-ad33-f3d580c4e127.kml"
+    }
+   ]
+  },
+  {
+   "name": "pmc-budgets",
+   "title": "PMC Budgets",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-03-12T06:23:48.759152",
+   "resources": [
+    {
+     "name": "Budget 2026-27 Document in Marathi",
+     "format": "PDF",
+     "size": 13810665,
+     "last_modified": "2026-03-12T06:22:59.078208",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/6838072d-de9c-4c33-8b61-860c9f27e12c/download/pmc-budget-2026-27_-9.3.26-1.00-pm_0.pdf"
+    },
+    {
+     "name": "Budget Speech 2026-27 in Marathi",
+     "format": "PDF",
+     "size": 1494994,
+     "last_modified": "2026-03-12T06:23:19.468362",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/97ba1e08-0841-4f8c-95c9-2a3b1fa67968/download/2627-mc-budget-speech-naval-kishore-ram_0.pdf"
+    },
+    {
+     "name": "PMC Budget 2025-26 in Marathi",
+     "format": "PDF",
+     "size": 624271,
+     "last_modified": "2025-11-25T15:39:46.636419",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/ed131f82-e48d-4ce7-9564-0c54c482d433/download/936a96e9-59da-4654-b9e4-01697b763f38.pdf"
+    },
+    {
+     "name": "PMC Budget Tables 2025-26",
+     "format": "XLSX",
+     "size": 888166,
+     "last_modified": "2026-03-04T07:36:50.633646",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/28ee5b89-d041-4996-b37e-26ccaaf0134d/download/2526-pmc-budget_1.xlsx"
+    },
+    {
+     "name": "Budget Speech 2025-26 in Marathi",
+     "format": "PDF",
+     "size": 624271,
+     "last_modified": "2025-11-25T15:39:46.965202",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/db6e2886-5066-48df-8e4e-c467412b7c32/download/c1e6feba-5865-43c1-988d-04c8ac16b18b.pdf"
+    },
+    {
+     "name": "PMC Budget 2023-24",
+     "format": "PDF",
+     "size": 1890627,
+     "last_modified": "2025-11-25T15:39:47.335602",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/afc6e428-f719-48d5-839c-fe16d72cadcc/download/0d93b396-5af5-4f1c-b6f5-fa6ec2651257.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2022-23",
+     "format": "PDF",
+     "size": 7116300,
+     "last_modified": "2025-11-25T15:39:47.775345",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/0ba66897-f28a-42fa-b0ce-6de986a52211/download/b47a4466-4cdd-45ba-8edd-88981791f927.pdf"
+    },
+    {
+     "name": "PMC Budget Speech 2022-23",
+     "format": "PDF",
+     "size": 1017306,
+     "last_modified": "2025-11-25T15:39:48.198620",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/06af4778-7ca6-4e70-b8a0-35fb3ab422a1/download/6ad26306-8c64-4db7-9c5c-7c28ee4a7fbc.pdf"
+    },
+    {
+     "name": "PMC Budget Speech 2021-22",
+     "format": "PDF",
+     "size": 523380,
+     "last_modified": "2025-11-25T15:39:48.568082",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/03c25d07-6251-45a4-9437-9d071f4584db/download/549e2e9f-bad7-4f73-97b1-304ef01c0e8f.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2021-22",
+     "format": "PDF",
+     "size": 6976928,
+     "last_modified": "2025-11-25T15:39:49.036944",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/ff8976b1-f378-490d-a337-dd47ea9e9326/download/e2e1314d-c496-404f-8bad-355aea0e540e.pdf"
+    },
+    {
+     "name": "PMC Budget Book 2021-22",
+     "format": "PDF",
+     "size": 5200296,
+     "last_modified": "2025-11-25T15:39:49.501464",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/85324c32-fe78-4c2e-8b4c-71dc305c7293/download/9dc1a194-777c-4964-afba-ec86aef062c1.pdf"
+    },
+    {
+     "name": "PMC Budget Speech 2020-21",
+     "format": "PDF",
+     "size": 469785,
+     "last_modified": "2025-11-25T15:39:49.988217",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/4fdc38b6-6046-4bc8-afb4-6da2a37ea20c/download/3268b94b-2b30-4945-af9d-d04c15b5c3d5.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2020-21",
+     "format": "PDF",
+     "size": 4091144,
+     "last_modified": "2025-11-25T15:39:50.488320",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/25c219b2-0705-45db-a2ae-d30309730be3/download/ed6eb3a7-a0b1-4830-a842-ebe368677f5e.pdf"
+    },
+    {
+     "name": "PMC Budget Book 2020-21",
+     "format": "XLS",
+     "size": 2180096,
+     "last_modified": "2025-11-25T15:39:50.993430",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/c88462ae-7eb4-4e9b-a0a7-fbf481566f6b/download/908c0635-e253-458c-b61f-f63584694712.xls"
+    },
+    {
+     "name": "PMC Budget Book 2019-20",
+     "format": "PDF",
+     "size": 4277870,
+     "last_modified": "2025-11-25T15:39:51.541837",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/9b21fd15-5457-444d-8c1b-c4396175e223/download/098b86ae-f4b3-457e-8bff-b68eac28eede.pdf"
+    },
+    {
+     "name": "PMC Budget Speech 2019-20",
+     "format": "PDF",
+     "size": 407296,
+     "last_modified": "2025-11-25T15:39:52.038723",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/fd6147bb-3125-4dc3-a599-bf2167243295/download/b27f2f1d-9d79-4c62-a8e3-834dcd6c3616.pdf"
+    },
+    {
+     "name": "PMC Budget Speech 2018-19",
+     "format": "PDF",
+     "size": 414327,
+     "last_modified": "2025-11-25T15:39:52.531569",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/32d90645-3c06-4f8a-8b7b-f4c3e4c51f97/download/6c6a7e93-4475-40b3-9e49-edd789c94689.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2018-19",
+     "format": "PDF",
+     "size": 3763821,
+     "last_modified": "2025-11-25T15:39:53.031004",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/9d42faca-718d-49c7-9bad-9ac2d56be40a/download/56472dfd-e0b2-4390-ade2-d5e255fa7b02.pdf"
+    },
+    {
+     "name": "PMC Budget Book 2018-19",
+     "format": "XLSX",
+     "size": 1720682,
+     "last_modified": "2025-11-25T15:39:53.595221",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/e9f221a8-f699-43e2-aa2a-a8f83531b0ee/download/e8a12118-4998-4bfa-8285-f214bdc2227b.xlsx"
+    },
+    {
+     "name": "PMC Budget Speech 2017-18",
+     "format": "PDF",
+     "size": 525833,
+     "last_modified": "2025-11-25T15:39:54.169870",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/37533e48-41de-4352-864b-fafa0018a221/download/68589ba2-5775-4aa2-bb52-00ca854566da.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2017-18",
+     "format": "PDF",
+     "size": 2020627,
+     "last_modified": "2025-11-25T15:39:54.759031",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/2d917bd1-5ab9-4379-a75c-d483586b28aa/download/112b87b5-a4c4-49d3-98ab-dd31d694a32c.pdf"
+    },
+    {
+     "name": "PMC Budget Book 2017-18",
+     "format": "XLSX",
+     "size": 988665,
+     "last_modified": "2025-11-25T15:39:55.361684",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/602d114f-6902-4545-b818-f92db8ddc185/download/4de648eb-5e3f-4085-a3c6-8bd929c5d6bc.xlsx"
+    },
+    {
+     "name": "PMC Budget Speech 2016-17",
+     "format": "PDF",
+     "size": 5373952,
+     "last_modified": "2025-11-25T15:39:56.008701",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/152f3dd5-d21d-4210-b1e1-2a3b3b237a43/download/5bf9adf0-4b03-4c6c-8a98-a8743f7a4c3a.pdf"
+    },
+    {
+     "name": "PMC Budget Presentation 2016-17",
+     "format": "PDF",
+     "size": 8306688,
+     "last_modified": "2025-11-25T15:39:56.690482",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/789799c1-3b76-43cb-be88-86ad0808d09c/download/76462641-d3ef-4d27-bb8f-ba28fe7778e9.pdf"
+    },
+    {
+     "name": "PMC Budget Book 2016-17",
+     "format": "PDF",
+     "size": 55476224,
+     "last_modified": "2025-11-25T15:39:57.678596",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/4b44953d-ba56-4b66-9844-0e735db31a77/download/f9e87f88-1748-448c-9a00-295df1b75544.pdf"
+    },
+    {
+     "name": "PMC Budget Numbers 2016-17",
+     "format": "PDF",
+     "size": 9111186,
+     "last_modified": "2025-11-25T15:39:58.421029",
+     "url": "https://data.opencity.in/dataset/1a8575f6-0ba7-431c-a346-e98335825a12/resource/2adeb7da-24cf-47b0-b782-5c5fd185ef98/download/a48a31ff-7bb5-4ecf-bba9-63c9eb114e77.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pmc-election-results-2026",
+   "title": "PMC Election Results 2026",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-01-28T11:26:49.808025",
+   "resources": [
+    {
+     "name": "PMC Election Results Official Gazette",
+     "format": "PDF",
+     "size": 1046002,
+     "last_modified": "2026-01-28T11:25:49.195979",
+     "url": "https://data.opencity.in/dataset/bab43521-68f4-4909-a9c0-7dac9bf164f2/resource/83a78e09-629c-4ae4-bb56-405d3be3d1f1/download/pune-1.pdf"
+    },
+    {
+     "name": "Ward-wise Winner of PMC Elections 2026",
+     "format": "CSV",
+     "size": 8217,
+     "last_modified": "2026-01-28T11:26:47.090724",
+     "url": "https://data.opencity.in/dataset/bab43521-68f4-4909-a9c0-7dac9bf164f2/resource/ac74e3a3-0fce-4ce5-bcdf-b3b6271ae722/download/pmc-election-results.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-annual-births-and-deaths-data",
+   "title": "Pune - Annual Births and Deaths Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:03.151149",
+   "resources": [
+    {
+     "name": "Pune - Annual Births and Deaths by Gender 1975-2018",
+     "format": "CSV",
+     "size": 1328,
+     "last_modified": "2025-11-25T15:42:59.298697",
+     "url": "https://data.opencity.in/dataset/c0b9195f-c62c-478c-aa16-b905d23d98e7/resource/e9751188-8864-443e-9b3a-824a86d198a5/download/ce61ed64-f432-4d2e-a507-5c98215e8389.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-aviation-traffic-data",
+   "title": "Pune Aviation Traffic Data",
+   "organization": "government-of-india",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-01-28T04:09:15.503899",
+   "publisher_url": "https://www.dgca.gov.in/",
+   "resources": [
+    {
+     "name": "Monthly Domestic Flights Data - 2015",
+     "format": "CSV",
+     "size": 5795,
+     "last_modified": "2025-11-25T15:43:12.848840",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/b6a13548-01f0-4b67-8265-6180aaec77e4/download/6761975e-0a33-42ec-bc50-a61ab1eea322.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2016",
+     "format": "CSV",
+     "size": 8550,
+     "last_modified": "2025-11-25T15:43:13.149792",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/fc149bd3-2d25-43f0-9a10-aecb7f60b6be/download/5d647bc3-e9f3-4d22-a48c-0bc761e74bbe.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2017",
+     "format": "CSV",
+     "size": 9669,
+     "last_modified": "2025-11-25T15:43:13.491248",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/225c02a6-ab78-436a-a2e3-722490affa8b/download/5f8fdfd6-07f6-4cd2-9817-3cd8e5827cca.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2018",
+     "format": "CSV",
+     "size": 16071,
+     "last_modified": "2025-11-25T15:43:13.844445",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/ffe044ff-3067-415c-9e2a-9b912808817d/download/27733cbf-3913-46e9-9ad0-f8d790fb670e.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2019",
+     "format": "CSV",
+     "size": 12831,
+     "last_modified": "2025-11-25T15:43:14.235141",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/d3cd4706-8b88-4d62-a659-b8d9fd8d86dc/download/a636b81e-c075-4343-9fdd-dd9ba4c06283.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2020",
+     "format": "CSV",
+     "size": 11253,
+     "last_modified": "2025-11-25T15:43:14.630455",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/95cf3caa-bef0-4f34-a2a3-15a19f13d108/download/26eaff38-37f9-497f-a88c-0290a5f03e8d.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2021",
+     "format": "CSV",
+     "size": 16553,
+     "last_modified": "2025-11-25T15:43:15.031176",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/7f8565f2-82f2-4adc-ba0c-ab56261ce74a/download/fb354d6a-43fa-4f94-bed4-4a85327d15ce.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2022",
+     "format": "CSV",
+     "size": 21183,
+     "last_modified": "2025-11-25T15:43:15.469170",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/4c964831-26c7-4716-91ae-0bbe395798c5/download/54c05e8a-d77c-40c0-a5b1-fff5651e6698.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2023",
+     "format": "CSV",
+     "size": 23466,
+     "last_modified": "2025-11-25T15:43:15.899934",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/eabca915-8f36-418f-b065-8beeaddcc8b0/download/018d9453-70d7-47d0-b6c5-66522068b94a.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2024 (Till June)",
+     "format": "CSV",
+     "size": 14590,
+     "last_modified": "2025-11-25T15:43:16.332610",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/168af38e-4e81-467d-9f3c-f6718291c2fd/download/cae38f61-90fc-4c32-9a24-9130716e17de.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2015",
+     "format": "CSV",
+     "size": 750,
+     "last_modified": "2025-11-25T15:43:16.759753",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/887eca23-5b34-4284-8542-1979bb80b994/download/861a7acf-8d33-4918-bbb7-3c0350138517.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2016",
+     "format": "CSV",
+     "size": 745,
+     "last_modified": "2025-11-25T15:43:17.214743",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/9ed621d3-cecd-47cb-87bd-115f727e3929/download/aead6fec-297d-4c63-b3ee-6af48bf8501d.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2017",
+     "format": "CSV",
+     "size": 747,
+     "last_modified": "2025-11-25T15:43:17.665291",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/6304ec72-b99a-4a3f-8094-c8f6f08dc607/download/c7ae2781-7455-496f-af87-49052304809c.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2018",
+     "format": "CSV",
+     "size": 643,
+     "last_modified": "2025-11-25T15:43:18.152004",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/c6aa2248-e2ff-47a5-8126-63131275e773/download/e52460f2-c6f8-4a31-b093-d1fe97e62a2b.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2019",
+     "format": "CSV",
+     "size": 392,
+     "last_modified": "2025-11-25T15:43:18.630081",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/382e19d3-b0b2-41b7-98ff-4ee3a14077e5/download/0565c2ad-99dc-48b7-a357-7a36d6c00eb6.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2020",
+     "format": "CSV",
+     "size": 423,
+     "last_modified": "2025-11-25T15:43:19.134027",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/4819945a-cf38-4e6c-9200-57578ba4e39a/download/40c92968-89ba-4a25-96a8-f3f25b3bb60b.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2021",
+     "format": "CSV",
+     "size": 130,
+     "last_modified": "2025-11-25T15:43:19.625296",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/b3e42693-8f4b-4d0f-972a-92dba978e9e1/download/90185d1f-d285-4f8d-a123-1355b223314f.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2022",
+     "format": "CSV",
+     "size": 380,
+     "last_modified": "2025-11-25T15:43:20.147125",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/fee1fcb9-745b-4020-836c-247b401f9fa5/download/90d409c1-978a-4b3e-a7fe-bed870541133.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2023",
+     "format": "CSV",
+     "size": 509,
+     "last_modified": "2025-11-25T15:43:20.747091",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/32ee75de-a0d6-4be0-814b-42de9f626456/download/14eaf9dc-d9be-47dc-b53f-eee828bf978e.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2024",
+     "format": "CSV",
+     "size": 303,
+     "last_modified": "2025-11-25T15:43:21.319199",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/b830d2e9-9fb4-41fb-bbcf-4ca044f5aecf/download/1960934c-2877-4b31-a0e0-fede700d358a.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2024",
+     "format": "CSV",
+     "size": 23386,
+     "last_modified": "2026-01-28T04:09:04.677318",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/5d0721b5-a346-4430-a77e-f1674acf7923/download/pune-2024-domestic.csv"
+    },
+    {
+     "name": "Monthly Domestic Flights Data - 2025",
+     "format": "CSV",
+     "size": 22308,
+     "last_modified": "2026-01-28T04:09:07.770972",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/e65e01e5-c805-4cad-972f-8561c5e04cc9/download/pune-2025-domestic.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2024",
+     "format": "CSV",
+     "size": 519,
+     "last_modified": "2026-01-28T04:09:10.660977",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/4ceb4d4f-bc79-449d-8f9a-6b90cf3fedde/download/pune-2024-international.csv"
+    },
+    {
+     "name": "Quarterly International Flights Data - 2024",
+     "format": "CSV",
+     "size": 439,
+     "last_modified": "2026-01-28T04:09:13.276339",
+     "url": "https://data.opencity.in/dataset/c17c3d72-1b52-4a13-beab-8c73132d52bd/resource/0990e279-f000-4212-a3cd-560b9c4db990/download/pune-2025-international.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-bus-stops-and-routes",
+   "title": "Pune Bus Stops and Routes",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:15:10.279069",
+   "resources": [
+    {
+     "name": "Pune PMPML Bus Stops Map",
+     "format": "KML",
+     "size": 5065991,
+     "last_modified": "2025-11-25T15:43:33.643876",
+     "url": "https://data.opencity.in/dataset/30dd0c51-61d4-4085-99ab-9a8aec97b329/resource/2c43a9a6-9a58-48dd-8891-e5f3dbe9120c/download/46c96db4-af62-4b84-a479-5a0279a8f44a.kml"
+    },
+    {
+     "name": "Pune PMPML Bus Depots Map",
+     "format": "KML",
+     "size": 7618,
+     "last_modified": "2025-11-25T15:43:34.060085",
+     "url": "https://data.opencity.in/dataset/30dd0c51-61d4-4085-99ab-9a8aec97b329/resource/b5bad569-1c37-4dd7-9267-993a6edf8a1b/download/17f84424-1769-45a2-84d5-76f0089f7e3a.kml"
+    },
+    {
+     "name": "Pune PMPML Bus Routes List",
+     "format": "CSV",
+     "size": 115593,
+     "last_modified": "2025-11-25T15:43:34.395282",
+     "url": "https://data.opencity.in/dataset/30dd0c51-61d4-4085-99ab-9a8aec97b329/resource/433caa89-75e2-474d-b5d6-db8fd7a3171d/download/c91c0878-b4f9-419f-8d7c-97eb6c7a9083.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-census-2011-data",
+   "title": "Pune - Census 2011 Data",
+   "organization": "office-of-the-registrar-general-census-commissioner-india-orgi",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:38:47.905262",
+   "publisher_url": "http://opendata.punecorporation.org",
+   "resources": [
+    {
+     "name": "Pune - Ward-wise Census Data 2011",
+     "format": "CSV",
+     "size": 12796,
+     "last_modified": "2025-11-25T15:43:46.381104",
+     "url": "https://data.opencity.in/dataset/ed14d426-552a-43eb-adfa-dbfd3afbd068/resource/49f1fca6-6904-48de-ad4c-199108048658/download/aa1addf9-77d6-4990-b65c-20f0439fa1f5.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Census Data With Names 2011",
+     "format": "PDF",
+     "size": 85646,
+     "last_modified": "2025-11-25T15:43:46.718640",
+     "url": "https://data.opencity.in/dataset/ed14d426-552a-43eb-adfa-dbfd3afbd068/resource/1b44078b-4791-4aae-ba2c-61cd1ada4de4/download/8c31db87-36da-4535-9b38-bb147f074412.pdf"
+    },
+    {
+     "name": "Pune Census 2011 Data",
+     "format": "CSV",
+     "size": 28504,
+     "last_modified": "2025-11-25T15:43:47.099705",
+     "url": "https://data.opencity.in/dataset/ed14d426-552a-43eb-adfa-dbfd3afbd068/resource/0418cf26-969c-4190-9542-70b1fc8500d2/download/fcaa315c-2d63-42ad-81b6-07e7c02debf4.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-census-data-1981-2001",
+   "title": "Pune Census Data 1981-2001",
+   "organization": "office-of-the-registrar-general-census-commissioner-india-orgi",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:38:47.630734",
+   "publisher_url": "http://opendata.punecorporation.org",
+   "resources": [
+    {
+     "name": "Pune Census 2001 Data",
+     "format": "CSV",
+     "size": 33572,
+     "last_modified": "2025-11-25T15:43:59.080127",
+     "url": "https://data.opencity.in/dataset/c6894897-94ba-4c95-8445-0944943cfb28/resource/8d73f883-070c-488f-a90f-eb9cd21c0844/download/1384de7a-99ea-4d61-8cdb-bee9f5554551.csv"
+    },
+    {
+     "name": "Pune Census 1991 Data",
+     "format": "CSV",
+     "size": 10057,
+     "last_modified": "2025-11-25T15:43:59.427089",
+     "url": "https://data.opencity.in/dataset/c6894897-94ba-4c95-8445-0944943cfb28/resource/5483fd06-d568-4017-b519-2fa40ca4f9c7/download/ca9dc822-ba6d-49da-8f19-bb504a4c2fbd.csv"
+    },
+    {
+     "name": "Pune Census 1981 Data",
+     "format": "CSV",
+     "size": 7722,
+     "last_modified": "2025-11-25T15:43:59.806201",
+     "url": "https://data.opencity.in/dataset/c6894897-94ba-4c95-8445-0944943cfb28/resource/c31ee0e0-06c7-4ffb-beef-39afaaa73df4/download/1ae309d5-fd61-49d3-a57c-200519791ec8.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-climate-action-plan",
+   "title": "Pune Climate Action Plan",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:37.179154",
+   "resources": [
+    {
+     "name": "Pune Climate Action Plan Full Document",
+     "format": "PDF",
+     "size": 56415146,
+     "last_modified": "2025-11-25T15:44:13.167154",
+     "url": "https://data.opencity.in/dataset/4ab4598e-89fa-4ec2-bcd3-916c081f938f/resource/fc8c8fd6-72ff-469f-b4d7-519e701209f9/download/155e6d7f-df97-4575-a48d-2b0319436b5e.pdf"
+    },
+    {
+     "name": "Pune Climate Action Plan Executive Summary",
+     "format": "PDF",
+     "size": 1040124,
+     "last_modified": "2025-11-25T15:44:13.575168",
+     "url": "https://data.opencity.in/dataset/4ab4598e-89fa-4ec2-bcd3-916c081f938f/resource/f1b9b4d3-2285-481d-926a-211fbcb964c3/download/7e19d63d-bb7c-4ea3-9cf7-8d0cfa5b1a73.pdf"
+    },
+    {
+     "name": "Pune Climate Action Plan Annexure",
+     "format": "PDF",
+     "size": 704505,
+     "last_modified": "2025-11-25T15:44:14.003993",
+     "url": "https://data.opencity.in/dataset/4ab4598e-89fa-4ec2-bcd3-916c081f938f/resource/f9843af4-b1bb-4f67-a5c1-bb207d26b462/download/36fe3b85-524a-4eab-8b91-69891cd86ff1.pdf"
+    },
+    {
+     "name": "Pune Climate Action Plan Recommendations",
+     "format": "PDF",
+     "size": 22598078,
+     "last_modified": "2025-11-25T15:44:14.547037",
+     "url": "https://data.opencity.in/dataset/4ab4598e-89fa-4ec2-bcd3-916c081f938f/resource/17816234-e565-43cb-82d6-c6bb0ab434eb/download/20a0053a-04dc-4035-be7b-b70f4260bfa6.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-comprehensive-mobility-plan",
+   "title": "Pune Comprehensive Mobility Plan",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:32.168636",
+   "resources": [
+    {
+     "name": "Comprehensive Mobility Plan for Pune City 2008",
+     "format": "PDF",
+     "size": 34495353,
+     "last_modified": "2025-11-25T15:44:26.988897",
+     "url": "https://data.opencity.in/dataset/bb6b3dc4-6ff5-42bf-b41f-3d823a4e8ef8/resource/e883b43e-aaa8-4411-bfa8-860f05154f5d/download/9d5dca7b-5ddb-4c91-b9f8-cae4acbef71c.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-construction-bye-laws",
+   "title": "Pune Construction Bye-laws",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:41:01.874697",
+   "resources": [
+    {
+     "name": "Development Control and Promotion Regulations - 2015 - Vol 1",
+     "format": "PDF",
+     "size": 1487722,
+     "last_modified": "2025-11-25T15:44:38.912305",
+     "url": "https://data.opencity.in/dataset/cbdc6f71-9953-4f68-9827-ec827e9c451f/resource/9390f820-838e-4675-9d5d-7f5b7ab38a8b/download/641ebb15-06d3-4aa4-8afb-32bb658c6c88.pdf"
+    },
+    {
+     "name": "DCPR Appendices 2015 - Vol 2",
+     "format": "PDF",
+     "size": 1131928,
+     "last_modified": "2025-11-25T15:44:39.233310",
+     "url": "https://data.opencity.in/dataset/cbdc6f71-9953-4f68-9827-ec827e9c451f/resource/28b8e93a-c9d2-4cb9-b9c3-87098625ab3f/download/96682585-ce6c-4975-bf32-d4ffbd6a4533.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-crematoriums-and-burial-grounds",
+   "title": "Pune Crematoriums and Burial Grounds",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-12-09T04:47:55.016907",
+   "resources": [
+    {
+     "name": "pmc_cremation_grounds.kml",
+     "format": "KML",
+     "size": 113694,
+     "last_modified": "2025-12-09T04:47:54.674706",
+     "url": "https://data.opencity.in/dataset/e052723f-946f-4a84-a6c8-78cce5699c8c/resource/801abd42-ccdc-46cb-8e20-30aaf9f5582e/download/pmc_cremation_grounds.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-diseases-and-causes-of-deaths-data",
+   "title": "Pune Diseases and Causes of Deaths Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:02.793031",
+   "resources": [
+    {
+     "name": "Diseases - Cases and Deaths 2015",
+     "format": "CSV",
+     "size": 4085,
+     "last_modified": "2025-11-25T15:44:51.318741",
+     "url": "https://data.opencity.in/dataset/938ecb74-d428-4188-8cd4-a62764a85bab/resource/5d8ca718-f99e-41ad-8166-bfc882e8f30b/download/5ad1c569-d9eb-477a-8162-00cb317a8419.csv"
+    },
+    {
+     "name": "Diseases - Cases and Deaths 2016",
+     "format": "CSV",
+     "size": 5839,
+     "last_modified": "2025-11-25T15:44:51.627151",
+     "url": "https://data.opencity.in/dataset/938ecb74-d428-4188-8cd4-a62764a85bab/resource/7e5ab9bb-a855-40bf-991d-50d23d76752f/download/54347733-7927-4346-a291-8dc8ab24492c.csv"
+    },
+    {
+     "name": "Diseases - Cases and Deaths 2017",
+     "format": "CSV",
+     "size": 6026,
+     "last_modified": "2025-11-25T15:44:51.989523",
+     "url": "https://data.opencity.in/dataset/938ecb74-d428-4188-8cd4-a62764a85bab/resource/c2f1b704-822f-4cc3-a49b-c0a4b64389a1/download/d570d0f7-6a0d-4838-bd00-514f8cdc0f31.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-draft-city-development-plan-2041",
+   "title": "Pune Draft City Development Plan - 2041",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:41:10.102296",
+   "resources": [
+    {
+     "name": "Pune City Development Plan 2041 - Vol I",
+     "format": "PDF",
+     "size": 18762616,
+     "last_modified": "2025-11-25T15:45:04.288943",
+     "url": "https://data.opencity.in/dataset/9abcbbcc-f2c5-490f-b2d8-e533a63b06ca/resource/ea4815af-cd28-4fed-8e43-a07df1307d37/download/1081213c-239f-4359-8123-4f2e1c5dd37f.pdf"
+    },
+    {
+     "name": "Pune City Development Plan 2041 - Vol II",
+     "format": "PDF",
+     "size": 22499275,
+     "last_modified": "2025-11-25T15:45:04.819198",
+     "url": "https://data.opencity.in/dataset/9abcbbcc-f2c5-490f-b2d8-e533a63b06ca/resource/1d22fdf4-d5ac-45e4-a116-aa696aa9c475/download/6e13bdc6-bf4f-4934-a07e-5df12775b6cb.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-economic-census",
+   "title": "Pune - Economic Census",
+   "organization": "office-of-the-registrar-general-census-commissioner-india-orgi",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:05.530423",
+   "publisher_url": "microdata.gov.in",
+   "resources": [
+    {
+     "name": "Pune Economic Census Data - 2013",
+     "format": "CSV",
+     "size": 30879601,
+     "last_modified": "2025-11-25T15:45:17.522662",
+     "url": "https://data.opencity.in/dataset/295d3305-64c2-4950-8153-36c21922d105/resource/9d86d92f-6763-44ec-9f0b-a43b5250857e/download/548fe203-19e1-4662-b9a3-4f1b5de50631.csv"
+    },
+    {
+     "name": "Metadata Descriptions for the 6th Economic Census",
+     "format": "CSV",
+     "size": 3530,
+     "last_modified": "2025-11-25T15:45:17.999600",
+     "url": "https://data.opencity.in/dataset/295d3305-64c2-4950-8153-36c21922d105/resource/6abfa141-6843-4a20-8664-a8e60217dd14/download/5de8775c-9c77-4395-8cfb-f9340dcc3486.csv"
+    },
+    {
+     "name": "Mhada Colony IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 9888920,
+     "last_modified": "2026-01-15T06:35:34.323954",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/938b7b23-63b7-479b-a7aa-2afc32c1ad09/download/pune-mhada-colony-iitm-2024-25.csv"
+    },
+    {
+     "name": "Panchawati_Pashan IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 11280260,
+     "last_modified": "2026-01-15T06:35:38.544480",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/da12ee9d-21bf-4f5d-98d4-052b3a85c216/download/pune-panchawati_pashan-iitm-2024-25.csv"
+    },
+    {
+     "name": "Revenue Colony Shivajinagar 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 11224425,
+     "last_modified": "2026-01-15T06:35:42.867919",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/de7ed9dd-5be3-4e9d-b142-85a85f4d910d/download/pune-revenue-colony-shivajinagar-iitm-2024-25.csv"
+    },
+    {
+     "name": "Savitribai Phule Pune University MPCB 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 14713165,
+     "last_modified": "2026-01-15T06:35:47.564781",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/bcd8e8ae-d0f7-466f-a502-913e4bca220b/download/pune-savitribai-phule-pune-university-mpcb-2024-25.csv"
+    },
+    {
+     "name": "Transport Nagar Nigdi 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 9483219,
+     "last_modified": "2026-01-15T06:35:51.538636",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/0aaa077d-2dfd-4b22-9fad-485357f075a8/download/pune-transport-nagar-nigdi-iitm-2024-25.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-electricity-consumption-data",
+   "title": "Pune Electricity Consumption Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:24:45.008565",
+   "resources": [
+    {
+     "name": "Pune Electricity Consumption 2013-14 to 2017-18",
+     "format": "CSV",
+     "size": 1171,
+     "last_modified": "2025-11-25T15:45:29.830223",
+     "url": "https://data.opencity.in/dataset/91858997-ada1-4cb1-9f56-38d9c0f2c863/resource/a0dd469b-1532-4b01-8ecf-b09e12d55608/download/e7d2f9e0-9622-4601-b7df-184adbf8f930.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-fire-stations",
+   "title": "Pune Fire Stations",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:29.324448",
+   "resources": [
+    {
+     "name": "Pune Fire Stations Map",
+     "format": "KML",
+     "size": 12990,
+     "last_modified": "2025-11-25T15:45:41.793416",
+     "url": "https://data.opencity.in/dataset/49fd476d-ace4-4610-918c-cb09f4171cb2/resource/201f577f-a095-4313-b724-ae3ec3587fe7/download/d185bb0c-2307-4a7d-9106-11cd61570165.kml"
+    },
+    {
+     "name": "Pune Fire Call Statistics 2011-2020",
+     "format": "CSV",
+     "size": 1107,
+     "last_modified": "2025-11-25T15:45:42.080218",
+     "url": "https://data.opencity.in/dataset/49fd476d-ace4-4610-918c-cb09f4171cb2/resource/5bd37e88-583b-46a3-b0a4-01be071c14c0/download/ad3c3c8a-6df0-4297-86cc-5db40b7ac3f9.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-footpaths-and-roads",
+   "title": "Pune Footpaths and Roads",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:34.533971",
+   "resources": [
+    {
+     "name": "Roads and Footpaths 2016",
+     "format": "CSV",
+     "size": 4958,
+     "last_modified": "2025-11-25T15:45:54.004400",
+     "url": "https://data.opencity.in/dataset/afe477a7-60a3-44c8-bf87-78ac6ec03822/resource/223540aa-69cd-47d6-939f-2c6378594002/download/76785b37-893d-4c11-ac39-ad4dfb5e2db8.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-healthcare-hospitals-and-clinics",
+   "title": "Pune Healthcare - Hospitals and Clinics",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:25:00.616480",
+   "resources": [
+    {
+     "name": "Pune - Ward-wise Government Hospitals",
+     "format": "CSV",
+     "size": 5509,
+     "last_modified": "2025-11-25T15:46:06.123442",
+     "url": "https://data.opencity.in/dataset/f76361d3-d7f0-4d25-a62b-255053775f0b/resource/b7c847bc-2074-48fc-9197-09128ead3a58/download/6e3b9e85-8e0f-4c9f-8ae3-378b63b29aab.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Dispensaries",
+     "format": "CSV",
+     "size": 2688,
+     "last_modified": "2025-11-25T15:46:06.511143",
+     "url": "https://data.opencity.in/dataset/f76361d3-d7f0-4d25-a62b-255053775f0b/resource/cccc71d4-f154-4279-bde5-12cee90cfc7d/download/6a9f1d50-db92-4cfa-9da4-e8b335bf7b63.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Private Clinics",
+     "format": "CSV",
+     "size": 15875,
+     "last_modified": "2025-11-25T15:46:06.865942",
+     "url": "https://data.opencity.in/dataset/f76361d3-d7f0-4d25-a62b-255053775f0b/resource/20deed39-1a57-42d2-b39d-57656b589c55/download/edd85f6d-6b53-47ed-8221-8e2ca22c4eee.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Private Hospitals",
+     "format": "CSV",
+     "size": 21781,
+     "last_modified": "2025-11-25T15:46:07.254746",
+     "url": "https://data.opencity.in/dataset/f76361d3-d7f0-4d25-a62b-255053775f0b/resource/04e33225-235d-47fb-ace9-0388640b772a/download/6a6d0a58-9d4e-442b-a473-9ce40c271cae.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Hospitals with Capacity and Facilities",
+     "format": "CSV",
+     "size": 93804,
+     "last_modified": "2025-11-25T15:46:07.696951",
+     "url": "https://data.opencity.in/dataset/f76361d3-d7f0-4d25-a62b-255053775f0b/resource/7e4b6d1a-37f7-43a3-83d7-a63eaaa3aaf4/download/117354a8-7bea-4ebe-9aa4-560fcb877aa6.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-hourly-air-quality-reports",
+   "title": "Pune Hourly Air Quality Reports",
+   "organization": "central-pollution-control-board",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-01-15T09:06:07.239315",
+   "publisher_url": "airquality.cpcb.gov.in",
+   "resources": [
+    {
+     "name": "Alandi IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 105994,
+     "last_modified": "2025-11-25T15:46:21.014325",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/38290549-5b3d-4778-a916-029c70d88254/download/a9407013-dba4-48fe-afda-bb951f4f3cfe.csv"
+    },
+    {
+     "name": "Bhosari IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 101772,
+     "last_modified": "2025-11-25T15:46:21.367814",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/15d82ada-9e8f-474c-93b7-f0f616295bad/download/6c9be432-4a82-4661-972f-e4ac9be0d252.csv"
+    },
+    {
+     "name": "Hadapsar IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 93649,
+     "last_modified": "2025-11-25T15:46:21.808397",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/c5659bc4-bbcf-4a35-84b9-4f5e8270c8f5/download/5ec1c512-c3f1-4ef6-81eb-4a5147241377.csv"
+    },
+    {
+     "name": "Karve Road MPCB AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 221666,
+     "last_modified": "2025-11-25T15:46:22.214071",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/a00761c0-a1a7-4513-b58b-2f940b8b64ff/download/f421cdb4-57de-42ad-bd16-0bfd54e79cae.csv"
+    },
+    {
+     "name": "Katraj Dairy MPCB AQI Data 2023",
+     "format": "CSV",
+     "size": 27570,
+     "last_modified": "2025-11-25T15:46:22.739991",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/2eb9d843-b66f-4bf2-8080-7b7b9ea445e8/download/bce229f1-23a9-4805-acd0-e21a6c72691b.csv"
+    },
+    {
+     "name": "Mhada Colony IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 145157,
+     "last_modified": "2025-11-25T15:46:23.194726",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/34d740b6-8912-4df8-907d-d782e1f0aafa/download/697e0d85-930c-4990-972f-1ad9eac2db05.csv"
+    },
+    {
+     "name": "MIT-Kothrud IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 101861,
+     "last_modified": "2025-11-25T15:46:23.720795",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/98aad25d-5975-4afc-8c01-e96abb2ce9bc/download/7ac0c4c7-01a3-4311-8617-41a0b1cf03d9.csv"
+    },
+    {
+     "name": "Revenue Colony-Shivajinagar IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 136965,
+     "last_modified": "2025-11-25T15:46:24.200781",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/cccbaca5-350c-4725-8a80-a4431c71caf6/download/fbf99e33-887b-4a97-8861-fe44d24cb48a.csv"
+    },
+    {
+     "name": "Savitribai Phule University MPCB AQI Data 2023",
+     "format": "CSV",
+     "size": 25482,
+     "last_modified": "2025-11-25T15:46:24.690834",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/38a40ce7-ef14-48c0-8855-352470c763f6/download/932cbc17-1ef0-4c1c-ada6-fa63221b4459.csv"
+    },
+    {
+     "name": "Transport Nagar-Nigdi IITM AQI Data 2017-2023",
+     "format": "CSV",
+     "size": 108982,
+     "last_modified": "2025-11-25T15:46:25.209713",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/64cfe8b6-edff-446a-8083-d27fa5b9269f/download/3db44ac9-ef90-41c4-b915-ff751de81679.csv"
+    },
+    {
+     "name": "Alandi IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 3833770,
+     "last_modified": "2026-01-15T06:35:08.575224",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/70f9292d-f5ab-4b7d-8220-481b3e8c4ace/download/pune-alandi-iitm-2024-25.csv"
+    },
+    {
+     "name": "Bhosari IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 5533047,
+     "last_modified": "2026-01-15T06:35:12.013222",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/c6bdd375-eacc-4584-bc64-82d139fd344f/download/pune-bhosari-iitm-2024-25.csv"
+    },
+    {
+     "name": "Bhumkar Nagar IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 11151401,
+     "last_modified": "2026-01-15T06:35:16.158680",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/7cc44628-08e5-40d3-b323-4e6246f5d868/download/pune-bhumkar-nagar-iitm-2024-25.csv"
+    },
+    {
+     "name": "Dhankawadi IITM 15 minute AQI Data for 2025",
+     "format": "CSV",
+     "size": 2596505,
+     "last_modified": "2026-01-15T06:35:19.148061",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/d62efc0d-c847-4c24-a5aa-a4dd2cf8b925/download/pune-dhankawadi-iitm-2025.csv"
+    },
+    {
+     "name": "Hadapsar IITM 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 4356470,
+     "last_modified": "2026-01-15T06:35:22.240863",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/59a536da-dd4d-4597-b84e-bcfc85fa2fca/download/pune-hadapsar-iitm-2024-25.csv"
+    },
+    {
+     "name": "Karve Road MPCB 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 10104589,
+     "last_modified": "2026-01-15T06:35:26.166941",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/42ae24da-8bd1-46ce-8acb-df2b3b5aa677/download/pune-karve-road-mpcb-2024-25.csv"
+    },
+    {
+     "name": "Katraj Dairy MPCB 15 minute AQI Data for 2024-25",
+     "format": "CSV",
+     "size": 12392945,
+     "last_modified": "2026-01-15T06:35:30.250479",
+     "url": "https://data.opencity.in/dataset/b16b4972-1d7e-4b7e-b1d6-23228cc63c83/resource/f427afcc-4e7d-4092-81ac-cd823584b325/download/pune-katraj-dairy-mpcb-2024-25.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-household-consumption-expenditure-survey-2022-23",
+   "title": "Pune Household Consumption Expenditure Survey - 2022-23",
+   "organization": "ministry-of-statistics-and-programme-implementation-mospi",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:57.476146",
+   "publisher_url": "microdata.gov.in",
+   "resources": [
+    {
+     "name": "HCES Level 01 Data",
+     "format": "CSV",
+     "size": 152350,
+     "last_modified": "2025-11-25T15:46:38.755673",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/be6224cc-d21d-4132-92f1-5e2e8927ea9f/download/24b395fb-12da-4cb3-af70-74e3e8d45992.csv"
+    },
+    {
+     "name": "HCES Level 02 Data",
+     "format": "CSV",
+     "size": 845376,
+     "last_modified": "2025-11-25T15:46:39.074061",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/d6985f67-672a-4ac2-9346-98e25f525f5b/download/c6e09dc2-91d7-4448-b8d9-cce404c70794.csv"
+    },
+    {
+     "name": "HCES Level 03 Data",
+     "format": "CSV",
+     "size": 294528,
+     "last_modified": "2025-11-25T15:46:39.433881",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/eaaac81a-158f-4cca-ad67-e68926805a63/download/36de4385-a48a-4e9f-801c-0fe927dc15c5.csv"
+    },
+    {
+     "name": "HCES Level 04 Data",
+     "format": "CSV",
+     "size": 197013,
+     "last_modified": "2025-11-25T15:46:39.809757",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/41cd7118-8fd5-4a1f-b082-0cfeaefbd169/download/4ceff45b-b2f1-4a4e-a337-edf66c4f9f10.csv"
+    },
+    {
+     "name": "HCES Level 05 Data",
+     "format": "CSV",
+     "size": 9073274,
+     "last_modified": "2025-11-25T15:46:40.235285",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/eeb30851-b4e3-4b9e-bd64-81b0d7ffc301/download/9929b648-d36c-4cb3-a735-72c46aa2e8bd.csv"
+    },
+    {
+     "name": "HCES Level 06 Data",
+     "format": "CSV",
+     "size": 1070789,
+     "last_modified": "2025-11-25T15:46:40.713593",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/11ba57c1-4bb7-4fc2-b2c4-e8e02c4a3113/download/ddf19545-a5ba-4557-9993-b1f92bbd3be7.csv"
+    },
+    {
+     "name": "HCES Level 07 Data",
+     "format": "CSV",
+     "size": 231377,
+     "last_modified": "2025-11-25T15:46:41.151937",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/3a15e1ca-7936-45fd-aa4a-142b806d6f0c/download/c641c4cf-d641-41a2-80c8-e0c276d165ab.csv"
+    },
+    {
+     "name": "HCES Level 08 Data",
+     "format": "CSV",
+     "size": 915386,
+     "last_modified": "2025-11-25T15:46:41.678251",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/2c18228d-6bb8-467e-a7c4-0a24ec1e3599/download/1c7b05f4-1409-46a6-a3b1-0b151a605045.csv"
+    },
+    {
+     "name": "HCES Level 09 Data",
+     "format": "CSV",
+     "size": 5258217,
+     "last_modified": "2025-11-25T15:46:42.129222",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/cdc06454-e397-4978-9580-be8f1576f9e2/download/616b3098-6b11-43ba-96f5-5fff950913f8.csv"
+    },
+    {
+     "name": "HCES Level 10 Data",
+     "format": "CSV",
+     "size": 173807,
+     "last_modified": "2025-11-25T15:46:42.653753",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/bb81d44e-e5f6-48ba-ac3d-414f1fa54abe/download/c42d2898-9bae-48a4-ac7b-f6591f6a09d9.csv"
+    },
+    {
+     "name": "HCES Level 11 Data",
+     "format": "CSV",
+     "size": 246535,
+     "last_modified": "2025-11-25T15:46:43.134934",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/8ac01fae-41d8-4a6c-b09e-e26a0640aa26/download/bb56c98d-dfc2-467f-950b-2dd468a1d033.csv"
+    },
+    {
+     "name": "HCES Level 12 Data",
+     "format": "CSV",
+     "size": 3005675,
+     "last_modified": "2025-11-25T15:46:43.650884",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/4e461de9-dd3b-40ca-ad39-ba6511f3f117/download/30789f25-d434-48b5-9cd5-db62be238fc1.csv"
+    },
+    {
+     "name": "HCES Level 13 Data",
+     "format": "CSV",
+     "size": 3333569,
+     "last_modified": "2025-11-25T15:46:44.180849",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/1c70f7f4-b795-4932-8223-1d5c10f5a00f/download/2143c2f7-aabc-4b2d-b6b1-ba8ef50253b4.csv"
+    },
+    {
+     "name": "HCES Level 14 Data",
+     "format": "CSV",
+     "size": 5349515,
+     "last_modified": "2025-11-25T15:46:44.788269",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/49427c4d-64e2-4547-ad31-89de525dc493/download/6618ee11-8a3b-4793-93fd-8e8e4e9bc8ee.csv"
+    },
+    {
+     "name": "HCES Level 15 Data",
+     "format": "CSV",
+     "size": 750899,
+     "last_modified": "2025-11-25T15:46:45.437547",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/1a34b249-35a6-4b49-826e-a4013fa89713/download/9bfc71d4-fbae-49fe-9129-4fa7e48c9fb9.csv"
+    },
+    {
+     "name": "HCES 2022 Layout File",
+     "format": "XLSX",
+     "size": 38223,
+     "last_modified": "2025-11-25T15:46:46.095698",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/1bae79f5-3388-4124-8e9b-c43f8b13f438/download/c2088b21-dfcf-434c-a764-511dcc22d3b0.xlsx"
+    },
+    {
+     "name": "HCES 2022 Questionnaire Guide",
+     "format": "PDF",
+     "size": 3551371,
+     "last_modified": "2025-11-25T15:46:46.716572",
+     "url": "https://data.opencity.in/dataset/6fa742fd-dfa0-4f21-8a1c-d435a44a69cb/resource/2f3d9cda-170c-4251-b18c-5365973ba621/download/6b9c8feb-d33d-4199-b3bf-4029a1f3c2f5.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-libraries",
+   "title": "Pune Libraries",
+   "organization": "academic-institution",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:32:14.394498",
+   "publisher_url": "http://opendata.punecorporation.org",
+   "resources": [
+    {
+     "name": "Pune Libraries List",
+     "format": "CSV",
+     "size": 7720,
+     "last_modified": "2025-11-25T15:46:58.736602",
+     "url": "https://data.opencity.in/dataset/d6df18d8-7762-4dd7-9900-558bd12822ff/resource/82bfdafd-29d1-4dc7-a6a2-4a4308405434/download/44aea791-f8b8-45da-8750-63356af78eb4.csv"
+    },
+    {
+     "name": "Pune Libraries Map",
+     "format": "KML",
+     "size": 36987,
+     "last_modified": "2025-11-25T15:46:59.142839",
+     "url": "https://data.opencity.in/dataset/d6df18d8-7762-4dd7-9900-558bd12822ff/resource/7d15eb1e-8f4c-4b23-9553-9a45985d5000/download/3121d40a-a37e-4936-86ce-c1872bf9446c.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-metro-detailed-project-report",
+   "title": "Pune Metro Detailed Project Report",
+   "organization": "government-of-maharashtra",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:31.830129",
+   "publisher_url": "punemetrorail.org",
+   "resources": [
+    {
+     "name": "Pune Metro DPR - 2015",
+     "format": "PDF",
+     "size": 26214400,
+     "last_modified": "2025-11-25T15:47:11.475205",
+     "url": "https://data.opencity.in/dataset/bc5b348a-6afd-4b7a-85d3-d81fe2379270/resource/882c45be-3365-41b7-a570-e13125758c82/download/9ac26878-b1e4-496d-8af8-9fcf56c96ff0.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-microwatersheds-map",
+   "title": "Pune Microwatersheds Map",
+   "organization": "government-of-india",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-01-20T05:09:38.927117",
+   "publisher_url": "https://slusi.da.gov.in",
+   "resources": [
+    {
+     "name": "Pune Microwatersheds Map",
+     "format": "GeoJSON",
+     "size": 13430294,
+     "last_modified": "2026-01-20T05:09:38.627786",
+     "url": "https://data.opencity.in/dataset/6126853b-7995-470b-9b05-0c29dc03a481/resource/c80ccf3b-baab-4aa4-baae-be8587e10116/download/pune_micro_watersheds.geojson"
+    }
+   ]
+  },
+  {
+   "name": "pune-nss-multi-indicator-survey-data-78th-round-2020-21",
+   "title": "Pune - NSS Multi Indicator Survey Data 78th Round 2020-21",
+   "organization": "ministry-of-statistics-and-programme-implementation-mospi",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:54.033857",
+   "publisher_url": "microdata.gov.in",
+   "resources": [
+    {
+     "name": "MIS Survey 78th Round - Level 01",
+     "format": "CSV",
+     "size": 159320,
+     "last_modified": "2025-11-25T15:47:24.265347",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/99caf1be-f14d-44a5-a1a1-cc8a79438840/download/99e9bcfd-db16-4aa1-87cf-04daa43d993f.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 02",
+     "format": "CSV",
+     "size": 768633,
+     "last_modified": "2025-11-25T15:47:24.621660",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/728e2e98-90df-4c7d-820f-ed09851c28d4/download/37c83859-1046-4d0d-95f3-d483cbab948c.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 03",
+     "format": "CSV",
+     "size": 275356,
+     "last_modified": "2025-11-25T15:47:24.963348",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/5b7dc326-acf0-41af-914a-228190c1a26e/download/58ac99b1-71a9-4a04-8189-48e1b1bec4c6.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 04",
+     "format": "CSV",
+     "size": 190421,
+     "last_modified": "2025-11-25T15:47:25.269236",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/2cb89ba7-7d73-412e-b900-3ab4e516dda4/download/7dd49e18-62ba-4b89-9493-7bd2439796a0.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 05",
+     "format": "CSV",
+     "size": 16272,
+     "last_modified": "2025-11-25T15:47:25.639210",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/78837016-6f95-4deb-bc01-6f8ddc50f795/download/81146930-6c74-4b29-bfad-d5bcbfefc844.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 06",
+     "format": "CSV",
+     "size": 7981,
+     "last_modified": "2025-11-25T15:47:26.031907",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/1b92f304-ec0c-4cfd-b1e1-11df14a18547/download/2d96389e-878b-4243-894c-45002f17293d.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 07",
+     "format": "CSV",
+     "size": 972659,
+     "last_modified": "2025-11-25T15:47:26.443697",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/a4b5c8fd-d50a-4fa4-9da3-baad6aff99bf/download/0d6a2a9c-d0b9-4a6d-842d-7bae1e9be530.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 08",
+     "format": "CSV",
+     "size": 171350,
+     "last_modified": "2025-11-25T15:47:26.844800",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/854910ea-35f3-4ba6-aed7-eb7e6c4d03ca/download/f73d4dcb-7226-495f-b107-8a6dfb84ede6.csv"
+    },
+    {
+     "name": "MIS Survey 78th Round - Level 09",
+     "format": "CSV",
+     "size": 715807,
+     "last_modified": "2025-11-25T15:47:27.246186",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/e7e14647-cac7-41a3-a0c0-368155877565/download/13d78e9e-07f9-4fa6-bc15-5840508591d2.csv"
+    },
+    {
+     "name": "MIS Layout of Data and Levels",
+     "format": "XLS",
+     "size": 89088,
+     "last_modified": "2025-11-25T15:47:27.663845",
+     "url": "https://data.opencity.in/dataset/f0c7d78d-52b2-436c-80c0-bf6d853e7e15/resource/6a04a817-93f3-43bf-8d13-89721de46cad/download/68c65577-db99-41a7-8274-eca48065735e.xls"
+    }
+   ]
+  },
+  {
+   "name": "pune-number-of-travellers-by-mode-of-transport",
+   "title": "Pune - Number of Travellers by Mode of Transport",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:35.219168",
+   "resources": [
+    {
+     "name": "Pune - Number of Travelers by Different Modes of Transport 2011-2017",
+     "format": "CSV",
+     "size": 242,
+     "last_modified": "2025-11-25T15:47:39.689115",
+     "url": "https://data.opencity.in/dataset/7c0dc1d4-c3a3-4c8c-9c29-d0a27d71b52d/resource/22c45833-3cb5-4e79-9833-5b1f5abab5ff/download/83e4a2e3-9e6c-4714-b1fe-933293d8f622.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-parks-and-gardens",
+   "title": "Pune Parks and Gardens",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:53.062949",
+   "resources": [
+    {
+     "name": "List of Parks and Gardens",
+     "format": "CSV",
+     "size": 18686,
+     "last_modified": "2025-11-25T15:47:51.675572",
+     "url": "https://data.opencity.in/dataset/c6332bb9-b70c-4320-823f-4f454dbf676c/resource/11421b8e-01ff-4eb6-89f6-70f822844ab9/download/2ca165f9-5e5b-4bd0-8a5d-f4e4ad40744c.csv"
+    },
+    {
+     "name": "Gardens with Locations",
+     "format": "CSV",
+     "size": 10486,
+     "last_modified": "2025-11-25T15:47:52.012458",
+     "url": "https://data.opencity.in/dataset/c6332bb9-b70c-4320-823f-4f454dbf676c/resource/7a49e306-0e45-4330-9043-5e391fc62031/download/d8a3e772-2d5d-4e19-bbb0-fe04915c96aa.csv"
+    },
+    {
+     "name": "Pune Parks and Gardens Map",
+     "format": "KML",
+     "size": 461901,
+     "last_modified": "2025-11-25T15:47:52.445590",
+     "url": "https://data.opencity.in/dataset/c6332bb9-b70c-4320-823f-4f454dbf676c/resource/101fe35c-5190-47c9-bf1d-7c0d806c47a1/download/bbbd1d45-23fd-442c-8b1d-6fc48a1064a0.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-pmc-elections",
+   "title": "Pune PMC Elections",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:38:57.304699",
+   "resources": [
+    {
+     "name": "Pune PMC Election Results 2017",
+     "format": "CSV",
+     "size": 144746,
+     "last_modified": "2025-11-25T15:48:04.301440",
+     "url": "https://data.opencity.in/dataset/168b8f5c-0ef4-4197-a205-db8e2e506991/resource/189f571b-2079-4ba5-b096-0f4a0ec17d84/download/fd1fb860-321d-4590-b1f3-df1368b2fc04.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-pmpml-annual-data",
+   "title": "Pune PMPML Annual Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:19.563885",
+   "resources": [
+    {
+     "name": "PMPML Number of Buses from 2015-16 to 2019-20",
+     "format": "CSV",
+     "size": 473,
+     "last_modified": "2025-11-25T15:48:16.254961",
+     "url": "https://data.opencity.in/dataset/e92df6b3-b7a1-4c5d-a706-e1838ed31edb/resource/c6da387f-51e9-44f9-b678-ad618088964f/download/d51181ee-c8d6-4356-ade3-0410565bb002.csv"
+    },
+    {
+     "name": "PMPML Annual Report - 2020-21",
+     "format": "XLSX",
+     "size": 256566,
+     "last_modified": "2025-11-25T15:48:16.577948",
+     "url": "https://data.opencity.in/dataset/e92df6b3-b7a1-4c5d-a706-e1838ed31edb/resource/515b48a7-4af2-47c7-aad5-f1cf1c830abc/download/6ca2ad4a-ac26-4c13-86b2-a0e90c754d45.xlsx"
+    },
+    {
+     "name": "PMPML Annual Report - 2019-20",
+     "format": "XLSX",
+     "size": 440989,
+     "last_modified": "2025-11-25T15:48:16.940279",
+     "url": "https://data.opencity.in/dataset/e92df6b3-b7a1-4c5d-a706-e1838ed31edb/resource/fdcfe27f-3314-461d-ae39-81ef4b121fa8/download/f8629f53-0267-4f98-8665-193d35169455.xlsx"
+    },
+    {
+     "name": "PMPML Annual Statistics for 2023-24 and 2024-25",
+     "format": "PDF",
+     "size": 225803,
+     "last_modified": "2025-11-25T15:48:17.318094",
+     "url": "https://data.opencity.in/dataset/e92df6b3-b7a1-4c5d-a706-e1838ed31edb/resource/5911ffae-7f4b-4094-9dc8-6c7cc35dc328/download/dd004344-2f12-48f8-84ef-374ddeba1a69.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-property-tax-collections",
+   "title": "Pune Property Tax Collections",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:33:46.044742",
+   "resources": [
+    {
+     "name": "Pune Zone-wise Property Tax Collection 2013-14 to 2020-21",
+     "format": "CSV",
+     "size": 7881,
+     "last_modified": "2025-11-25T15:48:29.420961",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/49759bdf-13d4-4854-818e-9fdb6679ef46/download/2bdd28ca-f5b5-4efc-83c9-5451f0fa82e7.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Property Tax Collection 2014-15",
+     "format": "CSV",
+     "size": 3723,
+     "last_modified": "2025-11-25T15:48:29.729730",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/50637038-dc27-46fc-827c-410d5e5c9a51/download/98507767-3b6c-4e61-ae16-06021f4d0012.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Property Tax Collection 2015-16",
+     "format": "CSV",
+     "size": 3791,
+     "last_modified": "2025-11-25T15:48:30.233574",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/d8f77914-48db-4957-9f4a-327b68c5e44e/download/08b0fe82-0063-4e4a-8f2b-982947aa2f31.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Property Tax Collection 2016-17",
+     "format": "CSV",
+     "size": 3838,
+     "last_modified": "2025-11-25T15:48:30.755542",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/048766bd-9484-417f-82bd-9d8e548c1763/download/9ddc7cd8-b17a-479f-8b65-c775111d918c.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Property Tax Collection 2017-18",
+     "format": "CSV",
+     "size": 3829,
+     "last_modified": "2025-11-25T15:48:31.153559",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/3b4c2a42-4fa3-48f4-a0b6-c8209252e5d3/download/e938f657-c8d4-4109-872d-d6a38f9db709.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Property Tax Collection 2018-19",
+     "format": "CSV",
+     "size": 3772,
+     "last_modified": "2025-11-25T15:48:31.517022",
+     "url": "https://data.opencity.in/dataset/18ce1d9a-54a4-49df-885a-07eea33680d0/resource/a835be29-e57b-4d30-a33a-2d85b8abe18e/download/ccd64607-0c0a-42a6-9397-c96a9a1998ea.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-public-toilets",
+   "title": "Pune Public Toilets",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:29.599056",
+   "resources": [
+    {
+     "name": "Pune - Zone-wise Public Toilets Data",
+     "format": "CSV",
+     "size": 3594,
+     "last_modified": "2025-11-25T15:48:43.537879",
+     "url": "https://data.opencity.in/dataset/fe85ec2b-e02a-4281-8d14-4af20b911f24/resource/43711940-0d33-40d2-beef-392ee7a7943f/download/422ee293-5102-4e9b-94bb-53716e7640cb.csv"
+    },
+    {
+     "name": "Ward-wise Community and Public Toilets 2017",
+     "format": "CSV",
+     "size": 136960,
+     "last_modified": "2025-11-25T15:48:43.846720",
+     "url": "https://data.opencity.in/dataset/fe85ec2b-e02a-4281-8d14-4af20b911f24/resource/b53277bf-aa70-454c-ac86-92c7972653f8/download/10d58630-44a1-49a5-a168-e0b4a7368081.csv"
+    },
+    {
+     "name": "Pune Public Toilets Map",
+     "format": "KML",
+     "size": 271656,
+     "last_modified": "2025-11-25T15:48:44.239540",
+     "url": "https://data.opencity.in/dataset/fe85ec2b-e02a-4281-8d14-4af20b911f24/resource/98a32ad9-b757-48f1-96c7-0dfd8e9e1551/download/f1d88eea-0aab-4d8c-8c23-2acc84c1bd6a.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-rainfall-data",
+   "title": "Pune Rainfall Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:51.857221",
+   "resources": [
+    {
+     "name": "Pune Annual Temperature and Rainfall 1980-2019",
+     "format": "CSV",
+     "size": 881,
+     "last_modified": "2025-11-25T15:48:56.143924",
+     "url": "https://data.opencity.in/dataset/d9cc11fe-f2ac-44b6-974d-d11749a63fba/resource/a399f471-f00e-4349-a5fa-88e8ae58c5bc/download/d27e7726-1321-426a-9cb3-8a20d9707cc9.csv"
+    },
+    {
+     "name": "Monthly Rainfall Data for 2016-17",
+     "format": "CSV",
+     "size": 553,
+     "last_modified": "2025-11-25T15:48:56.444080",
+     "url": "https://data.opencity.in/dataset/d9cc11fe-f2ac-44b6-974d-d11749a63fba/resource/9d0d5f83-5216-46a9-a9cd-9437838c1b14/download/f973a508-9638-4a9d-9277-5c2f8edf94aa.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-revenue-map",
+   "title": "Pune Revenue Map",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T10:56:37.233150",
+   "resources": [
+    {
+     "name": "PMC Revenue Map",
+     "format": "KMZ",
+     "size": 3947453,
+     "last_modified": "2025-11-25T15:49:08.350599",
+     "url": "https://data.opencity.in/dataset/b0d8b534-c6ce-450d-9ef1-2e13d415efaf/resource/447d4d6a-905e-4bf4-aae9-afda709a222f/download/a76a14a9-07ce-4a36-bba5-8f8c12351c6b.kmz"
+    }
+   ]
+  },
+  {
+   "name": "pune-road-centerline-map",
+   "title": "Pune Road Centerline Map",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T15:49:20.416322",
+   "resources": [
+    {
+     "name": "Pune Road Centerline Map",
+     "format": "KMZ",
+     "size": 3937838,
+     "last_modified": "2025-11-25T15:49:20.407164",
+     "url": "https://data.opencity.in/dataset/9553e6b7-9570-4fec-8beb-53cf6dfcfdd7/resource/c8708513-5887-46bb-8a2a-0ec12cf7165a/download/9bb3235e-e9db-485d-b303-68ef8fd6bcd7.kmz"
+    }
+   ]
+  },
+  {
+   "name": "pune-schools-data",
+   "title": "Pune Schools Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:34:18.150905",
+   "resources": [
+    {
+     "name": "Pune - PMC Schools",
+     "format": "CSV",
+     "size": 10727,
+     "last_modified": "2025-11-25T15:49:32.455664",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/01771f7d-e332-43d8-84cc-ba2ab2e3cde0/download/aa134345-e92d-4eab-9485-416b48e576cc.csv"
+    },
+    {
+     "name": "Pune - List of Schools In the PMC Area",
+     "format": "CSV",
+     "size": 269210,
+     "last_modified": "2025-11-25T15:49:32.841121",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/8b93f529-1dc2-4446-b198-9eaf83b94f58/download/905dfc93-7e5e-4821-b6ef-86b4f49f14b1.csv"
+    },
+    {
+     "name": "Pune Schools - Number of Students Enrolled Class-wise",
+     "format": "CSV",
+     "size": 218697,
+     "last_modified": "2025-11-25T15:49:33.203806",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/bce8b724-2c95-4976-a80c-7af134ffd04f/download/611403c6-d9cf-4736-b33d-0626965ae50d.csv"
+    },
+    {
+     "name": "Pune Schools - Facilities Provided",
+     "format": "CSV",
+     "size": 615249,
+     "last_modified": "2025-11-25T15:49:33.564693",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/5cbc780d-d2ca-48c7-9247-5ce9e37168c9/download/74e8e3f7-d96a-4574-842b-e2d77c1db4fc.csv"
+    },
+    {
+     "name": "Pune School Aged Population Enrolled in Schools 2017-18",
+     "format": "CSV",
+     "size": 513,
+     "last_modified": "2025-11-25T15:49:33.960887",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/fefec369-e063-41d4-a8dc-82f8004d9c6d/download/ce0ec751-8caa-4aa5-a2a4-d1746c9a2d6a.csv"
+    },
+    {
+     "name": "Pune - Total Number of Schools and Colleges",
+     "format": "CSV",
+     "size": 958,
+     "last_modified": "2025-11-25T15:49:34.446957",
+     "url": "https://data.opencity.in/dataset/1aaa0768-c2ff-4b63-9f51-27af984743b8/resource/dccf7d64-023b-49ac-8ca9-1bbf8708460a/download/634d3dd6-9f05-41b0-90fc-296fe724b18d.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-sewage-network",
+   "title": "Pune Sewage Network",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-12-08T09:56:21.183453",
+   "resources": [
+    {
+     "name": "PMC Sewage Pipeline Network",
+     "format": "KMZ",
+     "size": 8233433,
+     "last_modified": "2025-12-08T09:56:20.837904",
+     "url": "https://data.opencity.in/dataset/87f26028-f7ea-4fa4-bc05-ced4463757dd/resource/28f536b9-d07d-4cc4-8a5a-68ab8df94876/download/pmc_sewage_pipeline.kmz"
+    }
+   ]
+  },
+  {
+   "name": "pune-sewage-treatment-plants",
+   "title": "Pune Sewage Treatment Plants",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T15:49:46.314254",
+   "resources": [
+    {
+     "name": "PMC STPs Map - Proposed and Existing",
+     "format": "KML",
+     "size": 35788,
+     "last_modified": "2025-11-25T15:49:46.301892",
+     "url": "https://data.opencity.in/dataset/eb12f642-e1bb-4475-840e-4c4746d98fe0/resource/8a81eb8d-de2b-4842-b3fd-c74cc44fdff4/download/9beb555b-b3b8-4f3b-947c-b33ba33615a5.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-sewage-treatment-plants-stp-data",
+   "title": "Pune Sewage Treatment Plants (STP) Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:01.484867",
+   "resources": [
+    {
+     "name": "Sewage Treatment Plants Under PMC",
+     "format": "CSV",
+     "size": 633,
+     "last_modified": "2025-11-25T15:49:58.120298",
+     "url": "https://data.opencity.in/dataset/d074ac87-f66b-47cc-8055-b6c4fec9f89c/resource/8d811f96-11f1-43ef-8071-f6ff5af4464e/download/8ac18a93-8941-4afa-8db2-a9b972ad78c2.csv"
+    },
+    {
+     "name": "STP Flow Data for 2017",
+     "format": "CSV",
+     "size": 2346,
+     "last_modified": "2025-11-25T15:49:58.417274",
+     "url": "https://data.opencity.in/dataset/d074ac87-f66b-47cc-8055-b6c4fec9f89c/resource/8576e81e-9603-4f05-9cd8-59d27d5c5254/download/bdba1205-b27e-4ffe-bfa2-24fcf5d5d453.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-slums-data",
+   "title": "Pune Slums Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:34:55.537200",
+   "resources": [
+    {
+     "name": "Pune - Ward-wise Number of Slums and Population",
+     "format": "CSV",
+     "size": 1366,
+     "last_modified": "2025-11-25T15:50:13.278220",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/b627553a-ab81-41a9-88c4-2a358acafa61/download/bbec3f00-e6cf-45bf-88fa-3808c4737ba0.csv"
+    },
+    {
+     "name": "Pune Ward-wise Slums Data with Number Declared",
+     "format": "CSV",
+     "size": 1027,
+     "last_modified": "2025-11-25T15:50:13.605204",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/2e352370-c199-4a0c-af0a-623ec01b78de/download/6ef882ea-3421-4937-999a-a0ced5023db5.csv"
+    },
+    {
+     "name": "Pune Slum Population 2009",
+     "format": "CSV",
+     "size": 386,
+     "last_modified": "2025-11-25T15:50:13.986995",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/3abefee9-2fac-404f-b5f6-c650491e8f14/download/e0eb81c3-901e-4126-a5b5-3d216672bfd4.csv"
+    },
+    {
+     "name": "Pune Slums Area by Prabhag",
+     "format": "CSV",
+     "size": 3399,
+     "last_modified": "2025-11-25T15:50:14.358179",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/4ed3e09f-8c19-4f58-9edd-68c50a80a49a/download/26eb7645-7ab7-4940-a8bb-e9ce0e76042e.csv"
+    },
+    {
+     "name": "Slums under Sangamwadi Ward 2017",
+     "format": "CSV",
+     "size": 6811,
+     "last_modified": "2025-11-25T15:50:14.758461",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/e43cc236-09c9-4a06-9f03-ddc1352ffd3a/download/1662758f-d2d8-46cd-a1ee-73479927409a.csv"
+    },
+    {
+     "name": "Slums under Aundh Ward 2017",
+     "format": "CSV",
+     "size": 4259,
+     "last_modified": "2025-11-25T15:50:15.190643",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/6fd1ac3d-d82c-4f5b-8e9f-9c604ef886b7/download/68b8f289-7f7c-4503-9762-5fb76a3a1222.csv"
+    },
+    {
+     "name": "Slums under Bhavanipeth Ward 2017",
+     "format": "CSV",
+     "size": 8292,
+     "last_modified": "2025-11-25T15:50:15.634902",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/abc38934-b799-4e40-9f36-42858052bd1e/download/19f3df1d-0549-46c0-b789-19578fe6f812.csv"
+    },
+    {
+     "name": "Slums under Kasba-Vishrambaugwada Ward 2017",
+     "format": "CSV",
+     "size": 1718,
+     "last_modified": "2025-11-25T15:50:16.066713",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/70a5d488-32e1-41d7-bf3a-c2ca9e04ff2a/download/7d556d25-6172-4d3b-8b65-0aaf7fc5cc6f.csv"
+    },
+    {
+     "name": "Slums under Dhankawadi Ward 2017",
+     "format": "CSV",
+     "size": 976,
+     "last_modified": "2025-11-25T15:50:16.512890",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/8852a49b-fe59-4f19-a446-17cac32f3076/download/e6a0df24-43ad-4932-b009-fbc3eae6c573.csv"
+    },
+    {
+     "name": "Slums under Nagar Road Ward 2017",
+     "format": "CSV",
+     "size": 2284,
+     "last_modified": "2025-11-25T15:50:16.999246",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/57f25abe-d2c0-4823-8e3e-9648307d2fca/download/6f2a792a-1c63-413d-b785-31fe9709d53b.csv"
+    },
+    {
+     "name": "Slums under Bibwewadi Ward 2017",
+     "format": "CSV",
+     "size": 1823,
+     "last_modified": "2025-11-25T15:50:17.471202",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/76f6c41d-cef5-4922-98d1-20f8743c296f/download/41ae6f30-cb48-4e40-96a6-b9c2e1503e7d.csv"
+    },
+    {
+     "name": "Slums under Tilak Road Ward 2017",
+     "format": "CSV",
+     "size": 5864,
+     "last_modified": "2025-11-25T15:50:17.950295",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/a70e0c66-2808-4b71-8479-175974c556c6/download/45df5073-8c4f-41e2-853d-c7a442789c61.csv"
+    },
+    {
+     "name": "Slums under Sahakar Nagar Ward 2017",
+     "format": "CSV",
+     "size": 3981,
+     "last_modified": "2025-11-25T15:50:18.443180",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/9bc6966e-1ed9-433e-9ef8-a46b907bed3c/download/00272c05-bee3-4995-8a86-640b8f3bbf8f.csv"
+    },
+    {
+     "name": "Slums under Warje Karve Nagar Ward 2017",
+     "format": "CSV",
+     "size": 4272,
+     "last_modified": "2025-11-25T15:50:18.916041",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/e55f8496-f832-4284-aee9-fd25aa3f647b/download/d97e1e38-be18-4841-8d0b-01729286dee9.csv"
+    },
+    {
+     "name": "Pune Bhavanipeth Ward Slums Map on Development Plan",
+     "format": "PDF",
+     "size": 24911045,
+     "last_modified": "2025-11-25T15:50:19.653826",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/1d2dfcbb-8eed-4d7c-8b5c-2df89e7e6cd4/download/cc1c2580-c404-4b0e-a964-d2526583662d.pdf"
+    },
+    {
+     "name": "Pune Bhavanipeth Ward Slums Map on Satellite Imagery",
+     "format": "PDF",
+     "size": 1612433,
+     "last_modified": "2025-11-25T15:50:20.237944",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/0d4f7a43-dbc2-4cbc-9d62-1b29fe5bce20/download/ea83ffc4-974f-496d-99ec-d45dfc1cbc59.pdf"
+    },
+    {
+     "name": "Pune Bibwevadi Ward Slums Map on Satellite Imagery",
+     "format": "PDF",
+     "size": 2176879,
+     "last_modified": "2025-11-25T15:50:20.832570",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/53ddd61e-7ef4-47f3-bbfb-cdf18ad0ee52/download/62d316d1-88b7-4d1c-84ba-c2b32e57d520.pdf"
+    },
+    {
+     "name": "Pune Kasba-Vishrambaug Ward Slums Map on Development Plan",
+     "format": "PDF",
+     "size": 36740488,
+     "last_modified": "2025-11-25T15:50:21.646438",
+     "url": "https://data.opencity.in/dataset/410f4413-ffab-4637-802c-31f64f279d06/resource/da04a458-2ab2-4954-99a1-3b60a0b1a942/download/46582393-e4fc-45d4-8838-fb56728e09b7.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-smart-city-proposal",
+   "title": "Pune Smart City Proposal",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:38:59.652433",
+   "resources": [
+    {
+     "name": "Pune Smart City Proposal - Part 1",
+     "format": "PDF",
+     "size": 8884882,
+     "last_modified": "2025-11-25T15:50:34.372528",
+     "url": "https://data.opencity.in/dataset/835455d8-b181-4071-83a7-1cdfd70a2f8c/resource/aca1aa82-1047-4ebe-9f82-609361410c2b/download/333e95cc-ed9b-4a23-a7ed-189efa4adb7a.pdf"
+    },
+    {
+     "name": "Pune Smart City Proposal - Part 2",
+     "format": "PDF",
+     "size": 30702371,
+     "last_modified": "2025-11-25T15:50:34.892962",
+     "url": "https://data.opencity.in/dataset/835455d8-b181-4071-83a7-1cdfd70a2f8c/resource/df52da63-aa94-4e87-93b3-8d40b1fd1475/download/2d21c94a-0dad-4d3d-9734-d547189a22db.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-solid-waste-management-data",
+   "title": "Pune Solid Waste Management Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:36:22.980887",
+   "resources": [
+    {
+     "name": "Pune - Ward-wise Waste Segregation - 2021",
+     "format": "CSV",
+     "size": 2524,
+     "last_modified": "2025-11-25T15:50:47.221215",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/167e46fa-0ac7-4abe-9043-e4ab419dcf9e/download/d488decf-9225-46fb-bd09-03d2a86956a9.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Waste Collection Vehicles Data 2021",
+     "format": "CSV",
+     "size": 26534,
+     "last_modified": "2025-11-25T15:50:47.603627",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/7cbf791d-2422-4eef-acf4-e57dcffcb63b/download/3e7c2a65-5d0f-49f7-acb3-39f5620b8bd8.csv"
+    },
+    {
+     "name": "Pune - Ward and Zone-wise Waste Collection Equipment Data 2021",
+     "format": "CSV",
+     "size": 3138,
+     "last_modified": "2025-11-25T15:50:48.056628",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/26b55f92-ae17-4e18-a850-e836fa286b03/download/b5cce8dd-b97d-4fb8-8bc3-2ff243f97aef.csv"
+    },
+    {
+     "name": "Pune - Ward-wise Monthly Revenue Collected for Waste Management 2021",
+     "format": "CSV",
+     "size": 23413,
+     "last_modified": "2025-11-25T15:50:48.553581",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/6ddc615e-6487-4356-848c-4a7472701f37/download/b5b748fd-693c-4bb9-8e1b-6bc6e855d54b.csv"
+    },
+    {
+     "name": "Pune - Total Waste Recycled 2011-2020",
+     "format": "CSV",
+     "size": 541,
+     "last_modified": "2025-11-25T15:50:48.991020",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/a301267d-025a-4384-9505-a3dde7f18560/download/51496fbf-e8d4-4678-894b-4382e3fdf428.csv"
+    },
+    {
+     "name": "Pune - Waste Disposal Site Data 2021",
+     "format": "CSV",
+     "size": 22255,
+     "last_modified": "2025-11-25T15:50:49.453307",
+     "url": "https://data.opencity.in/dataset/346d53bd-bb93-4e5d-a880-5841fd1bd849/resource/a235ca64-4f54-491d-8dfc-e195aee3e930/download/d59482f0-34fd-4e94-b5ce-5aca51d0beea.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-stormwater-drains",
+   "title": "Pune Stormwater Drains",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-12-08T09:53:21.518797",
+   "resources": [
+    {
+     "name": "PMC Stormwater Drains Map",
+     "format": "KMZ",
+     "size": 22184109,
+     "last_modified": "2025-11-25T15:51:02.022617",
+     "url": "https://data.opencity.in/dataset/a83b2053-2250-4e3c-9759-521c81679d24/resource/7b7bb529-d324-48c2-95eb-8eabbab4381b/download/4390b641-12ad-4438-bc6b-c938ea7ae5de.kmz"
+    },
+    {
+     "name": "Pune Nalla Map",
+     "format": "KML",
+     "size": 2761475,
+     "last_modified": "2025-11-25T15:51:02.413172",
+     "url": "https://data.opencity.in/dataset/a83b2053-2250-4e3c-9759-521c81679d24/resource/b9bdda98-a0d1-4e2e-aca3-36c6445751b5/download/3f7228b1-092e-4c66-a62f-6895cf33fbcd.kml"
+    },
+    {
+     "name": "Pune River Map",
+     "format": "KML",
+     "size": 70784,
+     "last_modified": "2025-11-25T15:51:02.813627",
+     "url": "https://data.opencity.in/dataset/a83b2053-2250-4e3c-9759-521c81679d24/resource/7507f222-3bcd-4881-b558-90c5cbc2625f/download/b0d9ef1f-14d7-4c93-a498-3ffb7c86737c.kml"
+    },
+    {
+     "name": "Pune SWD Utility Chambers",
+     "format": "KML",
+     "size": 2774676,
+     "last_modified": "2025-12-08T09:52:42.377818",
+     "url": "https://data.opencity.in/dataset/a83b2053-2250-4e3c-9759-521c81679d24/resource/57052d71-5a1b-423b-8749-49f3df156b74/download/pmc_swd_utlitiy_chambers.kml"
+    },
+    {
+     "name": "PMC SWD Chambers",
+     "format": "KML",
+     "size": 11797881,
+     "last_modified": "2025-12-08T09:53:21.493511",
+     "url": "https://data.opencity.in/dataset/a83b2053-2250-4e3c-9759-521c81679d24/resource/710a2bd3-437d-43fd-88de-93cd61591f1f/download/pmc_swd_chambers.kml"
+    }
+   ]
+  },
+  {
+   "name": "pune-stormwater-drains-coverage-data",
+   "title": "Pune Stormwater Drains Coverage Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:28.777689",
+   "resources": [
+    {
+     "name": "Prabhag-wise Storm-water Drains Coverage of Roads 2016",
+     "format": "CSV",
+     "size": 2883,
+     "last_modified": "2025-11-25T15:51:14.745711",
+     "url": "https://data.opencity.in/dataset/0825c18f-0bcb-4fa6-9a6f-cddc19306fcc/resource/8f7f9379-62b3-4080-8c38-1f853d76e242/download/b04cc181-c7b2-4082-aace-817be8f4cc98.csv"
+    },
+    {
+     "name": "Primary Drain Channels and their Coverage 2012",
+     "format": "CSV",
+     "size": 1387,
+     "last_modified": "2025-11-25T15:51:15.096130",
+     "url": "https://data.opencity.in/dataset/0825c18f-0bcb-4fa6-9a6f-cddc19306fcc/resource/20a52b9f-3ad7-40e5-b563-8fb2e0c47f3f/download/be6efc3d-d549-4073-a582-8c87d6b0df7d.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-streetlights",
+   "title": "Pune Streetlights",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T19:36:30.576194",
+   "resources": [
+    {
+     "name": "Ward-wise Number of Street Lights in Pune",
+     "format": "CSV",
+     "size": 1041,
+     "last_modified": "2025-11-25T15:51:27.065311",
+     "url": "https://data.opencity.in/dataset/c91fa694-5d22-4efd-a0b7-993a42c69966/resource/24458e14-2139-4348-ab4c-0df81dfb5bb0/download/a7f9edd5-8709-4022-bae6-8197274886e5.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-tree-census-2019",
+   "title": "Pune Tree Census 2019",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:36.787516",
+   "resources": [
+    {
+     "name": "Tree Census - Part 1",
+     "format": "CSV",
+     "size": 75709757,
+     "last_modified": "2025-11-25T15:51:49.987030",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/ca2a3fcf-0e9e-4c50-862a-1290155c0fb9/download/db5b5bcb-20f4-42df-89ee-85dee72446da.csv"
+    },
+    {
+     "name": "Tree Census - Part 2",
+     "format": "CSV",
+     "size": 76808237,
+     "last_modified": "2025-11-25T15:51:51.127060",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/f69ee0fb-001d-459d-a87c-c8abee4bd884/download/0a20a244-1731-4f44-addc-56cd4a10d3bf.csv"
+    },
+    {
+     "name": "Tree Census - Part 3",
+     "format": "CSV",
+     "size": 77191225,
+     "last_modified": "2025-11-25T15:51:52.270799",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/11266195-2ef0-413d-b953-c9a4c771aef5/download/9d4847bb-7779-4edd-95bb-127a9c90e3b6.csv"
+    },
+    {
+     "name": "Tree Census - Part 4",
+     "format": "CSV",
+     "size": 76868702,
+     "last_modified": "2025-11-25T15:51:53.412097",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/c6de6d80-f319-466e-a488-aa6ed5b6fd85/download/5490ebe1-a81b-4abb-a712-3da3992754bf.csv"
+    },
+    {
+     "name": "Tree Census - Part 5",
+     "format": "CSV",
+     "size": 76962528,
+     "last_modified": "2025-11-25T15:51:54.587320",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/10d84905-28a4-4dec-8e96-0bbdb543379e/download/f80bd708-7746-4e09-8f91-62dc55d31d34.csv"
+    },
+    {
+     "name": "Tree Census - Part 6",
+     "format": "CSV",
+     "size": 76673781,
+     "last_modified": "2025-11-25T15:51:55.763813",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/0c574dfb-a5a7-4fe0-94bf-007eb67d16dc/download/28abdbf7-726c-475e-ad1d-b25819fbf74a.csv"
+    },
+    {
+     "name": "Tree Census - Part 7",
+     "format": "CSV",
+     "size": 76752424,
+     "last_modified": "2025-11-25T15:51:56.967100",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/d3c00099-7201-464a-8f72-d5df426f9dce/download/a804de00-6e6f-41ae-aeef-769ef2db1f83.csv"
+    },
+    {
+     "name": "Tree Census - Part 8",
+     "format": "CSV",
+     "size": 76011238,
+     "last_modified": "2025-11-25T15:51:58.129800",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/160e6d28-7a7f-439f-aa80-434ca02fc038/download/8052c6c0-c1a3-455e-a8d1-e7e2c5938472.csv"
+    },
+    {
+     "name": "Tree Census - Part 9",
+     "format": "CSV",
+     "size": 78803302,
+     "last_modified": "2025-11-25T15:51:59.302595",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/f5902b14-6822-4c76-8cc3-40d9113bb21b/download/bf2cf429-a2cc-432d-8877-c1bd8a81ea43.csv"
+    },
+    {
+     "name": "Tree Census - Part 10",
+     "format": "CSV",
+     "size": 78481091,
+     "last_modified": "2025-11-25T15:52:00.664686",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/c195db9a-d656-489c-acf7-dabf09f9460e/download/be079045-316a-4778-9bb8-3574120978c6.csv"
+    },
+    {
+     "name": "Tree Census - Part 11",
+     "format": "CSV",
+     "size": 81840451,
+     "last_modified": "2025-11-25T15:52:02.021425",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/3b03de92-b7e3-4869-b9a4-224e755481c7/download/cc44fea1-9b26-434d-845b-bae31e4b3c3b.csv"
+    },
+    {
+     "name": "Tree Census - Part 12",
+     "format": "CSV",
+     "size": 77167851,
+     "last_modified": "2025-11-25T15:52:03.217119",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/22c2fd96-ad3a-4f34-af89-690ad0274dda/download/3733b659-d5a0-4cba-9591-9c72dcd297c6.csv"
+    },
+    {
+     "name": "Tree Census - Part 13",
+     "format": "CSV",
+     "size": 76693181,
+     "last_modified": "2025-11-25T15:52:04.341850",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/e70bd736-ccc7-4162-8e58-a38de7248aab/download/8c560da7-be95-4fc3-8ed6-a1b1d0b87512.csv"
+    },
+    {
+     "name": "Tree Census - Part 14",
+     "format": "CSV",
+     "size": 76235171,
+     "last_modified": "2025-11-25T15:52:05.544820",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/fb0e135a-5ee5-4e26-b850-11901b77063d/download/d33ee2b8-b206-422c-8006-b1d99b3fe494.csv"
+    },
+    {
+     "name": "Tree Census - Part 15",
+     "format": "CSV",
+     "size": 75641050,
+     "last_modified": "2025-11-25T15:52:06.715270",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/4e6c520b-0a3c-40a1-bee2-bbb2f443ea87/download/ca24d160-8b76-4215-bd66-61082476acd9.csv"
+    },
+    {
+     "name": "Tree Census - Part 16",
+     "format": "CSV",
+     "size": 75905977,
+     "last_modified": "2025-11-25T15:52:07.961572",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/c32a8fb8-32c2-4899-84f6-00c29428eb0b/download/d3ab6046-986a-4aaa-8595-722089f99784.csv"
+    },
+    {
+     "name": "Tree Census - Part 17",
+     "format": "CSV",
+     "size": 2904344,
+     "last_modified": "2025-11-25T15:52:08.653362",
+     "url": "https://data.opencity.in/dataset/f00d83b8-c70f-4fff-9ac7-9a6ab4255edf/resource/d1fc279c-7905-4fe0-9a55-9a797bd8710a/download/58e49c60-4e2b-4238-9a3e-173d4abccbca.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-udise-2021-22",
+   "title": "Pune UDISE+ 2021-22",
+   "organization": "government-of-maharashtra",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:16.536058",
+   "publisher_url": "udiseplus.gov.in",
+   "resources": [
+    {
+     "name": "Pune Profile Part 1",
+     "format": "CSV",
+     "size": 1566036,
+     "last_modified": "2025-11-25T15:52:21.338040",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/35c60a14-fc22-44f2-8bfc-352621ca5f80/download/e33af90a-30be-469f-b3f2-ecd7d04da53a.csv"
+    },
+    {
+     "name": "Pune Profile Part 2",
+     "format": "CSV",
+     "size": 996179,
+     "last_modified": "2025-11-25T15:52:21.633479",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/f96fe452-63da-4df6-8938-43f616362b51/download/e4febf60-1e81-4778-a7fa-4dd383f7dc68.csv"
+    },
+    {
+     "name": "Pune Facilities",
+     "format": "CSV",
+     "size": 677536,
+     "last_modified": "2025-11-25T15:52:22.019861",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/6906bda3-b403-4db5-a4ac-adf79a02ec85/download/0f58de95-a3f3-4736-8930-531296182a02.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 7061905,
+     "last_modified": "2025-11-25T15:52:22.450492",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/d06f4e1b-a427-4dea-96f6-c54d1b0d772d/download/0f7815d0-9308-4a90-8187-4082ff4c57bd.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 9776512,
+     "last_modified": "2025-11-25T15:52:22.925244",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/510c6570-5920-42b1-a7e9-00c14fb84e80/download/ac342602-516f-4570-bfc9-43daef5f7b62.csv"
+    },
+    {
+     "name": "Pune Teachers Data",
+     "format": "CSV",
+     "size": 531733,
+     "last_modified": "2025-11-25T15:52:23.334246",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/86aa3f46-4d99-40f1-95e4-474440947d4d/download/ad4f2559-eac8-4006-a749-ccf781947939.csv"
+    },
+    {
+     "name": "UDISE+ Schema",
+     "format": "PDF",
+     "size": 364803,
+     "last_modified": "2025-11-25T15:52:23.727524",
+     "url": "https://data.opencity.in/dataset/0ae5152d-205f-4ce0-aac9-125b4271f9da/resource/1fb06c08-fcff-4bfd-bab9-723535572763/download/89f65e5d-cba3-40d8-81fe-a2fbc0ea30e1.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-udise-2023-24",
+   "title": "Pune UDISE+ 2023-24",
+   "organization": "government-of-maharashtra",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:37:13.640792",
+   "publisher_url": "udiseplus.gov.in",
+   "resources": [
+    {
+     "name": "Pune Profile Part 1",
+     "format": "CSV",
+     "size": 1000980,
+     "last_modified": "2025-11-25T15:52:36.257757",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/448bde45-546b-4d5a-a291-a28cdd602432/download/e98b01d7-70ce-4ca3-a13a-cec44031c372.csv"
+    },
+    {
+     "name": "Pune Profile Part 2",
+     "format": "CSV",
+     "size": 325204,
+     "last_modified": "2025-11-25T15:52:36.582722",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/d061191a-8b74-4588-b4e9-c86fd6507978/download/bfb659b2-611f-4f6a-aa7e-542e5c3958f3.csv"
+    },
+    {
+     "name": "Pune Facilities",
+     "format": "CSV",
+     "size": 1095988,
+     "last_modified": "2025-11-25T15:52:36.950194",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/e1c46f4a-f68f-4d0f-92b9-a0cc39aea574/download/1c5e4d76-8d6f-47a7-ae00-6bec7d0bb016.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 3164581,
+     "last_modified": "2025-11-25T15:52:37.316203",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/1b3e976d-604e-407a-a116-b2813bf78d2f/download/6eec8542-fad6-40fa-a3e0-4b86ef0e4a39.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 3724988,
+     "last_modified": "2025-11-25T15:52:37.760086",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/f3fc2874-c3d3-4708-bde6-57f8070b7541/download/460ea1cc-6ef3-42ad-ac86-fbb56d250d80.csv"
+    },
+    {
+     "name": "Pune Teachers Data",
+     "format": "CSV",
+     "size": 620373,
+     "last_modified": "2025-11-25T15:52:38.191222",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/e7b99ae1-aabb-4b1c-a697-e6438d169bfd/download/2ac9ead5-eb6e-4f5f-b315-8901514264eb.csv"
+    },
+    {
+     "name": "UDISE+ Schema",
+     "format": "PDF",
+     "size": 77466,
+     "last_modified": "2025-11-25T15:52:38.642658",
+     "url": "https://data.opencity.in/dataset/b3f1d29e-6c9b-40e8-a06d-ac5b3390d0fe/resource/e4e334b9-00dd-4840-8f4d-8808044dca8e/download/83412b68-ecb9-418d-a852-3996bc0b918f.pdf"
+    }
+   ]
+  },
+  {
+   "name": "pune-udise-2024-25",
+   "title": "Pune UDISE+ 2024-25",
+   "organization": "government-of-india",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-07-09T07:41:32.311968"
+  },
+  {
+   "name": "pune-underground-drainage-coverage",
+   "title": "Pune Underground Drainage Coverage",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:36:29.054287",
+   "resources": [
+    {
+     "name": "Prabhag-wise Households With Underground Drainage 2016",
+     "format": "CSV",
+     "size": 3610,
+     "last_modified": "2025-11-25T15:52:50.571982",
+     "url": "https://data.opencity.in/dataset/f113347b-43b5-4f0e-8ab3-aab997124287/resource/32a036ae-7df9-4df6-8315-830f85fd1f84/download/56d3f45a-73d8-42b1-8b49-6360a393dc83.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-vehicle-registrations-data",
+   "title": "Pune - Vehicle Registrations Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-27T12:40:35.645916",
+   "resources": [
+    {
+     "name": "Pune Vehicle Registrations 2015 to 2020.",
+     "format": "CSV",
+     "size": 440,
+     "last_modified": "2025-11-25T15:53:02.817383",
+     "url": "https://data.opencity.in/dataset/77a2dd25-22ea-4db8-b8ca-8fcd49fd7b2e/resource/692b7880-1667-4e5e-90a5-df54fa0aa582/download/1ac0a76e-a549-4e0a-8f72-db1a45158393.csv"
+    },
+    {
+     "name": "Pune Vehicle Registrations by Fuel Type 2013 to 2017",
+     "format": "CSV",
+     "size": 5110,
+     "last_modified": "2025-11-25T15:53:03.146082",
+     "url": "https://data.opencity.in/dataset/77a2dd25-22ea-4db8-b8ca-8fcd49fd7b2e/resource/bbe6c9d3-cd6d-4d67-9ddd-193cf56dc9b9/download/44798552-add7-4041-bcaf-9210d41a8de4.csv"
+    },
+    {
+     "name": "Pune Vehicle Registrations 2002 to 2017",
+     "format": "CSV",
+     "size": 3140,
+     "last_modified": "2025-11-25T15:53:03.498951",
+     "url": "https://data.opencity.in/dataset/77a2dd25-22ea-4db8-b8ca-8fcd49fd7b2e/resource/4f7236fd-eb44-4cdf-80c7-0204c200df48/download/cb292648-c6aa-46d8-aaa3-ae7f114f7dc5.csv"
+    },
+    {
+     "name": "Pune Vehicle Population Data - 2000 to 2018",
+     "format": "CSV",
+     "size": 2995,
+     "last_modified": "2025-11-25T15:53:03.872349",
+     "url": "https://data.opencity.in/dataset/77a2dd25-22ea-4db8-b8ca-8fcd49fd7b2e/resource/00f0076e-8772-4c45-8b1c-2cc2998cff7f/download/bf817398-2ee9-4d6b-975a-afc3fe18d436.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-wards-info",
+   "title": "PMC Wards Info",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-10-22T13:13:19.055121",
+   "resources": [
+    {
+     "name": "Pune Electoral Wards Map - 2022",
+     "format": "KML",
+     "size": 218820,
+     "last_modified": "2025-11-25T15:53:16.230234",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/db368dd7-03ab-458f-a17d-ac87e04f11fb/download/24b7649d-0039-4dee-872a-621fa2b129d2.kml"
+    },
+    {
+     "name": "Pune Electoral Wards Map - 2017",
+     "format": "KML",
+     "size": 90934,
+     "last_modified": "2025-11-25T15:53:16.513558",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/cc381e1b-7e2b-4022-9448-0a53d230b0f9/download/b408de88-b9f0-48ad-af37-d6554088fb8d.kml"
+    },
+    {
+     "name": "Pune Administrative Wards Map 2017",
+     "format": "KML",
+     "size": 278633,
+     "last_modified": "2025-11-25T15:53:16.852943",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/686cd9cd-012f-4f97-913f-8c7003b3eb02/download/b26b0ee3-60a3-4f1a-a45c-94b24fb9434a.kml"
+    },
+    {
+     "name": "PMC Electoral Wards 2025",
+     "format": "KML",
+     "size": 191370,
+     "last_modified": "2025-11-25T15:53:17.215325",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/2badcc86-489c-4b7e-b7dd-a273ef01b798/download/b7a3f392-238c-4c55-a3ed-0c13fd4aaa0a.kml"
+    },
+    {
+     "name": "PMC Electoral Wards 2012",
+     "format": "KML",
+     "size": 1019386,
+     "last_modified": "2025-11-25T15:53:17.599795",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/bfd393d4-5496-4f88-84b3-d794bf661ec0/download/06209242-c2c6-40f7-b70c-db0783cb7ccd.kml"
+    },
+    {
+     "name": "PMC Prabhag Boundary",
+     "format": "KML",
+     "size": 983023,
+     "last_modified": "2025-11-25T15:53:17.975567",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/6e44317a-2838-4f5a-85dc-43ed80a490a6/download/a97cdf95-402a-461b-8bd6-3eb55103ee91.kml"
+    },
+    {
+     "name": "PMZ Zones Map",
+     "format": "KML",
+     "size": 183463,
+     "last_modified": "2025-11-25T15:53:18.366483",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/d02848cd-47ff-419d-bf21-3f20a98af766/download/882111ee-f944-4bff-b796-7baf97cf55a6.kml"
+    },
+    {
+     "name": "Pune Administrative Wards Map 2025",
+     "format": "GeoJSON",
+     "size": 223219,
+     "last_modified": "2026-10-22T13:11:24.859359",
+     "url": "https://data.opencity.in/dataset/98f28dac-9158-46ee-a91e-a514d9af427c/resource/326cdb81-a9a7-44e9-9950-32af1079a36b/download/pune_administative_wards_2025.geojson"
+    }
+   ]
+  },
+  {
+   "name": "pune-water-distribution-data",
+   "title": "Pune Water Distribution Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T21:03:05.600402",
+   "resources": [
+    {
+     "name": "Pune Water Treatment Plants 2012",
+     "format": "CSV",
+     "size": 958,
+     "last_modified": "2025-11-25T15:53:30.475288",
+     "url": "https://data.opencity.in/dataset/892ccd65-0d95-4f89-ab76-9530eafaa6fd/resource/cb845cf4-e73e-4950-8044-26f99ff27498/download/5148c621-ba7f-4b98-bc6c-66aedbefa059.csv"
+    },
+    {
+     "name": "Water Suppled in Pune in 2012",
+     "format": "CSV",
+     "size": 350,
+     "last_modified": "2025-11-25T15:53:30.840682",
+     "url": "https://data.opencity.in/dataset/892ccd65-0d95-4f89-ab76-9530eafaa6fd/resource/62f55494-8050-4cfd-8d3b-4de43a50bfdc/download/6e691ac8-99d4-4f1f-aab6-2d08f828b4c8.csv"
+    }
+   ]
+  },
+  {
+   "name": "pune-water-revenue-data",
+   "title": "Pune Water Revenue Data",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T21:03:09.737403",
+   "resources": [
+    {
+     "name": "Water Tax Collected 2013-14 to 2017-18",
+     "format": "CSV",
+     "size": 595,
+     "last_modified": "2025-11-25T15:53:42.758004",
+     "url": "https://data.opencity.in/dataset/5aa64ebb-a978-49b9-8bee-7b080aba28c6/resource/085d2105-c944-4a2c-9a48-2401b3ac3373/download/34f461d4-0fe4-42e9-8d86-9873c961bc19.csv"
+    },
+    {
+     "name": "Water Tax Collected 2017-18 to 2019-20",
+     "format": "CSV",
+     "size": 456,
+     "last_modified": "2025-11-25T15:53:43.055721",
+     "url": "https://data.opencity.in/dataset/5aa64ebb-a978-49b9-8bee-7b080aba28c6/resource/6f9c0d22-5744-4d25-9c5d-c4767841fffb/download/885f7197-f9f8-4f27-875e-4914fc20b136.csv"
+    }
+   ]
+  },
+  {
+   "name": "udise-2025-26-district-level-reports",
+   "title": "UDISE+ 2025-26 - District level Reports",
+   "organization": "government-of-india",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2026-08-17T06:50:34.319908",
+   "resources": [
+    {
+     "name": "UDISE+ 2025-26 Schema",
+     "format": "PDF",
+     "size": 478720,
+     "last_modified": "2026-08-17T06:33:11.411266",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c799029f-b923-4958-bd0a-d4b21c0e5a99/download/dsp_schema_v1.pdf"
+    },
+    {
+     "name": "Bengaluru Urban North Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 1824416,
+     "last_modified": "2026-08-17T05:18:05.154040",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b88dca1b-eda8-4337-909c-27493e4bce58/download/2928_enr1.csv"
+    },
+    {
+     "name": "Bengaluru Urban North Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 2282847,
+     "last_modified": "2026-08-17T06:27:42.729431",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/1211ae99-2147-4c0b-a090-420d2cc37076/download/2928_enr2.csv"
+    },
+    {
+     "name": "Bengaluru Urban North Facilities",
+     "format": "CSV",
+     "size": 436695,
+     "last_modified": "2026-08-17T06:27:45.185979",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e5d363e0-c42d-4235-85ae-c41cbc4f4288/download/2928_fac.csv"
+    },
+    {
+     "name": "Bengaluru Urban North Profile Part 1",
+     "format": "CSV",
+     "size": 496028,
+     "last_modified": "2026-08-17T06:27:47.710550",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/4cad4ce7-e550-415f-a305-a60376f8a2be/download/2928_prof1.csv"
+    },
+    {
+     "name": "Bengaluru Urban North Profile Part 2",
+     "format": "CSV",
+     "size": 106540,
+     "last_modified": "2026-08-17T06:27:50.159944",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/a626afac-cb7b-4cc2-9f52-da59c59dcf7d/download/2928_prof2.csv"
+    },
+    {
+     "name": "Bengaluru Urban North School Safety",
+     "format": "CSV",
+     "size": 127841,
+     "last_modified": "2026-08-17T06:27:52.561513",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/98e08b6f-76f4-40c3-8e39-e0ea2866ab90/download/2928_safety.csv"
+    },
+    {
+     "name": "Bengaluru Urban North Teachers Data",
+     "format": "CSV",
+     "size": 215446,
+     "last_modified": "2026-08-17T06:27:54.943347",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e536950e-af5e-48ab-a892-4ae1421b30f5/download/2928_tch.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 2688237,
+     "last_modified": "2026-08-17T06:27:57.778475",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/2fe0adba-110c-4785-962c-840b4ee85c67/download/2920_enr1.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 3417761,
+     "last_modified": "2026-08-17T06:28:03.489425",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/23bc27b1-e892-405e-b7a5-04d68bad50e9/download/2920_enr2.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Facilities",
+     "format": "CSV",
+     "size": 648874,
+     "last_modified": "2026-08-17T06:28:06.137792",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/a400f40a-fdde-4cec-a8ce-e366054ec89d/download/2920_fac.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Profile Part 1",
+     "format": "CSV",
+     "size": 732291,
+     "last_modified": "2026-08-17T06:28:08.657278",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/6eef0a5d-94d0-4fda-95f2-422dabe966ce/download/2920_prof1.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Profile Part 2",
+     "format": "CSV",
+     "size": 158640,
+     "last_modified": "2026-08-17T06:28:11.153359",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/3b9b0e27-3300-4d91-880a-f112e8de7f3c/download/2920_prof2.csv"
+    },
+    {
+     "name": "Bengaluru Urban South School Safety",
+     "format": "CSV",
+     "size": 189424,
+     "last_modified": "2026-08-17T06:28:13.611324",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d3cea5be-18fe-49aa-ad90-103a3d8e986d/download/2920_safety.csv"
+    },
+    {
+     "name": "Bengaluru Urban South Teachers Data",
+     "format": "CSV",
+     "size": 320785,
+     "last_modified": "2026-08-17T06:28:16.789432",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d1d5f25d-9931-4377-ac2a-436e334cf6b9/download/2920_tch.csv"
+    },
+    {
+     "name": "Chennai Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 1564877,
+     "last_modified": "2026-08-17T06:28:19.819618",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e7285acf-e20b-41ff-972e-f81a18768df2/download/3302_enr1.csv"
+    },
+    {
+     "name": "Chennai Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 2101214,
+     "last_modified": "2026-08-17T06:28:22.717709",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/91406eb9-9b90-4362-af92-3d186b0b1f6c/download/3302_enr2.csv"
+    },
+    {
+     "name": "Chennai Facilities",
+     "format": "CSV",
+     "size": 369792,
+     "last_modified": "2026-08-17T06:28:25.199597",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b80a3533-2435-4069-942f-c4f420f110dc/download/3302_fac.csv"
+    },
+    {
+     "name": "Chennai Profile Part 1",
+     "format": "CSV",
+     "size": 408859,
+     "last_modified": "2026-08-17T06:28:27.790413",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c773145d-583f-4315-8a25-4df4c5706f8e/download/3302_prof1.csv"
+    },
+    {
+     "name": "Chennai Profile Part 2",
+     "format": "CSV",
+     "size": 90697,
+     "last_modified": "2026-08-17T06:28:30.287149",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/f6c663d8-d40b-473b-a422-3b07cb0b6ba8/download/3302_prof2.csv"
+    },
+    {
+     "name": "Chennai School Safety",
+     "format": "CSV",
+     "size": 108279,
+     "last_modified": "2026-08-17T06:28:32.678744",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/32893e31-1bb3-406d-a39b-0c871e764d58/download/3302_safety.csv"
+    },
+    {
+     "name": "Chennai Teachers Data",
+     "format": "CSV",
+     "size": 185890,
+     "last_modified": "2026-08-17T06:28:35.191134",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/64abf51d-36f0-4d49-aadf-50b71d20fbfe/download/3302_tch.csv"
+    },
+    {
+     "name": "Delhi Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 5226752,
+     "last_modified": "2026-08-17T06:28:38.948858",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c6434358-16a3-4a5e-9005-fa69d0ef1547/download/07_enr1.csv"
+    },
+    {
+     "name": "Dehli Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 5899972,
+     "last_modified": "2026-08-17T06:28:43.350236",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/3018aba6-6df3-4aa4-8903-ad80b5504124/download/07_enr2.csv"
+    },
+    {
+     "name": "Delhi Facilities",
+     "format": "CSV",
+     "size": 1001036,
+     "last_modified": "2026-08-17T06:28:46.173326",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/7ed2d4f0-02ea-4575-966b-2dca7b54ed2d/download/07_fac.csv"
+    },
+    {
+     "name": "Delhi Profile Part 1",
+     "format": "CSV",
+     "size": 1219141,
+     "last_modified": "2026-08-17T06:28:48.952333",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/69375b71-523e-44f1-b7d4-0c0734a4dc2a/download/07_prof1.csv"
+    },
+    {
+     "name": "Delhi Profile Part 2",
+     "format": "CSV",
+     "size": 258274,
+     "last_modified": "2026-08-17T06:28:51.625432",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/ef064001-5c8f-4df4-a28f-43f942c6c9ce/download/07_prof2.csv"
+    },
+    {
+     "name": "Delhi School Safety",
+     "format": "CSV",
+     "size": 291673,
+     "last_modified": "2026-08-17T06:28:54.209261",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/5d3f22a5-8078-47fc-b4e1-0b3ebab9693d/download/07_safety.csv"
+    },
+    {
+     "name": "Delhi Teachers Data",
+     "format": "CSV",
+     "size": 505394,
+     "last_modified": "2026-08-17T06:28:56.853221",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/55165f0b-e983-4f45-9683-d4b91a5e7b0f/download/07_tch.csv"
+    },
+    {
+     "name": "Hyderabad Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 2078760,
+     "last_modified": "2026-08-17T06:28:59.986529",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b1953c3c-5c6b-496e-9552-584993483a1f/download/3622_enr1.csv"
+    },
+    {
+     "name": "Hyderabad Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 3250848,
+     "last_modified": "2026-08-17T06:29:03.341391",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/0bc818e2-b2c6-48ad-be92-2f07e24f05c3/download/3622_enr2.csv"
+    },
+    {
+     "name": "Hyderabad Facilities",
+     "format": "CSV",
+     "size": 560851,
+     "last_modified": "2026-08-17T06:29:06.053672",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/2a9f255e-4ad7-4e52-8a17-aba992af8d4d/download/3622_fac.csv"
+    },
+    {
+     "name": "Hyderabad Profile Part 1",
+     "format": "CSV",
+     "size": 655289,
+     "last_modified": "2026-08-17T06:29:08.735912",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/df77cdfd-4da3-41ab-94b1-9bd7df6f5f22/download/3622_prof1.csv"
+    },
+    {
+     "name": "Hyderabad Profile Part 2",
+     "format": "CSV",
+     "size": 138114,
+     "last_modified": "2026-08-17T06:29:11.356569",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d99e686e-b7ac-4154-ab3e-7cfd685d1da7/download/3622_prof2.csv"
+    },
+    {
+     "name": "Hyderabad School Safety",
+     "format": "CSV",
+     "size": 165261,
+     "last_modified": "2026-08-17T06:29:13.976334",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/eeb29deb-9401-4007-82e4-50bdefdd1cb7/download/3622_safety.csv"
+    },
+    {
+     "name": "Hyderabad Teachers Data",
+     "format": "CSV",
+     "size": 278127,
+     "last_modified": "2026-08-17T06:29:16.766689",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d340cd4c-a75a-401d-9164-a684226f6eed/download/3622_tch.csv"
+    },
+    {
+     "name": "Kolkata Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 1029995,
+     "last_modified": "2026-08-17T06:29:19.627487",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d9d98cbd-b98c-4cf1-80b1-80ad36a625da/download/1917_enr1.csv"
+    },
+    {
+     "name": "Kolkata Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 1578363,
+     "last_modified": "2026-08-17T06:29:22.646160",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/8c277589-bac2-4338-a96e-047dbeffcff7/download/1917_enr2.csv"
+    },
+    {
+     "name": "Kolkata Facilities",
+     "format": "CSV",
+     "size": 405690,
+     "last_modified": "2026-08-17T06:29:25.978675",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b510abb5-c4e0-4f88-afb0-2f1dd3352110/download/1917_fac.csv"
+    },
+    {
+     "name": "Kolkata Profile Part 1",
+     "format": "CSV",
+     "size": 527706,
+     "last_modified": "2026-08-17T06:29:29.220669",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c6b79689-c082-48c4-9dbb-800f72897c0d/download/1917_prof1.csv"
+    },
+    {
+     "name": "Kolkata Profile Part 2",
+     "format": "CSV",
+     "size": 108315,
+     "last_modified": "2026-08-17T06:29:31.823397",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c6fcdfcc-1d63-485c-bc39-5c7815d67859/download/1917_prof2.csv"
+    },
+    {
+     "name": "Kolkata School Safety",
+     "format": "CSV",
+     "size": 119923,
+     "last_modified": "2026-08-17T06:29:34.551907",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e2600c91-edc0-4b9c-a7d1-a7ff001d0241/download/1917_safety.csv"
+    },
+    {
+     "name": "Kolkata Teachers Data",
+     "format": "CSV",
+     "size": 200355,
+     "last_modified": "2026-08-17T06:29:37.330979",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/3ee290b6-8e09-4bfa-b3a1-78a3015f4c3a/download/1917_tch.csv"
+    },
+    {
+     "name": "Mumbai City Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 1596613,
+     "last_modified": "2026-08-17T06:29:40.881132",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c1123a6b-3499-4600-94d6-4070afc41a71/download/2723_enr1.csv"
+    },
+    {
+     "name": "Mumbai City Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 1581785,
+     "last_modified": "2026-08-17T06:29:44.037844",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/f5f37456-99a6-44d0-bc3d-c3d397a757df/download/2723_enr2.csv"
+    },
+    {
+     "name": "Mumbai City Facilities",
+     "format": "CSV",
+     "size": 312075,
+     "last_modified": "2026-08-17T06:29:46.882790",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e924da97-d037-4fe6-9be2-ce1b193b1e7c/download/2723_fac.csv"
+    },
+    {
+     "name": "Mumbai City Profile Part 1",
+     "format": "CSV",
+     "size": 394680,
+     "last_modified": "2026-08-17T06:29:49.565307",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b173585a-0f76-4175-8a0d-7cbfc18e7256/download/2723_prof1.csv"
+    },
+    {
+     "name": "Mumbai City Profile Part 2",
+     "format": "CSV",
+     "size": 73431,
+     "last_modified": "2026-08-17T06:29:52.202500",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/67527495-f86b-484b-ac1b-a6725c921125/download/2723_prof2.csv"
+    },
+    {
+     "name": "Mumbai City School Safety",
+     "format": "CSV",
+     "size": 90496,
+     "last_modified": "2026-08-17T06:29:54.871086",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/acdd3d2e-4dc9-489a-a58f-f443893519e2/download/2723_safety.csv"
+    },
+    {
+     "name": "Mumbai City Teachers Data",
+     "format": "CSV",
+     "size": 155779,
+     "last_modified": "2026-08-17T06:29:57.571106",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/2c81969e-84e6-49b1-9aee-453c1402bed3/download/2723_tch.csv"
+    },
+    {
+     "name": "Mumbai Suburban Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 1645642,
+     "last_modified": "2026-08-17T06:30:00.710106",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/8483bbf4-a24f-46c5-a71e-bbe6c02e5f00/download/2722_enr1.csv"
+    },
+    {
+     "name": "Mumbai Suburban Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 1972667,
+     "last_modified": "2026-08-17T06:30:04.279744",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/aa299216-1352-41ff-b838-cd6f0586d66b/download/2722_enr2.csv"
+    },
+    {
+     "name": "Mumbai Suburban Facilities",
+     "format": "CSV",
+     "size": 406498,
+     "last_modified": "2026-08-17T06:30:07.300891",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/0511953d-6d9f-45f0-8557-540d5497427d/download/2722_fac.csv"
+    },
+    {
+     "name": "Mumbai Suburban Profile Part 1",
+     "format": "CSV",
+     "size": 508043,
+     "last_modified": "2026-08-17T06:30:10.337069",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/e8bda38a-e954-498d-9554-8aa98863f96c/download/2722_prof1.csv"
+    },
+    {
+     "name": "Mumbai Suburban Profile Part 2",
+     "format": "CSV",
+     "size": 101327,
+     "last_modified": "2026-08-17T06:30:13.266885",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b0cfa5ff-a53a-402d-851c-7d3bbe3a97fc/download/2722_prof2.csv"
+    },
+    {
+     "name": "Mumbai Suburban School Safety",
+     "format": "CSV",
+     "size": 119269,
+     "last_modified": "2026-08-17T06:30:16.118784",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/007ec6ef-7eec-402c-bf61-415019654c3a/download/2722_safety.csv"
+    },
+    {
+     "name": "Mumbai Suburban Teachers Data",
+     "format": "CSV",
+     "size": 197794,
+     "last_modified": "2026-08-17T06:30:18.990103",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/ffe5f645-7451-4a73-a718-37267001e888/download/2722_tch.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 4903328,
+     "last_modified": "2026-08-17T06:30:22.876522",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/b6bae672-ccde-43f4-aee4-7c8e73e63a3a/download/2725_enr1.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 5234767,
+     "last_modified": "2026-08-17T06:30:27.219812",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/d1e6f929-2b33-4ece-bbe9-cafb917c6901/download/2725_enr2.csv"
+    },
+    {
+     "name": "Pune Facilities",
+     "format": "CSV",
+     "size": 1292551,
+     "last_modified": "2026-08-17T06:30:30.546723",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/1fdf1e1f-a230-4bcc-90e6-bfe07e55ceb7/download/2725_fac.csv"
+    },
+    {
+     "name": "Pune Profile Part 1",
+     "format": "CSV",
+     "size": 1307798,
+     "last_modified": "2026-08-17T06:30:34.178741",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/7f410236-8440-4542-a5e1-90b951c4a1b1/download/2725_prof1.csv"
+    },
+    {
+     "name": "Pune Profile Part 2",
+     "format": "CSV",
+     "size": 336145,
+     "last_modified": "2026-08-17T06:30:37.307491",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/65d34087-1ce6-4dd6-8908-ae630119eb80/download/2725_prof2.csv"
+    },
+    {
+     "name": "Pune School Safety",
+     "format": "CSV",
+     "size": 379598,
+     "last_modified": "2026-08-17T06:30:40.423677",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/c53912b6-605b-4e52-a282-59498fe24734/download/2725_safety.csv"
+    },
+    {
+     "name": "Pune Teachers Data",
+     "format": "CSV",
+     "size": 630666,
+     "last_modified": "2026-08-17T06:30:43.517850",
+     "url": "https://data.opencity.in/dataset/13f2e4f2-6efd-4675-a3cd-f6b13341ed7c/resource/64538eb1-22c0-4c6f-807e-2370b7684259/download/2725_tch.csv"
+    },
+    {
+     "name": "Pune Profile Part 1",
+     "format": "CSV",
+     "size": 1107745,
+     "last_modified": "2026-07-09T07:36:44.790219",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/5e110ee4-5b31-4a43-ada9-24d980949b7d/download/2725_prof1.csv"
+    },
+    {
+     "name": "Pune Profile Part 2",
+     "format": "CSV",
+     "size": 325203,
+     "last_modified": "2026-07-09T07:37:48.188508",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/7aad76de-9f8a-401c-88c1-c4e1931caaaa/download/2725_prof2.csv"
+    },
+    {
+     "name": "Pune Facilities",
+     "format": "CSV",
+     "size": 1094700,
+     "last_modified": "2026-07-09T07:38:03.288854",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/11d7fca6-cd1c-49a1-be68-b39429dc15cf/download/2725_fac.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 1",
+     "format": "CSV",
+     "size": 3255001,
+     "last_modified": "2026-07-09T07:38:51.003861",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/84c19ff0-064c-43dc-8daa-96a69d15e80e/download/2725_enr1.csv"
+    },
+    {
+     "name": "Pune Enrolment Data Part 2",
+     "format": "CSV",
+     "size": 3678395,
+     "last_modified": "2026-07-09T07:39:46.441090",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/aa85c973-c1b8-4b3b-9c20-2782fca5aecf/download/2725_enr2.csv"
+    },
+    {
+     "name": "Pune Teachers Data",
+     "format": "CSV",
+     "size": 620797,
+     "last_modified": "2026-07-09T07:39:57.443977",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/d835bfc1-2a94-42fb-9444-029937173085/download/2725_tch.csv"
+    },
+    {
+     "name": "UDISE+ Schema",
+     "format": "PDF",
+     "size": 77509,
+     "last_modified": "2026-07-09T07:40:00.835161",
+     "url": "https://data.opencity.in/dataset/dfe90d52-1b2a-45e8-9892-5866e6e312b0/resource/43c22e87-5552-4fc0-bec5-b8e7f19c3561/download/dsp_schema.pdf"
+    }
+   ]
+  },
+  {
+   "name": "water-consumption-in-pune",
+   "title": "Water Consumption in Pune",
+   "organization": "pune-municipal-corporation",
+   "license_title": "Other (Public Domain)",
+   "metadata_modified": "2025-11-25T21:27:36.888663",
+   "resources": [
+    {
+     "name": "Daily Water Consumption in Pune - Dec 2016",
+     "format": "CSV",
+     "size": 2035,
+     "last_modified": "2025-11-25T16:15:21.191606",
+     "url": "https://data.opencity.in/dataset/70cf9161-860f-4172-a2fb-b11bb94094f9/resource/147a79a2-1cc5-40c9-ab25-09a38dabb8e7/download/2d32f493-71d6-431c-9b2c-098b9a8182b2.csv"
+    },
+    {
+     "name": "Daily Water Consumption in Pune - Dec 2017",
+     "format": "CSV",
+     "size": 2268,
+     "last_modified": "2025-11-25T16:15:21.526072",
+     "url": "https://data.opencity.in/dataset/70cf9161-860f-4172-a2fb-b11bb94094f9/resource/ce853c95-0686-4a5d-ac76-bcd05758092d/download/71eca138-6e75-4fae-89f3-2a6d119eabf3.csv"
+    }
+   ]
+  }
+ ]
+}
