@@ -1,17 +1,17 @@
-fastapi>=0.100.0
-uvicorn>=0.22.0
-sqlalchemy>=2.0.0
-pydantic>=2.0.0
-geoalchemy2>=0.14.0
-psycopg2-binary>=2.9.0
-python-dotenv>=1.0.0
-osmium>=4.0
-openpyxl>=3.1
-python-docx>=1.1
-fpdf2>=2.7
-shapely>=2.0
-pyproj>=3.6
-# --- dataset pipelines (backend/datasets/pipelines; offline acquisition/processing, not imported by the API) ---
+fastapi>=0.100.0       # MIT
+uvicorn>=0.22.0        # BSD-3-Clause
+sqlalchemy>=2.0.0      # MIT
+pydantic>=2.0.0        # MIT
+geoalchemy2>=0.14.0    # MIT
+psycopg2-binary>=2.9.0 # LGPL-3.0 with exceptions (dynamic use; not GPL)
+python-dotenv>=1.0.0   # BSD-3-Clause
+osmium>=4.0            # BSD-2-Clause
+openpyxl>=3.1          # MIT
+python-docx>=1.1       # MIT
+fpdf2>=2.7             # LGPL-3.0-only (unmodified library, dynamic import; not GPL)
+shapely>=2.0           # BSD-3-Clause
+pyproj>=3.6            # MIT
+# --- dataset pipelines + data APIs (numpy/rasterio/pyogrio/Pillow/pandas are also imported by /api/terrain, /api/env-data, /api/infra) ---
 numpy>=1.26            # BSD-3-Clause
 rasterio>=1.4          # BSD-3-Clause (wheels bundle GDAL, MIT/X)
 geopandas>=1.0         # BSD-3-Clause
@@ -19,4 +19,5 @@ pyogrio>=0.9           # MIT
 requests>=2.31         # Apache-2.0
 pystac-client>=0.8     # Apache-2.0 (Earth Search STAC)
 Pillow>=10            # MIT-CMU (HPND); web overlay PNGs
+pandas>=2.0           # BSD-3-Clause (envdata/series.py; was only a transitive geopandas dependency)
 # pysheds removed 2026-11-13 (GPL-3.0-or-later): hydrology is our own numpy D8 in datasets/pipelines/_hydro.py
