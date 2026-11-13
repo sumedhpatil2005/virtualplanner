@@ -617,22 +617,40 @@ def get_dataset(did: str, db: Session = Depends(get_db)):
 
 @router.get("/subsurface/records")
 def list_records(bbox: Optional[str] = Query(None, description="minLon,minLat,maxLon,maxLat"),
-                 record_type: Optional[Literal["borehole", "utility"]] = None, db: Session = Depends(get_db)):
+                 record_type: Optional[Literal["borehole", "utility"]] = None,
+                 include_reference: bool = Query(False, description="include bulk reference networks (PMC sewer / storm drains) without a bbox"),
+                 db: Session = Depends(get_db)):
+    from sqlalchemy import and_, or_
+    from coordination.models import REFERENCE_DATASET_PREFIX, SubsurfaceRecordExtentEntity as E
     q = db.query(SubsurfaceRecordEntity)
     if record_type:
         q = q.filter(SubsurfaceRecordEntity.record_type == record_type)
-    rows = q.all()
+    box = None
     if bbox:
         try:
             box = [float(v) for v in bbox.split(",")]
             assert len(box) == 4
         except (ValueError, AssertionError) as e:
             raise HTTPException(422, "bbox must be minLon,minLat,maxLon,maxLat") from e
+        q = q.outerjoin(E, E.record_id == SubsurfaceRecordEntity.id).filter(or_(
+            E.record_id.is_(None), and_(E.max_lon >= box[0], E.min_lon <= box[2], E.max_lat >= box[1], E.min_lat <= box[3])))
+    excluded = []
+    if box is None and not include_reference:
+        # bulk reference networks (tens of thousands of records) are only listed by bbox; their datasets stay listed
+        q = q.filter(~SubsurfaceRecordEntity.dataset_id.like(f"{REFERENCE_DATASET_PREFIX}%"))
+        excluded = [{"id": d.id, "name": d.name, "record_count": d.record_count} for d in
+                    db.query(SubsurfaceDatasetEntity).filter(SubsurfaceDatasetEntity.id.like(f"{REFERENCE_DATASET_PREFIX}%"))]
+    rows = q.all()
+    if box:
         from shapely.geometry import box as sbox, shape
         b = sbox(*box)
         rows = [r for r in rows if r.geometry_geojson and shape(_load(r.geometry_geojson)).intersects(b)]
-    return {"records": [_record_dict(r) for r in rows],
-            "note": "Only imported records. Absence of a record is not evidence that nothing is there (UNKNOWN)."}
+    out = {"records": [_record_dict(r) for r in rows],
+           "note": "Only imported records. Absence of a record is not evidence that nothing is there (UNKNOWN)."}
+    if excluded:
+        out["reference_datasets_not_listed"] = excluded
+        out["reference_note"] = "Reference networks are listed only for a bbox (?bbox=…) or with include_reference=true."
+    return out
 
 
 # ── environment layer catalogue ──────────────────────────────────────────────

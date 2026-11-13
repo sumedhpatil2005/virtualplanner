@@ -35,7 +35,7 @@ RULE_BASES = ("cited_permission_distance", "user_entered")
 QUALITY_LEVELS = ("QL-A", "QL-B", "QL-C", "QL-D")
 ENV_DOMAINS = ("flood", "groundwater", "soil", "geology", "air", "noise", "heat", "vegetation", "water", "heritage",
                "drainage", "seismic", "terrain", "metro", "railway")
-ENGINE_VERSION = "coordination-engine 1.0 (2026-11-13)"
+ENGINE_VERSION = "coordination-engine 1.1 (2026-11-13: + building footprints index, PMC sewer / storm-drain records)"
 
 
 def _now() -> datetime.datetime:
@@ -179,6 +179,23 @@ class SubsurfaceRecordEntity(Base):
     z_certainty = Column(String, nullable=False, default="unknown")
     properties_json = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime, default=_now)
+
+
+class SubsurfaceRecordExtentEntity(Base):
+    """Lon/lat bounding box of a subsurface record, so detection and the records API read only the records near a project
+    (bulk reference networks: tens of thousands of records). Additive side table; a record without a row is always read."""
+    __tablename__ = "subsurface_record_extents"
+
+    record_id = Column(String, primary_key=True)
+    dataset_id = Column(String, nullable=False, index=True)
+    min_lon = Column(Float, nullable=False, index=True)
+    min_lat = Column(Float, nullable=False)
+    max_lon = Column(Float, nullable=False)
+    max_lat = Column(Float, nullable=False, index=True)
+
+
+# Subsurface datasets imported from published reference networks (coordination/pmc_import.py): ids start with this prefix.
+REFERENCE_DATASET_PREFIX = "ssd_ref_"
 
 
 class EnvironmentLayerEntity(Base):

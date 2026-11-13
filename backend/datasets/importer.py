@@ -55,6 +55,11 @@ def _override_note(ov: dict, sha: str | None, applied: list[str]) -> str:
             f" (sha256 {(sha or 'UNKNOWN')[:12]}…): {ov.get('reason', 'no reason recorded')}")
 
 
+def _ov_suitability(ov: dict) -> str:
+    """Engineering needs a stated accuracy and an official source at registration: never from the overrides file."""
+    return "screening" if ov.get("suitability") == "engineering" else ov["suitability"]
+
+
 def apply_override_to_registered(db: Session, version_id: str, overrides: dict, sha: str | None) -> list[str]:
     """Fill-only on an already-registered version: theme of a manifest-origin dataset whose theme was guessed, and a
     data class / suitability still NULL. Never replaces a stated value; engineering is never set from here."""
@@ -73,9 +78,9 @@ def apply_override_to_registered(db: Session, version_id: str, overrides: dict, 
     if v.data_class is None and ov.get("data_class") in DATA_CLASSES:
         v.data_class = ov["data_class"]
         applied.append(f"class {v.data_class}")
-    if v.suitability is None and ov.get("suitability") in ("visualisation", "screening"):
-        v.suitability = ov["suitability"]
-        applied.append(f"suitability {v.suitability}")
+    if v.suitability is None and ov.get("suitability") in ("visualisation", "screening", "engineering"):
+        v.suitability = _ov_suitability(ov)
+        applied.append(f"suitability {v.suitability}" + (" (engineering is not accepted from the overrides file)" if ov["suitability"] == "engineering" else ""))
     if applied:
         # notes are immutable on a registered version: the reason is recorded as the latest classification check (append-only)
         db.flush()
@@ -263,9 +268,9 @@ def register_dir(db: Session, d: str, kind: str, root: str, overrides: dict | No
         if not _first(m, "data_class", "classification", "class") and ov.get("data_class"):
             m["data_class"] = ov["data_class"]
             ov_applied.append(f"class {ov['data_class']}")
-        if not _first(m, "suitability") and ov.get("suitability") in ("visualisation", "screening"):
-            m["suitability"] = ov["suitability"]
-            ov_applied.append(f"suitability {ov['suitability']}")
+        if not _first(m, "suitability") and ov.get("suitability") in ("visualisation", "screening", "engineering"):
+            m["suitability"] = _ov_suitability(ov)
+            ov_applied.append(f"suitability {m['suitability']}" + (" (engineering is not accepted from the overrides file)" if ov["suitability"] == "engineering" else ""))
     lic_meta = m.get("licence") if isinstance(m.get("licence"), dict) else (m.get("license") if isinstance(m.get("license"), dict) else {})
 
     if source_id:

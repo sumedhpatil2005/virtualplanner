@@ -264,6 +264,23 @@ FEATURES = [
       ("utilities", "pmc_sewage_pipelines_fgb", S, False, "PMC sewers, levels QL-D"), ("boreholes", None, S, True, "imported AGS4 logs")]),
     ("explore.terrain_overlay", "explore", "Explore", "Hillshade / slope overlay and elevation readout", None, None,
      [("dem", "elevation_copdem30", V, True, "Copernicus GLO-30 DSM (buildings/trees included)")]),
+    # ── infrastructure data wiring (uos-infra-coord, 2026-11-13; INFRASTRUCTURE_DATA.md) — appended ──
+    ("explore.municipal_layers", "explore", "Explore", "Municipal infrastructure layers (PMC via OpenCity) and merged building footprints", "partial",
+     "OpenCity licence statements conflict: treated as non-commercial. Records as published; completeness UNKNOWN.",
+     [("utilities", "pmc_sewage_pipelines", V, True, "sewer network"), ("drainage_network", "pmc_stormwater_drains", V, False, "storm drains, chambers"),
+      ("road_network", "pmc_road_centerline", V, False, "PMC road centreline"), ("admin_boundaries", "pmc_electoral_wards_2025", V, False, "wards 2012–2025"),
+      ("land_parcels", "pmc_revenue_map", V, False, "revenue parcels"), ("transit", "pmpml_bus_stops", V, False, "bus stops"),
+      ("amenities", None, V, False, "facilities"), ("water_features", "pmc_nallas", V, False, "nallas, rivers, water bodies"),
+      ("buildings", "buildings_comparison", V, False, "merged OSM + Microsoft + Google footprints")]),
+    ("coordination.building_conflicts", "projects", "Coordination", "Conflicts with existing building footprints (OSM + ML)", "partial",
+     "Footprints only: foundation depth UNKNOWN and height UNKNOWN unless OSM-tagged, so overlaps are potential conflicts at best. ML footprints are inferred.",
+     [("buildings", "buildings_comparison", S, True, "merged footprints with source + OSM agreement")]),
+    ("coordination.municipal_utility_conflicts", "projects", "Coordination", "Conflicts with PMC sewer and storm-drain records (ASCE 38 QL-D)", "partial",
+     "QL-D records; sewer depths from DESIGN cover/invert levels (unverified); storm drains have no depth or size; network completeness UNKNOWN.",
+     [("utilities", "pmc_sewage_pipelines", S, True, "sewer records"), ("drainage_network", "pmc_stormwater_drains", S, False, "storm-drain records")]),
+    ("population.census_2011_table", "projects", "Population", "Census 2011 ward table (historical, listed — not mappable)", "partial",
+     "2011 census wards have no boundary file: the table is listed, never drawn or joined to current wards.",
+     [("population", "census2011_pune_wards", S, True, "Census 2011 ward table")]),
 ]
 
 
@@ -291,7 +308,24 @@ WIRING = {
     "coordination.heritage_permission": (True, "AMASR rules exist; nothing to fire against without limits."),
     "underground.subsurface_evidence": (True, "/api/terrain/subsurface-evidence: NWDP wells (point observations), SoilGrids 0-30 cm, PMC sewers (QL-D), imported boreholes."),
     "explore.terrain_overlay": (True, "/api/terrain/overlays (hillshade/slope PNG, elevation_copdem30 v2) + /api/terrain/point readout."),
+    "explore.municipal_layers": (True, "Explore → Municipal infrastructure reads /api/infra (bbox, capped) from the infra_index R*Tree."),
+    "coordination.building_conflicts": (True, "Detection reads building footprints near the project from the infra_index (b_type building)."),
+    "coordination.municipal_utility_conflicts": (True, "PMC sewer + labelled storm drains imported as QL-D subsurface records (python -m coordination.pmc_import); detection reads them by extent."),
+    "population.census_2011_table": (True, "Listed in Explore (not mappable) via /api/infra/census2011."),
 }
+
+# Sources / datasets registered as RESTRICTED (not acquired; never accessed by automation)
+RESTRICTED = [
+    (dict(id="pmc_opendata_portal", name="PMC open-data portal", publisher="Pune Municipal Corporation", url="https://opendata.pmc.gov.in",
+          access_method="manual", licence_text="UNKNOWN (open-data policy page, NDSAP-based; no per-dataset licence in the API)",
+          licence_url="https://opendata.pmc.gov.in/open-data-policy", official=True,
+          tos_notes="Each file download needs a purpose form with a CAPTCHA: RESTRICTED. Not automated, not bypassed (catalogue/india.md §2).",
+          notes="Catalogue probed only (pmc_opendata_portal_catalogue)."),
+     dict(id="pmc_portal_traffic_details", title="PMC portal 'PMC Traffic Details' (dataset 431, xlsx) — RESTRICTED (CAPTCHA)", theme="traffic_counts",
+          limitations="RESTRICTED: download needs the portal purpose form with a CAPTCHA, not accessed. Contents UNKNOWN (may or may not contain counts). "
+                      "No official traffic counts are available from open sources (PUNE_DATA_AVAILABILITY.md); collection plan: MISSING_DATA_AND_COLLECTION_PLAN.md §2.7.",
+          recommended_sources_json=[{"name": "PMC open-data portal, dataset 431", "url": "https://opendata.pmc.gov.in", "access": "manual purpose form (CAPTCHA)"}])),
+]
 
 
 def _migrate(db: Session) -> None:
@@ -344,6 +378,11 @@ def _seed(db: Session) -> None:
         if is_new and vkw is not None and not versions_of(db, did):
             v = add_version(db, did, files=files, origin="seed", fingerprint=fingerprint("seed", did, vkw.get("version_label")), **dict(vkw))
             run_checks(db, v, hash_max_bytes=SEED_HASH_MAX)
+    for src, dkw in RESTRICTED:
+        src = dict(src)
+        ensure_source(db, src.pop("id"), **src)
+        dkw = dict(dkw)
+        ensure_dataset(db, dkw.pop("id"), source_id="pmc_opendata_portal", origin="seed", **dkw)
     for gid, title, theme, lim, rec in GAPS:
         ensure_dataset(db, gid, title=title, theme=theme, limitations=lim, recommended_sources_json=rec, origin="seed")
     for fid, ws, cap, name, cap_status, cap_reason, deps in FEATURES:

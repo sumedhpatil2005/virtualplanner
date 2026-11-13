@@ -23,7 +23,7 @@ from planning.models import PlanningProjectEntity
 
 from . import geometry as G
 from .models import (ENGINE_VERSION, ClearanceRuleEntity, CoordinationConflictEntity, CoordinationRunEntity,
-                     ProposalElementEntity, SubsurfaceDatasetEntity, SubsurfaceRecordEntity)
+                     ProposalElementEntity, SubsurfaceDatasetEntity, SubsurfaceRecordEntity, SubsurfaceRecordExtentEntity)
 
 DEFAULT_SCREENING_RADIUS_M = 50.0
 
@@ -196,18 +196,83 @@ def osm_metro_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[di
     return segs, {"available": True, "bbox": st.get("bbox"), "dataTimestamp": st.get("dataTimestamp"), "source": st.get("source")}
 
 
-def utility_segments(db: Session) -> tuple[list[G.Segment], list[dict]]:
+def utility_segments(db: Session, query_box: Optional[tuple] = None) -> tuple[list[G.Segment], list[dict]]:
+    """Utility records as segments. With `query_box` (lon/lat), records whose stored extent misses the box are not read
+    (records without an extent row are always read). z from depth and diameter; width = diameter."""
+    from sqlalchemy import and_, or_
+    q = db.query(SubsurfaceRecordEntity).filter(SubsurfaceRecordEntity.record_type == "utility", SubsurfaceRecordEntity.geometry_geojson.isnot(None))
+    if query_box is not None:
+        x0, y0, x1, y1 = query_box
+        E = SubsurfaceRecordExtentEntity
+        q = q.outerjoin(E, E.record_id == SubsurfaceRecordEntity.id).filter(or_(
+            E.record_id.is_(None), and_(E.max_lon >= x0, E.min_lon <= x1, E.max_lat >= y0, E.min_lat <= y1)))
     segs: list[G.Segment] = []
-    for r in db.query(SubsurfaceRecordEntity).filter(SubsurfaceRecordEntity.record_type == "utility", SubsurfaceRecordEntity.geometry_geojson.isnot(None)):
+    for r in q:
         g = _load(r.geometry_geojson)
         if not g:
             continue
+        props = _load(r.properties_json, {}) or {}
+        meta = {"layer": "subsurface_utility", "dataset_id": r.dataset_id, "quality_level": r.quality_level or "UNKNOWN",
+                "utility_type": r.utility_type, "owner": r.owner, "external_id": r.external_id}
+        for k in ("source", "data_class", "depth_basis", "levels_status"):
+            if props.get(k):
+                meta[k] = props[k]
         segs += G.segments_for(r.id, "utility", g, width_m=r.diameter_m, z_min=r.z_min_m, z_max=r.z_max_m, certainty=r.z_certainty,
-                               meta={"layer": "subsurface_utility", "dataset_id": r.dataset_id, "quality_level": r.quality_level or "UNKNOWN",
-                                     "utility_type": r.utility_type})
+                               meta=meta)
     ds = [{"id": d.id, "sha256": d.file_sha256, "coverage": _load(d.coverage_bbox_json)} for d in
           db.query(SubsurfaceDatasetEntity).filter(SubsurfaceDatasetEntity.record_type == "utility").order_by(SubsurfaceDatasetEntity.id)]
     return segs, ds
+
+
+def infra_state() -> Optional[str]:
+    try:
+        from datasets import infra_store
+        st = infra_store.status()
+        return st.get("fingerprint") if st.get("available") else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# ML footprints that agree with an OSM footprint (status agrees_with_osm) are represented by that OSM footprint, so the same
+# building is not reported twice; OSM footprints and ML-only candidates are read.
+BUILDING_STATUSES = {"osm", "ml_only_candidate"}
+BUILDING_MAX = 60000
+
+
+def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dict]]:
+    """Building footprints near the project from the infrastructure index (merged OSM + Microsoft + Google layer).
+    Footprint = polygon as published (width known). Height (z_max) only from an OSM height tag, else UNKNOWN; foundation
+    depth (z_min) always UNKNOWN. Each segment carries source, source id, class (OSM observed / ML inferred), confidence
+    (Google only) and OSM-agreement status."""
+    try:
+        from datasets import infra_store
+        st = infra_store.status()
+        if not st.get("available") or infra_store.layer("buildings") is None:
+            return [], {"available": False, "reason": st.get("reason") or "buildings layer not in the index"}
+        meta_l = infra_store.layer("buildings")
+    except Exception as e:  # noqa: BLE001
+        return [], {"available": False, "reason": str(e)[:200]}
+    if not boxes:
+        return [], {"available": True, "bbox": meta_l.get("bbox")}
+    from shapely.geometry import box as sbox, mapping
+    from shapely.strtree import STRtree
+    qb = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+    rects = [sbox(*b) for b in boxes]
+    tree = STRtree(rects)
+    feats = infra_store.features_near("buildings", qb, where={"status": BUILDING_STATUSES}, max_features=BUILDING_MAX)
+    segs: list[G.Segment] = []
+    for fid, ext, p, g in feats:
+        if len(tree.query(g)) == 0:
+            continue
+        h = p.get("height_m")
+        segs += G.segments_for(f"bld_{fid}", "building", mapping(g), width_m=None, z_min=None, z_max=float(h) if h is not None else None,
+                               certainty="estimated",
+                               meta={"layer": "building", "source": p.get("source"), "source_id": p.get("source_id"), "data_class": p.get("data_class"),
+                                     "confidence": p.get("confidence"), "osm_agreement": p.get("status"), "height_m": h,
+                                     "height_basis": p.get("height_basis"), "foundation_depth": "UNKNOWN", "dataset_id": meta_l.get("dataset_id")})
+    return segs, {"available": True, "bbox": meta_l.get("bbox"), "read": len(feats), "capped": len(feats) >= BUILDING_MAX,
+                  "dataset_id": meta_l.get("dataset_id"), "index": st.get("fingerprint"),
+                  "excluded": "ML footprints that agree with OSM (represented by the OSM footprint)"}
 
 
 def subsurface_hash(db: Session) -> str:
@@ -253,7 +318,6 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     for e in others:
         other_segs += element_segments(db, e)[0]
     base_segs, base_cov, base_cov_src, base_fp = baseline_road_segments(db)
-    util_segs, util_ds = utility_segments(db)
     all_a = [s for ss in a_segs.values() for s in ss]
     pad = radius / 100000.0 + 0.001
     boxes = []
@@ -262,13 +326,17 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
         lo0, la0 = G.from_utm(x0, y0)
         lo1, la1 = G.from_utm(x1, y1)
         boxes.append((lo0 - pad, la0 - pad, lo1 + pad, la1 + pad))
+    qbox = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)) if boxes else None
+    util_segs, util_ds = utility_segments(db, qbox) if qbox else ([], [])
     metro_segs, metro_meta = osm_metro_segments(boxes) if boxes else ([], None)
+    bld_segs, bld_meta = building_segments(boxes)
 
     layers = {
         "project_element": other_segs,
         "baseline_road": base_segs,
         "osm_metro": metro_segs,
         "subsurface_utility": util_segs,
+        "building": bld_segs,
     }
     trees = {k: G.build_tree(v) for k, v in layers.items() if v}
 
@@ -280,7 +348,7 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
         "scenario_versions": {e.scenario_id: e.scenario_version_id for e in own + others if e.scenario_id and e.scenario_version_id},
         "scenario_heads": {sid: change_set_hash(head_change_set(db, sid)) for sid in sorted({e.scenario_id for e in own + others if e.scenario_id and not e.scenario_version_id})},
         "other_projects": other_projects, "baseline_fingerprint": base_fp, "rule_set_hash": rules_hash, "rules": rules,
-        "subsurface_hash": subsurface_hash(db), "osm_index": osm_state(), "screening_radius_m": screening_radius_m,
+        "subsurface_hash": subsurface_hash(db), "osm_index": osm_state(), "infra_index": infra_state(), "screening_radius_m": screening_radius_m,
         "engine_version": ENGINE_VERSION,
     }
     rows: list[CoordinationConflictEntity] = []
@@ -326,6 +394,9 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                           "OSM metro (local index; depth UNKNOWN)" if metro_meta and metro_meta.get("available") else "OSM metro index not available"),
             "subsurface_utility": (any(G.box_inside(e_box, d["coverage"]) for d in util_ds),
                                    "subsurface utility records; coverage = stated coverage of an imported dataset (none stated = UNKNOWN)"),
+            "building": (bool(bld_meta and bld_meta.get("available")) and G.box_inside(e_box, bld_meta.get("bbox")),
+                         "building footprints (OSM + Microsoft + Google index); no footprint overlaps — completeness of OSM and ML recall UNKNOWN"
+                         if bld_meta and bld_meta.get("available") else "building footprint index not available"),
         }
         for layer, (covered, note) in cov.items():
             if layer in hit_layers:
@@ -353,7 +424,7 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     run.inputs_json = _canon(inputs)
     run.summary_json = _canon({"counts": counts, "elements": len(own), "skipped_elements": skipped,
                                "other_projects": sorted(other_projects), "layers": {k: len(v) for k, v in layers.items()},
-                               "osm_metro": metro_meta, "baseline_coverage": {"bbox": base_cov, "source": base_cov_src},
+                               "osm_metro": metro_meta, "buildings": bld_meta, "baseline_coverage": {"bbox": base_cov, "source": base_cov_src},
                                "permission_triggers": sum(len(_load(r.permission_triggers_json, [])) for r in rows)})
     db.add(run)
     db.add_all(rows)
@@ -406,6 +477,8 @@ def stale_coordination_run(db: Session, run: CoordinationRunEntity) -> dict:
         reasons.append("subsurface_data_changed")
     if osm_state() != inp.get("osm_index"):
         reasons.append("osm_index_changed")
+    if "infra_index" in inp and infra_state() != inp.get("infra_index"):
+        reasons.append("infra_index_changed")
     if run.engine_version != ENGINE_VERSION:
         reasons.append("engine_version_changed")
     return _verdict(reasons, [])
