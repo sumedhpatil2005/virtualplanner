@@ -31,8 +31,9 @@ export const OverviewTab: React.FC<{ b: ProjectBundle; who: string; act: Act; re
             hint={unknownDepth ? `${unknownDepth} with depth unknown` : undefined} />
         </button>
         <button type="button" className="text-left" onClick={() => goTab('conflicts')} title="Open Conflicts">
-          <MetricTile label="Open conflicts" value={lastCoord ? openActionableCount(b.issues) : null}
-            badge={lastCoord ? <StaleBadge verdict={lastCoord} /> : null} hint={lastCoord ? `Detection ${when(lastCoord.created_at)}` : 'Detection not run'} data-testid="metric-open-conflicts" />
+          <MetricTile label="Open conflicts" value={lastCoord || b.issues.length ? openActionableCount(b.issues) : null}
+            badge={lastCoord ? <StaleBadge verdict={lastCoord} /> : null}
+            hint={lastCoord ? `Detection ${when(lastCoord.created_at)}` : b.issues.length ? 'Raised by other projects; not run here' : 'Detection not run'} data-testid="metric-open-conflicts" />
         </button>
         <button type="button" className="text-left" onClick={() => goTab('assessments')} title="Open Assessments">
           <MetricTile label="Stale assessments" value={b.stale ? sum.staleAssessments : null}

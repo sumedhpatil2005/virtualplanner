@@ -26,7 +26,7 @@ export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => voi
   return (
     <>
       <PanelHeader title={p.name} subtitle={<StatusBadge status={p.status} />} onBack={onBack} backLabel="All projects" onClose={onClose} />
-      <div className="px-3 pt-1 shrink-0">
+      <div className="px-3 pt-1 shrink-0 [&_.uos-tabs]:flex-wrap [&_.uos-tab]:px-2.5" data-testid="project-tabs">
         <Tabs<ProjectTab> idBase="uos-project" label="Project sections" value={tab} onChange={setTab} tabs={[
           { id: 'overview', label: 'Overview' },
           { id: 'alternatives', label: `Alternatives${alts ? ` ${alts}` : ''}`, 'data-testid': 'ptab-alternatives' },

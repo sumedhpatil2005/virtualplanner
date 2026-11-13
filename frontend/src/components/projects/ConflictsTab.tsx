@@ -74,7 +74,7 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
         <CertaintyBadge certainty={i.certainty} compact />
         <button aria-label="Fly to location" title="Fly to location" className="p-1 rounded text-slate-400 hover:text-white cursor-pointer" onClick={() => void fly()}><Crosshair size={14} /></button>
       </div>
-      {shared && <div className="text-xs text-violet-200 flex items-center gap-1" data-testid="conflict-shared"><Share2 size={11} aria-hidden />Shared with project “{shared}” — they see the same finding; nothing in their project is changed.</div>}
+      {shared && <div className="text-xs text-violet-200 flex items-start gap-1" data-testid="conflict-shared"><Share2 size={11} aria-hidden className="mt-0.5 shrink-0" />Shared with project “{shared}” — they see the same finding; nothing in their project is changed.</div>}
       {i.permission_triggers.length > 0 && <div className="text-xs text-amber-200">{i.permission_triggers.map(t => `${t.label}: ${t.distance_m.toFixed(1)} m ≤ ${t.threshold_m} m (permission trigger, not an engineering clearance)`).join(' · ')}</div>}
       <div className="flex items-center gap-2 text-xs">
         <span className={i.status === 'open' ? 'text-amber-200' : 'text-slate-300'} data-testid="conflict-status">{STATUS_TEXT[i.status]}</span>

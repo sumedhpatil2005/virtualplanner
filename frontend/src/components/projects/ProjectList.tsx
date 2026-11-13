@@ -26,7 +26,7 @@ const ProjectCard: React.FC<{ p: Project; onOpen: () => void }> = ({ p, onOpen }
       coordinationApi.projectStale(p.id).catch(() => null),
     ]).then(([full, els, issues, stale]) => {
       if (!live) return;
-      setD({ area: full.area?.name ?? (full.bbox ? 'bounding box' : null), detected: !!stale?.coordination_runs.length,
+      setD({ area: full.area?.name ?? (full.bbox ? 'bounding box' : null), detected: !!stale?.coordination_runs.length || issues.length > 0,
         summary: cardSummary({ links: full.links, elements: els.length, issues, stale }) });
     }).catch(() => live && setFailed(true));
     return () => { live = false; };
