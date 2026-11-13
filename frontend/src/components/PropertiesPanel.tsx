@@ -2317,11 +2317,12 @@ const FlyoverImpactNotice: React.FC<{ impact: NonNullable<import('../engine/obje
 
 
 /** Lets the planner say where entered flows come from, so they are labelled honestly. */
-const ProvenancePicker: React.FC<{ value: string | undefined; onChange: (source: 'estimated' | 'survey' | 'observed') => void }> = ({ value, onChange }) => (
+const ProvenancePicker: React.FC<{ value: string | undefined; onChange: (source: 'hypothetical' | 'estimated' | 'survey' | 'observed') => void }> = ({ value, onChange }) => (
   <label className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
     Data source
-    <select value={value === 'observed' || value === 'survey' ? value : 'estimated'} onChange={e => onChange(e.target.value as 'estimated' | 'survey' | 'observed')}
+    <select value={value === 'observed' || value === 'survey' || value === 'hypothetical' ? value : 'estimated'} onChange={e => onChange(e.target.value as 'hypothetical' | 'estimated' | 'survey' | 'observed')}
       className="bg-slate-950 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-slate-200">
+      <option value="hypothetical">Hypothetical (tool default / what-if)</option>
       <option value="estimated">Estimated (heuristic)</option>
       <option value="survey">Survey (own count)</option>
       <option value="observed">Observed (published, cite in name)</option>

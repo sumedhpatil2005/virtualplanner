@@ -204,3 +204,57 @@ describe('User-managed scenarios (item 24)', () => {
     await expect(sm.createScenario({ name: '   ', year: 2030 })).rejects.toThrow(/empty/);
   });
 });
+
+describe('Honest tool defaults (docs/urbanos/DESIGN_TOOLS_AND_HONESTY.md §4)', () => {
+  const square: [number, number, number][] = [[73.7, 18.5, 0], [73.7005, 18.5, 0], [73.7005, 18.5005, 0]];
+  const draw = async (setup: (e: import('../editing/EditingEngine').EditingEngine) => void, mode: 'draw_building' | 'draw_utility', pts = square) => {
+    const { EditingEngine } = await import('../editing/EditingEngine');
+    const { ObjectManager } = await import('../objects/ObjectManager');
+    const { HistoryManager } = await import('../history/HistoryManager');
+    const objects = new ObjectManager();
+    const editing = new EditingEngine(objects, new HistoryManager(), () => null as never);
+    editing.setMode(mode);
+    setup(editing);
+    pts.forEach(p => editing.addDrawingPoint(p));
+    editing.finalizeDrawing('base');
+    return objects.getAll().find(o => o.type === (mode === 'draw_building' ? 'building' : 'utility'))!;
+  };
+
+  it('building floors come from the tool setting, never Math.random, and are marked hypothetical', async () => {
+    const rnd = vi.spyOn(Math, 'random');
+    const b = await draw(e => { e.buildingFloors = 7; }, 'draw_building') as BuildingObject;
+    expect(b.floors).toBe(7);
+    expect(b.height).toBe(21);
+    expect(b.valueCertainty?.floors).toBe('hypothetical');
+    expect(b.valueCertainty?.population).toBe('hypothetical');
+    // Math.random may still make the object id, but two drawings with the same setting give the same floors
+    const b2 = await draw(e => { e.buildingFloors = 7; }, 'draw_building') as BuildingObject;
+    expect(b2.floors).toBe(b.floors);
+    rnd.mockRestore();
+  });
+
+  it('the default building floor count is a stated default (4), clamped to 1..200', async () => {
+    const { DEFAULT_BUILDING_FLOORS, clampFloors } = await import('../editing/EditingEngine');
+    expect(DEFAULT_BUILDING_FLOORS).toBe(4);
+    expect((await draw(() => {}, 'draw_building') as BuildingObject).floors).toBe(4);
+    expect(clampFloors(0)).toBe(1);
+    expect(clampFloors(999)).toBe(200);
+    expect(clampFloors(Number.NaN)).toBe(4);
+  });
+
+  it('utility takes type, depth, depth certainty and diameter; unknown diameter is null, not 0', async () => {
+    const line: [number, number, number][] = [[73.7, 18.5, 0], [73.701, 18.5, 0]];
+    const gas = await draw(e => { e.utilityType = 'gas'; e.utilityDepthM = 2.4; e.utilityDepthCertainty = 'measured'; e.utilityDiameterMm = 160; }, 'draw_utility', line) as import('../objects/types').UtilityObject;
+    expect(gas.utilityType).toBe('gas');
+    expect(gas.layerId).toBe('gas_util');
+    expect(gas.depth).toBe(2.4);
+    expect(gas.depthCertainty).toBe('measured');
+    expect(gas.diameterMm).toBe(160);
+    const plain = await draw(() => {}, 'draw_utility', line) as import('../objects/types').UtilityObject;
+    expect(plain.depthCertainty).toBe('hypothetical');
+    expect(plain.diameterMm).toBeNull();
+    expect(plain.valueCertainty?.diameterMm).toBe('unknown');
+    // the Gas layer the Layers panel lists is the one a gas utility is drawn on
+    expect(new LayerManager().getAll().some(l => l.id === 'gas_util')).toBe(true);
+  });
+});

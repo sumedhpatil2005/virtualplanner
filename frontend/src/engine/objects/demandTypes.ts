@@ -1,6 +1,7 @@
 export type TransportMode = 'car' | 'two_wheeler' | 'bus' | 'metro' | 'walking' | 'other';
 export type TimePeriod = 'AM_Peak' | 'PM_Peak' | 'Midday' | 'Night';
-export type DemandSourceType = 'estimated' | 'synthetic' | 'observed' | 'survey';
+/** 'hypothetical' = a tool default or what-if value, never observed (docs/urbanos/DESIGN_TOOLS_AND_HONESTY.md §4). */
+export type DemandSourceType = 'estimated' | 'synthetic' | 'observed' | 'survey' | 'hypothetical';
 
 export interface ModeSplit {
   car: number;        // fractional (0.0 to 1.0)

@@ -6,7 +6,8 @@
  * Plus the import status of a DATASET: available (source, date, licence) | not_imported (= UNKNOWN).
  */
 
-export type Certainty = 'measured' | 'estimated' | 'hypothetical' | 'unknown';
+import type { Certainty } from '../../../engine/objects/certainty';
+export type { Certainty };
 export type Trust = 'fails_validation' | 'not_validated' | 'stale' | 'validated';
 
 export const CERTAINTY_LABEL: Record<Certainty, string> = {

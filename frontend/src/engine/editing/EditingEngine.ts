@@ -20,6 +20,17 @@ import { junctionLayout } from '../objects/junctionLayout';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
+import type { Certainty } from '../objects/certainty';
+
+/** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
+export const DEFAULT_BUILDING_FLOORS = 4;
+export const DEFAULT_ZONE_POPULATION = 10000;
+export const DEFAULT_ZONE_EMPLOYMENT = 5000;
+export const DEFAULT_UTILITY_DEPTH_M = 1.5;
+/** A gateway must be within this ground distance of a network node (metres). */
+export const GATEWAY_SNAP_M = 440;
+/** Floors are clamped to this range when entered in the tool. */
+export const clampFloors = (n: number): number => Math.min(200, Math.max(1, Math.round(Number.isFinite(n) ? n : DEFAULT_BUILDING_FLOORS)));
 
 /** highway=* values fetched for study areas; the importer's allowlist, plus tracks it may keep. */
 const STUDY_AREA_HIGHWAYS = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|track';
@@ -56,6 +67,17 @@ export class EditingEngine {
   public roadClass: RoadClassification = 'local';
   public buildingUsage: BuildingUsage = 'residential';
   public utilityType: UtilityType = 'water';
+  /**
+   * Tool settings that become object values. All are HYPOTHETICAL defaults the user is asked
+   * to edit (docs/urbanos/DESIGN_TOOLS_AND_HONESTY.md §4); none is random or presented as data.
+   */
+  public buildingFloors = DEFAULT_BUILDING_FLOORS;
+  public zonePopulation = DEFAULT_ZONE_POPULATION;
+  public zoneEmployment = DEFAULT_ZONE_EMPLOYMENT;
+  public utilityDepthM = DEFAULT_UTILITY_DEPTH_M;
+  public utilityDepthCertainty: Certainty = 'hypothetical';
+  /** null = unknown diameter (never stored as 0). */
+  public utilityDiameterMm: number | null = null;
 
   public getIsImporting(): boolean {
     return this.isImporting;
@@ -595,7 +617,8 @@ export class EditingEngine {
         coords.push([coords[0][0], coords[0][1], coords[0][2]]);
       }
 
-      const floors = Math.round(Math.random() * 15 + 2);
+      // Floors come from the tool setting (a HYPOTHETICAL design input, default DEFAULT_BUILDING_FLOORS), never random.
+      const floors = clampFloors(this.buildingFloors);
       const population = floors * 15;
 
       newObj = {
@@ -613,6 +636,7 @@ export class EditingEngine {
         waterDemand: population * 150, // 150L/person/day
         electricityDemand: population * 6, // 6kWh/person/day
         constructionYear: 2026,
+        valueCertainty: { floors: 'hypothetical', height: 'hypothetical', population: 'hypothetical', parkingSpaces: 'hypothetical', waterDemand: 'hypothetical', electricityDemand: 'hypothetical' },
         createdAt,
         updatedAt: createdAt
       };
@@ -645,8 +669,11 @@ export class EditingEngine {
         scenarioId,
         coordinates: [...this.drawingPoints],
         utilityType: this.utilityType,
-        depth: 1.5,
+        depth: Number.isFinite(this.utilityDepthM) && this.utilityDepthM > 0 ? this.utilityDepthM : DEFAULT_UTILITY_DEPTH_M,
+        depthCertainty: this.utilityDepthCertainty,
+        diameterMm: this.utilityDiameterMm !== null && Number.isFinite(this.utilityDiameterMm) && this.utilityDiameterMm > 0 ? this.utilityDiameterMm : null,
         capacity: 100,
+        valueCertainty: { depth: this.utilityDepthCertainty, diameterMm: this.utilityDiameterMm ? 'hypothetical' : 'unknown', capacity: 'hypothetical' },
         createdAt,
         updatedAt: createdAt
       };
@@ -763,13 +790,14 @@ export class EditingEngine {
         layerId: 'demand_zones',
         scenarioId,
         coordinates: coords,
-        totalPopulation: 10000,
-        totalEmployment: 5000,
+        totalPopulation: Math.max(0, Math.round(this.zonePopulation)),
+        totalEmployment: Math.max(0, Math.round(this.zoneEmployment)),
         landUseMix: { residential: 50, commercial: 30, industrial: 10, educational: 10 },
         gateways: [],
+        // Tool defaults / user what-if values: HYPOTHETICAL, with no evidential confidence
         provenance: {
-          source: 'estimated',
-          confidence: 0.8,
+          source: 'hypothetical',
+          confidence: 0,
           updatedAt: createdAt
         },
         createdAt,
@@ -780,13 +808,15 @@ export class EditingEngine {
 
       let nearestNodeId = '';
       let nearestCoords: [number, number, number] = this.drawingPoints[0];
-      let minDistance = Infinity;
+      let minDistance = Infinity; // metres
 
       const network = this.getNetwork ? this.getNetwork() : null;
       if (network && network.nodes) {
         network.nodes.forEach((node: any) => {
-          const dx = node.coordinates[0] - this.drawingPoints[0][0];
-          const dy = node.coordinates[1] - this.drawingPoints[0][1];
+          // Ground distance (equirectangular; error well under 1% at gateway distances)
+          const lat0 = this.drawingPoints[0][1] * Math.PI / 180;
+          const dx = (node.coordinates[0] - this.drawingPoints[0][0]) * 111320 * Math.cos(lat0);
+          const dy = (node.coordinates[1] - this.drawingPoints[0][1]) * 110540;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < minDistance) {
             minDistance = dist;
@@ -796,9 +826,8 @@ export class EditingEngine {
         });
       }
 
-      // 0.004 degrees is roughly 440 meters, snap threshold
-      if (minDistance > 0.004) {
-        throw new Error("Gateway is too far from the road network. Please place it within 300m of a road.");
+      if (minDistance > GATEWAY_SNAP_M) {
+        throw new Error(`Gateway is too far from the road network. Place it within ${GATEWAY_SNAP_M} m of a road node.`);
       }
 
       newObj = {
@@ -819,6 +848,8 @@ export class EditingEngine {
           walking: 0.03,
           other: 0.02
         },
+        // Default flows and mode split are tool assumptions: HYPOTHETICAL until the user enters observed values
+        provenance: { source: 'hypothetical', confidence: 0, updatedAt: createdAt },
         createdAt,
         updatedAt: createdAt
       } as any;

@@ -8,6 +8,12 @@ export interface BaseCityObject {
   scenarioId: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Certainty of individual field values (docs/urbanos/DESIGN_TOOLS_AND_HONESTY.md §4):
+   * e.g. { floors: 'hypothetical' } when the value is a tool default or a design input.
+   * Absent = not recorded (treat as unknown in the UI, not as measured).
+   */
+  valueCertainty?: Partial<Record<string, import('./certainty').Certainty>>;
 }
 
 export type RoadClassification = 'highway' | 'arterial' | 'collector' | 'local';
@@ -269,8 +275,12 @@ export interface UtilityObject extends BaseCityObject {
   type: 'utility';
   coordinates: [number, number, number][]; // Path or line of utility piping/cables
   utilityType: UtilityType;
-  depth: number; // meters below ground
+  depth: number; // meters below ground (cover to crown as entered; see depthCertainty)
   capacity: number; // capacity units
+  /** How the depth is known. 'unknown' means the stored depth is only a drawing placeholder. */
+  depthCertainty?: import('./certainty').Certainty;
+  /** Internal/nominal diameter in mm; null/absent = unknown (never 0). */
+  diameterMm?: number | null;
 }
 
 export interface MetroFlyoverObject extends BaseCityObject {
@@ -312,7 +322,7 @@ export interface ZoneObject extends BaseCityObject {
   };
   gateways: string[]; // Associated Gateway IDs
   provenance: {
-    source: 'estimated' | 'synthetic' | 'observed' | 'survey';
+    source: 'estimated' | 'synthetic' | 'observed' | 'survey' | 'hypothetical';
     confidence: number;
     updatedAt: string;
   };
@@ -333,7 +343,7 @@ export interface GatewayObject extends BaseCityObject {
     other: number;
   };
   provenance: {
-    source: 'estimated' | 'synthetic' | 'observed' | 'survey';
+    source: 'estimated' | 'synthetic' | 'observed' | 'survey' | 'hypothetical';
     confidence: number;
     updatedAt: string;
   };

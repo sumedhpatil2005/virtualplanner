@@ -65,6 +65,9 @@ describe('Zoning and Gateway Planning CAD Workflow', () => {
     expect(zone.coordinates[3]).toEqual([73.738, 18.588, 0]);
     expect(zone.totalPopulation).toBe(10000);
     expect(zone.totalEmployment).toBe(5000);
+    // Tool defaults are labelled as what-if values, not data with 0.8 confidence
+    expect(zone.provenance.source).toBe('hypothetical');
+    expect(zone.provenance.confidence).toBe(0);
   });
 
   it('2. Reject invalid zone polygons (too few vertices or self-intersecting)', () => {
@@ -125,6 +128,8 @@ describe('Zoning and Gateway Planning CAD Workflow', () => {
     // Gateway snaps exactly to Node_A's coordinates
     expect(gw.coordinates[0]).toEqual([73.74, 18.59, 0]);
     expect(gw.connectedNodeId).toBe('node_A');
+    // Default flows are tool assumptions, labelled hypothetical
+    expect(gw.provenance.source).toBe('hypothetical');
   });
 
   it('5. Reject gateway placement if placed too far from road network', () => {
@@ -135,7 +140,15 @@ describe('Zoning and Gateway Planning CAD Workflow', () => {
     editing.setMode('draw_gateway');
     // Place far away from Node_A or Node_B
     editing.addDrawingPoint([73.95, 18.75, 0]);
-    expect(() => editing.finalizeDrawing('base')).toThrowError("Gateway is too far from the road network. Please place it within 300m of a road.");
+    expect(() => editing.finalizeDrawing('base')).toThrowError("Gateway is too far from the road network. Place it within 440 m of a road node.");
+    // The message matches the threshold: ~445 m north of node_A is rejected, ~423 m is accepted
+    editing.clearDrawing();
+    editing.addDrawingPoint([73.74, 18.5940, 0]);
+    expect(() => editing.finalizeDrawing('base')).toThrowError('within 440 m');
+    editing.clearDrawing();
+    editing.addDrawingPoint([73.74, 18.5938, 0]);
+    editing.finalizeDrawing('base');
+    expect(objects.getAll().some(o => o.type === 'gateway')).toBe(true);
   });
 
   it('6. Ensure DemandMatrixCompiler successfully compiles with new zones/gateways', () => {
