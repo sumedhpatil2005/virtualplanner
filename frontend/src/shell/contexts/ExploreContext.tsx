@@ -150,12 +150,12 @@ export const ExploreContext: React.FC = () => {
         <SelectedSummary />
       </PanelSection>
       <PanelSection title="Loaded city" aside={alt?.name}>
-        <div className="grid grid-cols-3 gap-2" data-testid="explore-counts">
+        <div className="grid grid-cols-2 gap-2" data-testid="explore-counts">
           <MetricTile label="Road km" value={stats.roadKm.toLocaleString(undefined, { maximumFractionDigits: stats.roadKm >= 100 ? 0 : 1 })} />
           <MetricTile label="Buildings" value={stats.buildings.toLocaleString()} />
           <MetricTile label="Junctions" value={stats.junctions.toLocaleString()} />
         </div>
-        <p className="text-meta text-text-3 flex flex-wrap items-center gap-1">Computed from the objects loaded in this alternative ({stats.roads.toLocaleString()} road pieces). Junctions: {stats.networkNodes.toLocaleString()} road-network nodes where 3+ arms meet <CertaintyBadge certainty="estimated" compact note="Derived from shared road vertices, not a junction inventory." /> plus {stats.placedJunctions.toLocaleString()} placed. Areas not imported are not counted.</p>
+        <p className="text-meta text-text-3 flex flex-wrap items-center gap-1">Computed from the objects loaded in this alternative ({stats.roads.toLocaleString()} road pieces). Junctions: {stats.networkNodes.toLocaleString()} road-network nodes where 3+ arms meet <CertaintyBadge certainty="estimated" note="Derived from shared road vertices, not a junction inventory." /> plus {stats.placedJunctions.toLocaleString()} placed. Areas not imported are not counted.</p>
       </PanelSection>
       <PanelSection title="Layers">
         <LayerTree proposals={stats.proposals} />

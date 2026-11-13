@@ -65,7 +65,10 @@ async function coverageBox(): Promise<{ bbox: number[]; from: OverlayState['bbox
   return { bbox: [rect.west, rect.south, rect.east, rect.north].map(CesiumMath.toDegrees), from: 'camera view' };
 }
 
-const ring = (pts: { lon: number; lat: number }[]) => Cartesian3.fromDegreesArray(pts.flatMap(p => [p.lon, p.lat]));
+// City models sit at ellipsoid height (engine/layers/LayerManager: terrain is off by default), so overlays are drawn just
+// above it rather than clamped to terrain: clamped ground primitives load asynchronously and did not show in the scene.
+const LIFT_M = 1.5;
+const ring = (pts: { lon: number; lat: number }[]) => Cartesian3.fromDegreesArrayHeights(pts.flatMap(p => [p.lon, p.lat, LIFT_M]));
 
 function draw(ds: CustomDataSource, key: OverlayKey, els: OsmElement[]): number {
   const { color } = OVERLAY_STYLE[key];
@@ -84,15 +87,15 @@ function draw(ds: CustomDataSource, key: OverlayKey, els: OsmElement[]): number 
     } else if (e.outer && e.outer.length) {
       e.outer.forEach((o, i) => {
         if (o.length < 3) return;
-        ds.entities.add({ id: `${id}_${i}`, name, polygon: { hierarchy: new PolygonHierarchy(ring(o)), material: color.withAlpha(0.35), outline: false } });
-        ds.entities.add({ id: `${id}_${i}_edge`, name, polyline: { positions: ring(o), width: 2, material: color, clampToGround: true } });
+        ds.entities.add({ id: `${id}_${i}`, name, polygon: { hierarchy: new PolygonHierarchy(ring(o)), height: 0.5, material: color.withAlpha(0.35), outline: false } });
+        ds.entities.add({ id: `${id}_${i}_edge`, name, polyline: { positions: ring(o), width: 2, material: color, clampToGround: false } });
       });
       n++;
     } else if (e.geometry && e.geometry.length >= 2) {
-      ds.entities.add({ id, name, polyline: { positions: ring(e.geometry), width: key === 'railway' ? 2 : 3, material: color, clampToGround: true } });
+      ds.entities.add({ id, name, polyline: { positions: ring(e.geometry), width: key === 'railway' ? 2 : 3, material: color, clampToGround: false } });
       n++;
     } else if (e.members?.length) {
-      e.members.forEach((m, i) => { if (m.geometry?.length >= 2) ds.entities.add({ id: `${id}_m${i}`, name, polyline: { positions: ring(m.geometry), width: 2, material: color, clampToGround: true } }); });
+      e.members.forEach((m, i) => { if (m.geometry?.length >= 2) ds.entities.add({ id: `${id}_m${i}`, name, polyline: { positions: ring(m.geometry), width: 2, material: color, clampToGround: false } }); });
       n++;
     }
   }
