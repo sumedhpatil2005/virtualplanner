@@ -1,14 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { TrainFrontTunnel } from 'lucide-react';
 import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import { ALIGNMENT_KIND_LABEL } from '../../engine/underground/alignmentGeometry';
+import { ALIGNMENT_KIND_LABEL, pointAtChainage, toLonLat } from '../../engine/underground/alignmentGeometry';
 import { layoutProfile, layoutSection, scale } from '../../engine/underground/sectionLayout';
 import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../../shell/useEngineObjects';
 import { fmtM, useActiveAlignment } from './common';
 import { useUndergroundStore } from './undergroundStore';
+import { ElevationProfileSvg } from './ElevationProfile';
+import { useSubsurfaceEvidence, useTerrainProfile, type Loadable } from './useTerrain';
+import type { TerrainProfile } from '../../lib/terrainApi';
 
 const W = 880, H = 180;
 const C = {
@@ -27,22 +30,39 @@ const NoAlignment: React.FC = () => (
   </EmptyState>
 );
 
-const GroundLine: React.FC<{ x0: number; x1: number; y: number }> = ({ x0, x1, y }) => (
+const FLAT_LABEL = 'Ground = flat datum 0 m · no terrain data — UNKNOWN';
+const GroundLine: React.FC<{ x0: number; x1: number; y: number; label?: string }> = ({ x0, x1, y, label = FLAT_LABEL }) => (
   <g data-testid="ug-ground-line">
     <line x1={x0} x2={x1} y1={y} y2={y} stroke={C.ground} strokeWidth={1.5} strokeDasharray="6 4" />
-    <text x={x0 + 4} y={y - 4} fontSize={10} fill={C.ground}>Ground = flat datum 0 m · no terrain data — UNKNOWN</text>
+    <text x={x0 + 4} y={y - 4} fontSize={10} fill={C.ground}>{label}</text>
   </g>
 );
 
-/** Long-section: chainage vs depth below the flat ground datum, with crossings of other objects from the model. */
+/** Why the flat datum is shown (terrain still loading, outside DEM coverage, or the terrain service failed). */
+function flatLabel(t: Loadable<TerrainProfile>): string {
+  if (t.state === 'loading') return 'Ground = flat datum 0 m · loading DEM…';
+  if (t.state === 'error') return `Ground = flat datum 0 m · terrain service unavailable (${t.error}) — UNKNOWN`;
+  if (t.state === 'ok') return 'Ground = flat datum 0 m · alignment outside DEM coverage — UNKNOWN';
+  return FLAT_LABEL;
+}
+
+/**
+ * Long-section. With DEM coverage: elevation axis (m EGM2008) with the DSM ground line (ElevationProfile.tsx).
+ * Without: chainage vs depth below a flat ground datum labelled UNKNOWN.
+ */
 export const ProfileView: React.FC = () => {
   const { active } = useActiveAlignment();
   const all = useEngineObjects();
+  const terrain = useTerrainProfile(active?.coordinates);
+  const ev = useSubsurfaceEvidence(active?.coordinates);
   if (!active) return <NoAlignment />;
-  return <ProfileSvg a={active} others={all} />;
+  if (terrain.state === 'ok' && terrain.data.summary.n_ok > 0) {
+    return <ElevationProfileSvg a={active} others={all} prof={terrain.data} evidence={ev.state === 'ok' ? ev.data : null} />;
+  }
+  return <ProfileSvg a={active} others={all} groundLabel={flatLabel(terrain)} />;
 };
 
-export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: readonly CityObject[] }> = ({ a, others: objs }) => {
+export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: readonly CityObject[]; groundLabel?: string }> = ({ a, others: objs, groundLabel }) => {
   const L = useMemo(() => layoutProfile(a, objs, { width: W, height: H }), [a, objs]);
   const chainage = useUndergroundStore(s => s.sectionChainageM);
   const setChainage = useUndergroundStore(s => s.setSectionChainage);
@@ -78,7 +98,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
         ))}
         <text x={4} y={12} fontSize={10} fill={C.axis}>depth m ↓</text>
         <text x={W - L.box.right} y={H - 1} fontSize={10} textAnchor="end" fill={C.axis}>chainage m →</text>
-        <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} />
+        <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} label={groundLabel} />
         {/* the alignment */}
         {L.bands.map((pts, i) => (
           <polygon key={`b${i}`} points={pts.map(p => p.join(',')).join(' ')} fill={C.own} fillOpacity={hypo ? 0.25 : 0.45} stroke={C.own} strokeDasharray={hypo ? '5 3' : undefined} data-testid="ug-profile-band" />
@@ -138,6 +158,21 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
   const own = L.own;
   const ownInfo = L.section.own;
   const len = Math.round(layoutProfile(a, [], { width: 10, height: 10 }).profile.lengthM);
+  const ground = useSectionGround(a, chainage, half);
+  const groundPts = useMemo(() => {
+    if (ground.state !== 'ok') return null;
+    const s = ground.data.samples, mid = ground.data.length_m_utm / 2;
+    const centre = s.reduce<{ d: number; z: number | null }>((b, p) => (Math.abs(p.chainage_m - mid) < b.d ? { d: Math.abs(p.chainage_m - mid), z: p.elevation_m } : b), { d: Infinity, z: null }).z;
+    if (centre === null) return null;
+    const runs: [number, number][][] = [];
+    let cur: [number, number][] = [];
+    for (const p of s) {
+      if (p.elevation_m === null) { if (cur.length) runs.push(cur); cur = []; continue; }
+      cur.push([scale(L.x, p.chainage_m - mid), Math.max(L.box.top, Math.min(H - L.box.bottom, scale(L.y, centre - p.elevation_m)))]);
+    }
+    if (cur.length) runs.push(cur);
+    return { runs, centre, ds: ground.data.dataset };
+  }, [ground, L.x, L.y, L.box.top, L.box.bottom]);
   return (
     <div className="flex flex-col gap-1" data-testid="ug-section">
       <div className="flex flex-wrap items-center gap-3 text-meta text-text-2">
@@ -162,7 +197,14 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
         {L.xTicks.map(t => <text key={`x${t}`} x={scale(L.x, t)} y={H - 10} fontSize={10} textAnchor="middle" fill={C.axis}>{t}</text>)}
         <text x={4} y={12} fontSize={10} fill={C.axis}>depth m ↓</text>
         <text x={W - L.box.right} y={H - 1} fontSize={10} textAnchor="end" fill={C.axis}>offset m (left − / right +, facing chainage) · scales differ</text>
-        <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} />
+        {groundPts
+          ? <g data-testid="ug-section-ground-dem">
+              {groundPts.runs.map((r, i) => <polyline key={i} points={r.map(p => p.join(',')).join(' ')} fill="none" stroke="#a3a380" strokeWidth={1.8} />)}
+              <text x={L.box.left + 4} y={L.box.top + 10} fontSize={10} fill="#a3a380">
+                Ground: Copernicus GLO-30 DSM {groundPts.ds.version} · {groundPts.centre.toFixed(1)} m EGM2008 at the axis · depth 0 = DSM at the axis · {groundPts.ds.warning}
+              </text>
+            </g>
+          : <GroundLine x0={L.box.left} x1={W - L.box.right} y={y0} label={ground.state === 'loading' ? 'Ground = flat datum 0 m · loading DEM…' : FLAT_LABEL} />}
         <line x1={scale(L.x, 0)} x2={scale(L.x, 0)} y1={L.box.top} y2={H - L.box.bottom} stroke={C.grid} strokeDasharray="3 3" />
         {own && own.shape === 'circular' && <ellipse cx={own.cx} cy={own.cy} rx={own.rx} ry={own.ry} fill={C.own} fillOpacity={0.35} stroke={C.own} strokeWidth={2} strokeDasharray={isHypo(L.section.own.certainty) ? '5 3' : undefined} data-testid="ug-section-own" />}
         {own && own.shape === 'box' && <rect x={own.x} y={own.y} width={own.w} height={own.h} fill={C.own} fillOpacity={0.35} stroke={C.own} strokeWidth={2} strokeDasharray={isHypo(L.section.own.certainty) ? '5 3' : undefined} data-testid="ug-section-own" />}
@@ -193,3 +235,16 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
     </div>
   );
 };
+
+/** DSM along the section line (perpendicular at the chainage, ±half), debounced while the slider moves. */
+function useSectionGround(a: UndergroundAlignmentObject, chainageM: number, halfM: number): Loadable<TerrainProfile> {
+  const [ch, setCh] = useState(chainageM);
+  useEffect(() => { const t = setTimeout(() => setCh(chainageM), 250); return () => clearTimeout(t); }, [chainageM]);
+  const coords = useMemo(() => {
+    if (a.coordinates.length < 2) return null;
+    const at = pointAtChainage(a, ch);
+    const r: [number, number] = [at.dir[1], -at.dir[0]];   // right of the direction of chainage
+    return [toLonLat(at.proj, at.xy[0] - halfM * r[0], at.xy[1] - halfM * r[1]), toLonLat(at.proj, at.xy[0] + halfM * r[0], at.xy[1] + halfM * r[1])];
+  }, [a, ch, halfM]);
+  return useTerrainProfile(coords, Math.max(5, Math.round(halfM / 20)));
+}
