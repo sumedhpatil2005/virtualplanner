@@ -83,7 +83,7 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
           <section key={cat.id} data-testid={`tool-group-${cat.id}`} className="flex flex-col">
             {cat.id !== 'select' && (
               <button type="button" onClick={() => toggle(cat.id)} aria-expanded={!isCollapsed}
-                className="flex items-center gap-1 px-1 h-6 text-[11px] font-semibold uppercase tracking-wide rounded cursor-pointer hover:bg-white/5 text-left"
+                className="flex items-center gap-1 px-1 h-5 mt-1 text-[11px] font-semibold uppercase tracking-wide rounded cursor-pointer hover:bg-white/5 text-left"
                 style={{ color: hasActive ? C.accent : C.text3 }}>
                 {isCollapsed ? <ChevronRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
                 {cat.label}
@@ -91,7 +91,7 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
               </button>
             )}
             {!isCollapsed && (
-              <div className="grid gap-1 pt-0.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(68px, 1fr))' }}>
+              <div className="flex flex-wrap gap-1 pt-0.5">
                 {tools.map(tool => {
                   const Icon = tool.icon;
                   const isActive = tool.mode === activeMode;
@@ -99,13 +99,13 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
                     <button key={tool.mode} type="button" ref={el => { if (el) buttons.current.set(tool.mode, el); else buttons.current.delete(tool.mode); }}
                       onClick={() => choose(tool.mode)} data-testid={`tool-${tool.mode}`} aria-label={tool.label} aria-pressed={isActive}
                       title={`${tool.label}${tool.hotkey ? ` (${tool.hotkey})` : ''}: ${tool.description}`}
-                      className="relative flex flex-col items-center justify-center gap-1 h-12 px-1 rounded-md border text-[11px] font-medium leading-none cursor-pointer transition-colors"
+                      className="inline-flex items-center gap-1.5 h-8 pl-2 pr-2 rounded-md border text-[12px] font-medium whitespace-nowrap cursor-pointer transition-colors"
                       style={isActive
                         ? { background: 'color-mix(in srgb, var(--accent, #5AA2FF) 22%, transparent)', borderColor: C.accent, color: C.text1 }
                         : { background: C.surface2, borderColor: 'transparent', color: C.text2 }}>
-                      <Icon size={17} aria-hidden="true" />
-                      <span className="whitespace-nowrap max-w-full overflow-hidden text-ellipsis">{tool.shortLabel}</span>
-                      {tool.hotkey && <span className="absolute top-0.5 right-1 text-[9px] tabular-nums" style={{ color: C.text3 }} aria-hidden="true">{tool.hotkey}</span>}
+                      <Icon size={15} aria-hidden="true" style={isActive ? { color: C.accent } : undefined} />
+                      {tool.shortLabel}
+                      {tool.hotkey && <kbd className="text-[10px] font-normal tabular-nums" style={{ color: C.text3, fontFamily: 'inherit' }} aria-hidden="true">{tool.hotkey}</kbd>}
                     </button>
                   );
                 })}

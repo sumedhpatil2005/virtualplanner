@@ -40,7 +40,10 @@ export const AnchoredPopover: React.FC<{
         top = r.bottom + m;
       }
       const maxHeight = Math.max(160, vh - 2 * m);
-      if (h && top + Math.min(h, maxHeight) > vh - m) top = Math.max(m, vh - m - Math.min(h, maxHeight));
+      const eh = Math.min(h, maxHeight);
+      // 'below' flips above the anchor when it does not fit underneath, so it never covers its own anchor if avoidable
+      if (h && placement === 'below' && top + eh > vh - m && r.top - m - eh >= m) top = r.top - m - eh;
+      if (h && top + eh > vh - m) top = Math.max(m, vh - m - eh);
       setPos({ left, top, maxHeight });
     };
     place();

@@ -123,7 +123,7 @@ export const ImportAreaPanel: React.FC = () => {
 
   return (
     <>
-                      <div className="flex flex-col gap-2 max-h-[calc(100vh-23rem)] min-h-48 overflow-y-auto">
+                      <div className="flex flex-col gap-2">
                         <div className="text-xs text-slate-400 font-medium leading-relaxed">
                           {drawingPointsCount > 0 ? (
                             <div className="flex flex-col gap-1.5">
