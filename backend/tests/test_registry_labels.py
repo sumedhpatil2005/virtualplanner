@@ -50,3 +50,26 @@ def test_committed_labels_are_well_formed():
         assert ov[did]["title"] and ov[did]["title"] != did
     src = load_source_labels()
     assert src and all(v.get("reason") and v.get("name") for v in src.values())
+
+
+def test_dataset_titles_section_fills_bare_ids_only(client, monkeypatch):
+    root = tempfile.mkdtemp(prefix="urbanos-titles-test-")
+    _raw(root, "t_ttl_bare", {"theme": "other", "data_class": "observed", "suitability": "screening"})
+    _raw(root, "t_ttl_named", {"title": "Stated title", "theme": "other", "data_class": "observed", "suitability": "screening"})
+    ov = os.path.join(root, "overrides.json")
+    _w(ov, {"datasets": {}, "dataset_titles": {"t_ttl_bare": "SYNTHETIC title from dataset_titles", "t_ttl_named": "must not replace"}})
+    monkeypatch.setenv("URBANOS_CLASSIFICATION_OVERRIDES", ov)
+    rep = client.post("/api/datasets/import", json={"root": root}).json()
+    assert "dataset t_ttl_bare: title" in rep["labels_filled"]
+    assert client.get("/api/datasets/t_ttl_bare").json()["title"] == "SYNTHETIC title from dataset_titles"
+    assert client.get("/api/datasets/t_ttl_named").json()["title"] == "Stated title"
+
+
+def test_committed_registry_has_no_bare_id_titles():
+    """Every dataset id with a committed overrides entry or dataset_titles entry has a readable title (QA 2026-11-14)."""
+    from datasets.importer import load_dataset_titles, load_overrides
+    ov, _ = load_overrides()
+    titles = load_dataset_titles()
+    for did in ("elevation_copdem30", "cpcb_caaqms_pune", "esa_worldcover_2021_v200", "pmc_sewage_pipelines_fgb", "google_open_buildings_v3"):
+        t = titles.get(did) or ov.get(did, {}).get("title")
+        assert t and " " in t and t != did, did

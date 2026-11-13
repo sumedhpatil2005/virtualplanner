@@ -52,25 +52,37 @@ def load_overrides(path: str | None = None) -> tuple[dict, str | None]:
     return (ds if isinstance(ds, dict) else {}), hashlib.sha256(raw).hexdigest()
 
 
-def load_source_labels(path: str | None = None) -> dict:
-    """sources.<id> {name, publisher, reason} from the overrides file (fill-only labels); empty when absent."""
+def _overrides_section(key: str, path: str | None = None) -> dict:
     p = path or os.environ.get("URBANOS_CLASSIFICATION_OVERRIDES") or OVERRIDES_PATH
     try:
         with open(p, "rb") as f:
             doc = json.loads(f.read().decode("utf-8"))
     except (OSError, ValueError):
         return {}
-    src = doc.get("sources") if isinstance(doc, dict) else None
-    return src if isinstance(src, dict) else {}
+    sec = doc.get(key) if isinstance(doc, dict) else None
+    return sec if isinstance(sec, dict) else {}
 
 
-def apply_labels(db: Session, overrides: dict, sources: dict) -> list[str]:
+def load_source_labels(path: str | None = None) -> dict:
+    """sources.<id> {name, publisher, reason} from the overrides file (fill-only labels); empty when absent."""
+    return _overrides_section("sources", path)
+
+
+def load_dataset_titles(path: str | None = None) -> dict:
+    """dataset_titles.<id> -> display title (fill-only) for datasets that need no classification entry; empty when absent."""
+    return {k: v for k, v in _overrides_section("dataset_titles", path).items() if isinstance(v, str) and v.strip()}
+
+
+def apply_labels(db: Session, overrides: dict, sources: dict, titles: dict | None = None) -> list[str]:
     """Fill-only human-readable labels: a dataset title that is still its bare id, a source name that is still its bare id,
     a source publisher that is still UNKNOWN. Never replaces a stated value. Returns what changed."""
     from .models import DsSourceEntity
     changed: list[str] = []
-    for did, ov in overrides.items():
-        t = (ov or {}).get("title")
+    todo = {did: (ov or {}).get("title") for did, ov in overrides.items()}
+    for did, t in (titles or {}).items():
+        if not todo.get(did):
+            todo[did] = t
+    for did, t in todo.items():
         d = db.get(DsDatasetEntity, did) if t else None
         if d is not None and d.title == d.id:
             d.title = str(t)
@@ -512,7 +524,7 @@ def scan(db: Session, root: str | None = None) -> dict:
                         report.append(register_dir(db, dirpath, kind, root, overrides, ov_sha))
                 except Exception as e:  # noqa: BLE001 — one bad directory never stops the scan
                     report.append({"dir": os.path.relpath(dirpath, root), "result": "error", "reason": str(e)[:400]})
-    labels = apply_labels(db, overrides, load_source_labels())
+    labels = apply_labels(db, overrides, load_source_labels(), load_dataset_titles())
     summary: dict[str, int] = {}
     for r in report:
         summary[r["result"]] = summary.get(r["result"], 0) + 1
