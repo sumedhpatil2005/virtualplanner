@@ -258,6 +258,12 @@ FEATURES = [
       ("utilities", None, S, False, "utility records")]),
     ("coordination.heritage_permission", "projects", "Coordination", "AMASR / heritage permission triggers", None, None,
      [("protected_monuments", None, S, True, "notified limits"), ("heritage_list", None, S, False, "PMC list")]),
+    ("underground.subsurface_evidence", "underground", "Underground", "Subsurface evidence near an alignment (wells, soil, sewers, boreholes)", "partial",
+     "Evidence listing only: point observations and published records, no interpolation and no ground model; boreholes need site investigation.",
+     [("groundwater", "nwdp_groundwater_pune", S, True, "CGWB/GSDA wells, point observations"), ("soil", "soil_soilgrids250", S, False, "topsoil 0-30 cm; urban masked"),
+      ("utilities", "pmc_sewage_pipelines_fgb", S, False, "PMC sewers, levels QL-D"), ("boreholes", None, S, True, "imported AGS4 logs")]),
+    ("explore.terrain_overlay", "explore", "Explore", "Hillshade / slope overlay and elevation readout", None, None,
+     [("dem", "elevation_copdem30", V, True, "Copernicus GLO-30 DSM (buildings/trees included)")]),
 ]
 
 
@@ -267,7 +273,7 @@ WIRING = {
     "explore.city_model": (True, "city_objects + OSM index."),
     "design.osm_import": (True, "Reads the local OSM index (TWINCITY_OSM_INDEX)."),
     "design.feasibility_screening": (True, "Reads the OSM index and feasibility layers; no importer reads flood lines, protected limits or RoW yet."),
-    "underground.alignment_profile": (False, "Profile uses a flat datum; no code reads a registered DEM yet."),
+    "underground.alignment_profile": (True, "Profile ground line from /api/terrain/profile (Copernicus GLO-30 DSM, elevation_copdem30 v2); flat datum UNKNOWN outside coverage."),
     "underground.utility_conflicts": (True, "Reads subsurface records imported in Underground."),
     "underground.metro_clearance": (True, "OSM metro plan only; no structure levels exist."),
     "underground.ground_model": (False, "No ground model code."),
@@ -283,6 +289,8 @@ WIRING = {
     "population.exposure": (False, "Only SYNTHETIC demo zones are read."),
     "coordination.conflict_detection": (True, "Base roads, OSM metro, utility records."),
     "coordination.heritage_permission": (True, "AMASR rules exist; nothing to fire against without limits."),
+    "underground.subsurface_evidence": (True, "/api/terrain/subsurface-evidence: NWDP wells (point observations), SoilGrids 0-30 cm, PMC sewers (QL-D), imported boreholes."),
+    "explore.terrain_overlay": (True, "/api/terrain/overlays (hillshade/slope PNG, elevation_copdem30 v2) + /api/terrain/point readout."),
 }
 
 
@@ -341,8 +349,8 @@ def _seed(db: Session) -> None:
     for fid, ws, cap, name, cap_status, cap_reason, deps in FEATURES:
         wired, note = WIRING.get(fid, (None, None))
         existing = db.get(DsFeatureEntity, fid)
-        if existing is not None and existing.wired is None and wired is not None:
-            existing.wired, existing.wiring_note = wired, note
+        if existing is not None and wired is not None and (existing.wired, existing.wiring_note) != (wired, note):
+            existing.wired, existing.wiring_note = wired, note   # wiring describes the code, so the code's value wins
         if existing is None:
             db.add(DsFeatureEntity(id=fid, workspace=ws, capability=cap, name=name, status_cap=cap_status, status_cap_reason=cap_reason,
                                    wired=wired, wiring_note=note))
