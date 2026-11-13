@@ -402,3 +402,25 @@ button.uos-row:hover { background: var(--surface-2); }
 }
 /* The search box shows its focus on the wrapper (focus-within border); no second ring on the inner input */
 [data-testid=explore-search]:focus-visible { outline: none; }
+
+/* ── Data catalogue overlay (Reports → Data catalogue; components/data/DataCatalogueView.tsx) ── */
+.uos-data-overlay {
+  position: absolute; inset: var(--sp-3); z-index: 35; display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: var(--r-md); box-shadow: 0 12px 32px rgba(0,0,0,.35);
+}
+.uos-data-header { display: flex; align-items: center; gap: var(--sp-2); padding: 8px 12px; border-bottom: 1px solid var(--border); min-width: 0; }
+.uos-data-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.uos-data-split { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); min-height: 0; flex: 1; height: 100%; }
+.uos-data-list { overflow-y: auto; padding: 12px; border-right: 1px solid var(--border); min-height: 0; }
+.uos-data-list .uos-row.is-selected { background: var(--surface-3); }
+.uos-data-detail { overflow-y: auto; padding: 12px 16px; min-height: 0; min-width: 0; }
+.uos-data-features { overflow-y: auto; padding: 12px 16px; min-height: 0; flex: 1; }
+.uos-data-grid { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: var(--sp-3); align-items: start; }
+.uos-data-facts { display: grid; grid-template-columns: 1fr; border: 1px solid var(--border); border-radius: var(--r-md); }
+.uos-data-facts > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-label); }
+.uos-data-facts > div:last-child { border-bottom: 0; }
+.uos-data-facts dt { color: var(--text-2); }
+.uos-data-facts dd { color: var(--text-1); overflow-wrap: anywhere; }
+.uos-data-facts dd.is-unknown { color: var(--unknown, #9AA4B2); }
+.uos-data-footprint { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.uos-data-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 11px; color: var(--text-2); white-space: nowrap; }

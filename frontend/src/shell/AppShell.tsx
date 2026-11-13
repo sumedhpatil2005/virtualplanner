@@ -29,6 +29,7 @@ import { SimulateContext } from './contexts/SimulateContext';
 import { SIMULATE_DRAWER_TABS } from './contexts/SimulateDrawer';
 import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
+import { DataCatalogueOverlay } from '../components/data/DataCatalogueView';
 
 type Toast = { message: string; type: 'success' | 'error' | 'info' };
 
@@ -177,6 +178,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
       <main className="uos-stage" aria-label="Map">
         <div className="uos-map"><Viewport3D /></div>
         {mode === 'simulate' && <SimulationHud />}
+        <DataCatalogueOverlay />
         <div className="uos-compass"><MapCompass /></div>
         {!showContext && (
           <button type="button" className="uos-reopen" onClick={() => setContextOpen(true)} aria-label={`Show ${ws.label} panel`} data-testid="reopen-context">

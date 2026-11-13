@@ -12,6 +12,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { TrustBadge } from '../../components/ui/badges';
 import { StaleBadge } from '../../components/projects/common';
 import { useShellStore } from '../useShellStore';
+import { DataCatalogueSection } from '../../components/data/DataCatalogueSection';
 
 const who = () => localStorage.getItem('td-user') ?? '';
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
@@ -88,6 +89,7 @@ export const ReportsContext: React.FC = () => {
   return (
     <div className="space-y-5" data-testid="reports-catalogue">
       {error && <p className="text-label text-warn" role="status">Some reports could not be listed ({error}).</p>}
+      <DataCatalogueSection />
       <PanelSection title="Planning project reports" aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Reload reports"><RefreshCw size={12} aria-hidden />Reload</button>}>
         {projects == null ? <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading…</p>
           : projects.length === 0 ? <EmptyState icon={FileText} title="No planning projects yet" action={{ label: 'Create one in Projects', onClick: () => setWorkspace('projects') }} />
