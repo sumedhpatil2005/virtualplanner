@@ -15,6 +15,7 @@ import { CORRIDOR_RANGE_M } from '../engine/simulation/analysisJob';
 import { SPEED_COLORS } from '../engine/rendering/renderers/MicroTrafficVisualizer';
 import { formatDistanceM } from '../lib/format';
 import { hourLabel } from '../engine/simulation/timeOfDay';
+import { Disclosure } from './ui/Disclosure';
 import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, Notice } from './ui/kit';
 import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
 import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
@@ -91,7 +92,9 @@ const PickRoad: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
       </div>
       <Section title="How much of the city around it">
         <Segmented label="Distance around the road" options={DISTANCE_OPTIONS} value={sim.rangeMeters as (typeof STUDY_DISTANCES_M)[number]} onChange={m => mode.setRange(m)} />
-        <p className="text-xs text-slate-500">Traffic is routed over every road within this distance; the road's own neighbourhood ({formatDistanceM(CORRIDOR_RANGE_M)}) is simulated vehicle by vehicle.</p>
+        <Disclosure summary="What the distance means">
+          <p className="text-xs text-slate-400">Traffic is routed over every road within this distance; the road's own neighbourhood ({formatDistanceM(CORRIDOR_RANGE_M)}) is simulated vehicle by vehicle.</p>
+        </Disclosure>
       </Section>
     </>
   );

@@ -2263,12 +2263,12 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
         className={`w-full rounded-xl p-3 border text-left cursor-pointer transition-all ${overallColor}`}
       >
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
             🏗️ Bridge Feasibility Report
           </span>
           <span className={`text-xs font-bold ${overallTextColor}`}>{overallLabel}</span>
         </div>
-        <div className="mt-1 flex gap-3 text-[10px] text-slate-500">
+        <div className="mt-1 flex gap-3 text-[11px] text-slate-500">
           <span>Length: {result.totalFlyoverLength}m</span>
           <span>Ramp reqd: {result.rampLengthRequired}m</span>
           <span>Start avail: {result.rampLengthAvailable.start}m</span>
@@ -2289,11 +2289,11 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
                   <span>{statusIcon(check.status)}</span>
                   <span>{check.name}</span>
                 </span>
-                <span className={`text-[10px] font-bold font-mono ${statusColor(check.status)}`}>
+                <span className={`text-[11px] font-bold font-mono ${statusColor(check.status)}`}>
                   {check.actual} / {check.required} {check.unit}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 leading-relaxed">{check.message}</p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">{check.message}</p>
             </div>
           ))}
 
@@ -2306,7 +2306,7 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
               {result.surfaceRoadImpacts.map(impact => (
                 <div
                   key={impact.roadId}
-                  className="bg-amber-950/20 border border-amber-500/20 rounded-lg p-2 text-[10px] space-y-0.5"
+                  className="bg-amber-950/20 border border-amber-500/20 rounded-lg p-2 text-[11px] space-y-0.5"
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-amber-300 truncate max-w-[140px]">{impact.roadName}</span>
@@ -2315,7 +2315,7 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
                   <div className="text-slate-500">
                     {impact.originalCapacity} → {impact.reducedCapacity} veh/hr
                   </div>
-                  <div className="text-slate-600 leading-relaxed">{impact.reason}</div>
+                  <div className="text-slate-500 leading-relaxed">{impact.reason}</div>
                 </div>
               ))}
             </div>
@@ -2337,10 +2337,10 @@ const FlyoverImpactNotice: React.FC<{ impact: NonNullable<import('../engine/obje
       <span className="font-semibold text-slate-300">{impact.flyoverName}</span> ramp merge/weave zone reduced
       this road's capacity by <span className="font-bold text-amber-400">{impact.capacityReductionPercent}%</span>.
     </div>
-    <div className="text-slate-500 text-[10px]">
+    <div className="text-slate-500 text-[11px]">
       Original: {impact.originalCapacity} veh/hr → Current: {Math.round(impact.originalCapacity * (1 - impact.capacityReductionPercent / 100))} veh/hr
     </div>
-    <div className="text-slate-600 text-[10px] leading-relaxed">{impact.reason}</div>
+    <div className="text-slate-500 text-[11px] leading-relaxed">{impact.reason}</div>
   </div>
 );
 

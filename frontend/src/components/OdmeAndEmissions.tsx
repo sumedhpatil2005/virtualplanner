@@ -101,7 +101,7 @@ export const EmissionsCard: React.FC<{ result: RoadAnalysisResult | null | undef
       <TrustBadge trust="fails_validation" label="Traffic input fails validation (TAG M3.1)" testId="trust-emissions" />
       {e && (
         <div>
-          <p className="flex items-center gap-2 text-slate-300 font-medium"><Fuel size={13} /> Neighbourhood (simulated, per hour) <span className="text-[10px] uppercase tracking-wide text-amber-300">estimated</span></p>
+          <p className="flex items-center gap-2 text-slate-300 font-medium"><Fuel size={13} /> Neighbourhood (simulated, per hour) <span className="text-[11px] uppercase tracking-wide text-amber-300">estimated</span></p>
           <table className="w-full tabular-nums mt-1"><tbody>
             <tr><td>Fuel</td><td className="text-right text-slate-200" data-testid="emissions-fuel">{fmt(e.perHour.fuelL, 1)} L/h</td></tr>
             <tr><td>CO₂</td><td className="text-right text-slate-200">{kg(e.perHour.co2G)} kg/h</td></tr>
@@ -131,7 +131,7 @@ export const EmissionsCard: React.FC<{ result: RoadAnalysisResult | null | undef
 /** Compare: corridor fuel and emissions, same frozen demand and seeds; never part of the verdict. */
 export const EmissionsCompare: React.FC<{ c: ComparisonResult }> = ({ c }) => !c.emissions ? null : (
   <div className="space-y-1" data-testid="emissions-compare">
-    <p className="flex items-center gap-2 text-[11px] font-semibold text-slate-300"><Fuel size={12} /> Fuel and emissions in the neighbourhood <span className="text-[10px] uppercase tracking-wide text-amber-300">estimated</span></p>
+    <p className="flex items-center gap-2 text-[11px] font-semibold text-slate-300"><Fuel size={12} /> Fuel and emissions in the neighbourhood <span className="text-[11px] uppercase tracking-wide text-amber-300">estimated</span></p>
     <DeltaRows rows={c.emissions.deltas} />
     <p className="text-[11px] text-slate-500 leading-snug">{c.emissions.note} Model: <a className="underline" href={c.emissions.source} target="_blank" rel="noreferrer">{c.emissions.model}</a>.</p>
   </div>

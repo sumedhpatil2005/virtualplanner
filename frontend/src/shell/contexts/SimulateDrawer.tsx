@@ -33,7 +33,7 @@ export const SIMULATE_DRAWER_TABS: DrawerTab<SimulateDrawerTabId>[] = [
     id: 'day', label: 'Through the day', content: <WithStudy>{sim => (
       <div className="space-y-4">
         <TimesOfDay sim={sim} />
-        <div className="space-y-1"><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Hourly demand profile</h3><TimeOfDayPanel tod={sim.timeOfDay} /></div>
+        <div className="space-y-1"><h3 className="text-meta font-semibold uppercase tracking-wide text-text-3">Hourly demand profile</h3><TimeOfDayPanel tod={sim.timeOfDay} /></div>
       </div>
     )}</WithStudy>,
   },

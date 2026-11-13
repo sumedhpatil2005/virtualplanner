@@ -274,7 +274,7 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
             : null; })()}
         {tl.rows.some(r => r.result) && (
           <Disclosure title="Per direction and per run" tone="subtle" testId="timeline-detail">
-            <table className="w-full text-[10px] tabular-nums" data-testid="timeline-table">
+            <table className="w-full text-[11px] tabular-nums" data-testid="timeline-table">
               <thead className="text-slate-500"><tr><th className="text-left font-normal pr-2">Hour</th><th className="text-left font-normal">Direction</th><th className="text-right font-normal pl-2">Demand</th><th className="text-right font-normal pl-2">Got through</th><th className="text-right font-normal pl-2">km/h</th><th className="text-right font-normal pl-2">LOS</th></tr></thead>
               <tbody className="text-slate-300">
                 {tl.rows.flatMap(row => { const v = dayRowView(row); return v ? v.directions.map((d, i) => (
@@ -286,7 +286,7 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
                   </tr>)) : []; })}
               </tbody>
             </table>
-            <p className="text-[10px] text-slate-500">Grey: each run (seeds {seeds.join(', ')}). Demand is the same in every run (the routing is deterministic); only the simulation varies.</p>
+            <p className="text-[11px] text-slate-500">Grey: each run (seeds {seeds.join(', ')}). Demand is the same in every run (the routing is deterministic); only the simulation varies.</p>
           </Disclosure>
         )}
         </div>
@@ -320,7 +320,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
         <ol className="grid grid-cols-3 gap-1.5 text-[11px]">
           {steps.map(s => (
             <li key={s.n} title={s.title} className={`flex items-center gap-1.5 rounded-lg border px-1.5 py-1 ${s.done ? 'border-emerald-400/30 text-emerald-200' : 'border-white/10 text-slate-300'}`}>
-              {s.done ? <CheckCircle2 size={12} className="shrink-0" /> : <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px]">{s.n}</span>}
+              {s.done ? <CheckCircle2 size={12} className="shrink-0" /> : <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px]">{s.n}</span>}
               <span className="leading-tight">{s.label}</span>
             </li>
           ))}
@@ -378,7 +378,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
         <div className="grid grid-cols-3 gap-1.5" data-testid="verdict-levels">
           {([['Road', c.verdict.section], ['Neighbourhood', c.verdict.network], ['Area', c.verdict.area]] as const).map(([k, vv]) => (
             <div key={k} className="rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1">
-              <div className="text-[10px] uppercase tracking-wide text-slate-500">{k}</div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">{k}</div>
               <div className={`text-xs font-semibold ${TONE_TEXT[VERDICT[vv].tone]}`}>{VERDICT[vv].label}</div>
             </div>
           ))}
@@ -488,7 +488,7 @@ export const CountChecks: React.FC<{ sim: SimulationModeState; withOdme?: boolea
         <div>
           <p className="text-slate-300 font-medium">River bridges in the area (both directions, veh/h)</p>
           <table className="w-full tabular-nums mt-1"><thead><tr className="text-slate-500"><th className="text-left font-medium">Bridge</th><th className="text-right font-medium">Counted</th><th className="text-right font-medium">Model</th><th className="text-right font-medium">GEH</th></tr></thead>
-            <tbody>{checks.map(c => <tr key={c.station.id} className="border-t border-white/5"><td className="py-1 text-slate-300">{c.station.name}<span className="block text-[10px] text-slate-500">{c.station.peakHour}{c.station.comparable ? '' : ' · not comparable'}</span></td><td className="text-right">{fmt(c.station.peakVehicles)}</td><td className="text-right">{fmt(c.modelVph)}</td><td className={`text-right ${c.geh > 10 ? 'text-rose-300' : c.geh > 5 ? 'text-amber-300' : 'text-emerald-300'}`}>{c.geh.toFixed(0)}</td></tr>)}</tbody></table>
+            <tbody>{checks.map(c => <tr key={c.station.id} className="border-t border-white/5"><td className="py-1 text-slate-300">{c.station.name}<span className="block text-[11px] text-slate-500">{c.station.peakHour}{c.station.comparable ? '' : ' · not comparable'}</span></td><td className="text-right">{fmt(c.station.peakVehicles)}</td><td className="text-right">{fmt(c.modelVph)}</td><td className={`text-right ${c.geh > 10 ? 'text-rose-300' : c.geh > 5 ? 'text-amber-300' : 'text-emerald-300'}`}>{c.geh.toFixed(0)}</td></tr>)}</tbody></table>
           <p className="mt-1 leading-snug">Counted: {sim.screenlines?.source.title}, {sim.screenlines?.source.surveyYear} (peak hour of each bridge). Model: the area routing at {hourLabel(sim.analysis.hour ?? 0)}. GEH under 5 is a good match in practice; these counts are old and at their own peak hours, so read large gaps as "the demand is incomplete here", not as precise errors. Nothing is fitted to them.</p>
         </div>
       ) : <p>No counted bridge lies in this area.</p>}

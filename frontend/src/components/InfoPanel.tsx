@@ -93,7 +93,7 @@ const ProjectList: React.FC<{ version: number; onClose: () => void }> = ({ versi
                               {TYPE_LABELS[o.type]}{len !== null ? ` · ${formatDistanceM(len)}` : ''}
                             </span>
                           </span>
-                          <ChevronRight size={16} className="text-slate-600 shrink-0" />
+                          <ChevronRight size={16} className="text-slate-500 shrink-0" />
                         </button>
                       </li>
                     );

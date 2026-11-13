@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Crosshair, Database, FileUp, Loader2, Trash2, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSelectedId } from '../hooks/useAppMode';
+import { Disclosure } from './ui/Disclosure';
 import { SidePanel, PanelHeader, PanelBody, Section, Button, Notice, Segmented } from './ui/kit';
 import {
   trafficApi, TrafficApiError, toPcu, vehPerHour, minutesOf, forwardBearingLabel, fileToBase64, KIND_LABEL, DAY_TYPES,
@@ -29,8 +30,8 @@ const KIND_TITLE: Record<DatasetKind, string> = {
 };
 export const ProvenanceBadge: React.FC<{ kind: DatasetKind; synthetic?: boolean }> = ({ kind, synthetic }) => (
   <span className="inline-flex gap-1">
-    <span data-kind={kind} title={KIND_TITLE[kind]} className={`inline-flex items-center rounded-md border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide ${KIND_STYLE[kind]}`}>{KIND_LABEL[kind]}</span>
-    {synthetic && <span title="Test or demo data, not an observation" className="inline-flex items-center rounded-md border px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide bg-slate-500/20 text-slate-300 border-slate-400/30">Synthetic</span>}
+    <span data-kind={kind} title={KIND_TITLE[kind]} className={`inline-flex items-center rounded-md border px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide ${KIND_STYLE[kind]}`}>{KIND_LABEL[kind]}</span>
+    {synthetic && <span title="Test or demo data, not an observation" className="inline-flex items-center rounded-md border px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide bg-slate-500/20 text-slate-300 border-slate-400/30">Synthetic</span>}
   </span>
 );
 
@@ -167,7 +168,9 @@ const DatasetList: React.FC<{ datasets: Dataset[] | null; sets: PcuFactorSet[]; 
           </li>
         ))}
       </ul>
-      <p className="text-[11px] text-slate-500 leading-snug">Validation datasets are compared with the simulation after a run (Simulate → Details → Checks against traffic counts). Calibration datasets can adjust demand (Simulate → Details → Estimate demand from calibration counts, and Calibrate demand) and are never reported as validation evidence. Not used: kept, but read by nothing.</p>
+      <Disclosure summary="How datasets are used">
+        <p className="text-[11px] text-slate-400 leading-snug">Validation datasets are compared with the simulation after a run (Simulate → Details → Checks against traffic counts). Calibration datasets can adjust demand (Simulate → Details → Estimate demand from calibration counts, and Calibrate demand) and are never reported as validation evidence. Not used: kept, but read by nothing.</p>
+      </Disclosure>
     </Section>
   );
 };
@@ -394,7 +397,9 @@ const ImportWizard: React.FC<{ sets: PcuFactorSet[]; user: string; onDone: () =>
           <FileUp size={16} /> {file ? file.name : 'Choose a CSV or Excel (.xlsx) file'}
           <input data-testid="import-file" type="file" accept=".csv,.xlsx" className="hidden" onChange={e => void onFile(e)} />
         </label>
-        <p className="text-[11px] text-slate-500">First row = column names. One row per count: a road id, a direction (fwd/bwd/both), a period (start + end, or an hour 0–23), and vehicles by class or a total.</p>
+        <Disclosure summary="File format">
+          <p className="text-[11px] text-slate-400">First row = column names. One row per count: a road id, a direction (fwd/bwd/both), a period (start + end, or an hour 0–23), and vehicles by class or a total.</p>
+        </Disclosure>
         {preview && preview.sheets.length > 1 && (
           <select aria-label="Sheet" className={inputCls} value={sheet ?? preview.sheets[0]} onChange={e => { setSheet(e.target.value); void run(file, null, e.target.value); }}>
             {preview.sheets.map(s => <option key={s}>{s}</option>)}
