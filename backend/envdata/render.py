@@ -50,7 +50,7 @@ def colourise(arr: np.ndarray, spec: dict, nodata) -> np.ndarray:
     valid = np.isfinite(a)
     if nodata is not None and not (isinstance(nodata, float) and np.isnan(nodata)):
         valid &= a != nodata
-    alpha = int(spec.get("alpha", 200))
+    alpha = int(spec.get("alpha", 240))
     if spec["mode"] == "categorical":
         for v, c in spec["palette"].items():
             m = valid & (a == v)
@@ -141,15 +141,23 @@ def landcover_areas(layer: Layer, geom_4326: dict) -> dict:
     if g.area > 2.0e9:
         raise ValueError("area larger than 2,000 km²; zoom in")
     with rasterio.open(p) as src:
+        px_area = abs(src.transform.a * src.transform.e)
+        from shapely.geometry import box as _box
+        if not g.intersects(_box(*src.bounds)):
+            return {"area_km2": round(g.area / 1e6, 4), "pixels": 0, "nodata_pixels": 0, "pixel_m2": px_area, "classes": [],
+                    "out_of_coverage": True, "method": "no overlap with the land-cover raster (outside the Pune study box): UNKNOWN",
+                    "data_class": "derived", "suitability": "screening"}
         win = from_bounds(*g.bounds, src.transform).round_offsets().round_lengths()
         win = win.intersection(rasterio.windows.Window(0, 0, src.width, src.height))
         arr = src.read(1, window=win)
         tr = src.window_transform(win)
-        px_area = abs(src.transform.a * src.transform.e)
     inside = ~geometry_mask([g.__geo_interface__], out_shape=arr.shape, transform=tr, all_touched=False)
     vals = arr[inside]
     total_px = int(vals.size)
     nod = int((vals == 0).sum())
+    if total_px == 0:
+        return {"area_km2": round(g.area / 1e6, 4), "pixels": 0, "nodata_pixels": 0, "pixel_m2": px_area, "classes": [], "out_of_coverage": True,
+                "method": "area smaller than one 10 m pixel centre", "data_class": "derived", "suitability": "screening"}
     names = {v: (n, c) for v, n, c in WORLDCOVER_CLASSES}
     classes = []
     valid_px = total_px - nod

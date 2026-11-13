@@ -73,6 +73,9 @@ def aq_series(station: str, param: str, agg: str = "day", start: str | None = No
     if param not in AQ_PARAMS:
         raise ValueError(f"unknown parameter {param}")
     df = aq_frame()
+    known = {f["properties"]["station_id"] for f in json.loads(paths.derived(*AQ, "stations_pune.geojson").read_text())["features"]}
+    if station not in known:
+        raise LookupError(f"unknown station {station}")
     sub = df[df.station_id == station][["t", param]].dropna()
     if start:
         sub = sub[sub.t >= pd.Timestamp(start, tz="Asia/Kolkata")]

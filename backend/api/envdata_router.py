@@ -108,6 +108,8 @@ def air_series(station: str, param: str = "pm25_ugm3", agg: str = "day", start: 
     _layer("air_cpcb_caaqms")
     try:
         return series.aq_series(station, param, agg, start, end)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 

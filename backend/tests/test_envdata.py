@@ -60,7 +60,7 @@ def derived(tmp_path, monkeypatch):
 def test_colourise_categorical_and_ramp():
     a = np.array([[10, 50], [0, 99]], dtype="uint8")
     out = render.colourise(a, {"mode": "categorical", "palette": {10: "#006400", 50: "#fa0000"}}, 0)
-    assert tuple(out[0, 0]) == (0, 100, 0, 200) and tuple(out[0, 1]) == (250, 0, 0, 200)
+    assert tuple(out[0, 0]) == (0, 100, 0, 240) and tuple(out[0, 1]) == (250, 0, 0, 240)
     assert out[1, 0, 3] == 0 and out[1, 1, 3] == 0          # nodata and unknown class transparent
     f = np.array([[np.nan, -1.0, 0.8, 0.0]], dtype="float32")
     out = render.colourise(f, {"mode": "ramp", "stops": [(-0.2, "#000000"), (0.8, "#ffffff")], "transparent_below": None}, np.nan)
@@ -144,3 +144,15 @@ def test_feature_wiring_flags(client):
         assert fs[fid]["wired"] is True, fid
     assert fs["flood.screening"]["wired"] is False            # no flood screening code: context layers only
     assert fs["environment.noise"]["wired"] is False
+
+
+def test_out_of_coverage_and_errors(client, derived):
+    j = client.get("/api/env-data/layers/landcover_worldcover2021/areas", params={"bbox": "70,10,70.01,10.01"}).json()
+    assert j["classes"] == [] and j["out_of_coverage"] is True        # UNKNOWN, never zero-class "result"
+    assert client.get("/api/env-data/layers/landcover_worldcover2021/areas", params={"bbox": "73,18,75,19"}).status_code == 422
+    t = client.get("/api/env-data/trees", params={"bbox": "70,10,70.01,10.01"}).json()
+    assert t["mode"] == "points" and t["total"] == 0
+    r = client.get("/api/env-data/layers/landcover_worldcover2021/render.png", params={"bbox": "70,10,70.01,10.01", "width": 64})
+    assert r.status_code == 200                                          # fully transparent tile
+    assert client.get("/api/env-data/layers/s2_ndvi/render.png", params={"bbox": "73.8,18.5,73.9,18.6"}).status_code == 404  # not on disk
+    assert client.get("/api/env-data/layers/dem_streams/render.png", params={"bbox": "73.8,18.5,73.9,18.6"}).status_code == 422  # vector layer has no raster renderer

@@ -117,7 +117,9 @@ LAYERS: list[Layer] = [
           "2019 vintage: trees have been felled and planted since. Attributes (species, girth, height, canopy, condition, ownership) "
           "are as published; out-of-range values are kept, not corrected. A tree survey under the Maharashtra (Urban Areas) "
           "Protection and Preservation of Trees Act is still required for any site.",
-          vintage_note="2019 vintage — a Trees Act survey is still required", covers=["tree_census"]),
+          vintage_note="2019 vintage — a Trees Act survey is still required", covers=["tree_census"],
+          legend={"type": "categorical", "items": [{"label": "Tree (census point)", "color": "#2e7d32"}, {"label": "Tree flagged is_rare", "color": "#c0ca33"},
+                                                   {"label": "Cluster (size ∝ count)", "color": "#2e7d32"}]}),
     # ── water & flooding ──
     Layer("s2_mndwi", "water", "Water index MNDWI — Sentinel-2 L2A", "raster",
           "sentinel2_indices", "v1", "mndwi_recent_43QCA_20251114.tif",
@@ -187,7 +189,9 @@ LAYERS: list[Layer] = [
           "2024-01-01 to 2025 (per station, IST)", "observed", "screening",
           "Point measurements at 8 listed stations (7 with downloaded series). Concentrations as published; negative values blanked. "
           "No interpolated surface: values do not represent locations away from the station.",
-          covers=["air_quality"], extra_files=["stations_pune.geojson"]),
+          covers=["air_quality"], extra_files=["stations_pune.geojson"],
+          legend={"type": "categorical", "items": [{"label": "Station with downloaded series", "color": "#ffb300"},
+                                                   {"label": "Listed station, no series downloaded", "color": "#808080"}]}),
     # ── rainfall ──
     Layer("rain_imd_025", "water", "Rainfall — IMD 0.25° gridded daily (2000–2025)", "series",
           "imd_rainfall_025_pune", "2026-11-13", "pune_cells_daily.csv",
@@ -249,12 +253,25 @@ def row(l: Layer) -> dict[str, Any]:
         proc = {"pipeline": pj.get("pipeline"), "git_commit": pj.get("git_commit"), "run_at": pj.get("run_at"),
                 "file": l.file, "sha256": paths.output_sha(l.dataset, l.version, l.file) if l.file else None,
                 "classification": pj.get("classification"), "suitability": pj.get("suitability"), "notes": pj.get("notes")}
+    legend = l.legend
+    if legend and l.id == "landcover_worldcover2021" and pj:
+        present = set(((pj.get("validation") or {}).get("classes_present") or []))
+        if present:   # show only classes that occur in the study area (per processing.json validation)
+            legend = {**legend, "items": [i for i in legend["items"] if i["value"] in present]}
+    if legend and l.id == "dem_catchments":
+        try:   # label each catchment with its area inside the study box, as computed by the pipeline
+            import json as _json
+            areas = {o["id"]: o["area_km2"] for o in _json.loads(paths.derived(l.dataset, l.version, "catchment_outlets.json").read_text())}
+            legend = {**legend, "items": [{**i, "label": f"{i['label']} · {areas[i['value']]:,.1f} km² in box" if i["value"] in areas else i["label"]}
+                                          for i in legend["items"]]}
+        except (OSError, ValueError, KeyError):
+            pass
     variants = [{k: v for k, v in x.items() if k != "file"} | {"available": bool(file_path(l, x["id"]) and file_path(l, x["id"]).exists())}
                 for x in l.variants]
     return {"id": l.id, "group": l.group, "name": l.name, "kind": l.kind, "status": status, "status_reason": reason,
             "source": l.source, "publisher": l.publisher, "licence": l.licence[0] or "UNKNOWN", "licence_url": l.licence[1] or None,
             "attribution": l.attribution, "data_date": l.data_date, "vintage_note": l.vintage_note, "data_class": l.data_class,
-            "suitability": l.suitability, "limitations": l.limitations, "legend": l.legend, "variants": variants,
+            "suitability": l.suitability, "limitations": l.limitations, "legend": legend, "variants": variants,
             "covers": l.covers, "processing": proc, "bounds": _bounds(l) if status == "available" else None}
 
 
