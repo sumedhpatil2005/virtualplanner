@@ -124,9 +124,10 @@ def render_png(layer: Layer, bbox: Sequence[float], width: int, variant: str | N
 def _utm_geom(geom_4326: dict):
     from pyproj import Transformer
     from shapely.geometry import shape
-    from shapely.ops import transform
+
+    from coordination.geometry import reproject
     t = Transformer.from_crs("EPSG:4326", "EPSG:32643", always_xy=True)
-    return transform(t.transform, shape(geom_4326))
+    return reproject(shape(geom_4326), t)
 
 
 def landcover_areas(layer: Layer, geom_4326: dict) -> dict:

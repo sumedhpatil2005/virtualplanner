@@ -30,6 +30,18 @@ SEVERITY = {"conflict": 0, "potential_conflict": 1, "vertically_separated": 2, "
 _CERT_RANK = {"measured": 0, "estimated": 1, "hypothetical": 2, "unknown": 3}
 
 
+def reproject(geom: BaseGeometry, transformer: Transformer) -> BaseGeometry:
+    """Reproject any Shapely geometry (2D; z dropped) with a pyproj Transformer (always_xy). Vectorised replacement for
+    the deprecated shapely.ops.transform (it warned once per call: ~19k warnings per pytest run hid real ones)."""
+    import numpy as np
+    import shapely
+
+    def _tx(c):
+        x, y = transformer.transform(c[:, 0], c[:, 1])
+        return np.column_stack([x, y])
+    return shapely.transform(geom, _tx)
+
+
 def to_utm(lon: float, lat: float) -> tuple[float, float]:
     return _TO_UTM.transform(lon, lat)
 
@@ -73,8 +85,7 @@ def project_geojson(g: dict) -> BaseGeometry:
     if geom.geom_type == "Polygon":
         return Polygon(tx(geom.exterior.coords), [tx(r.coords) for r in geom.interiors])
     if geom.geom_type in ("MultiLineString", "MultiPolygon", "MultiPoint", "GeometryCollection"):
-        from shapely.ops import transform
-        return transform(lambda x, y, z=None: _TO_UTM.transform(x, y), geom)
+        return reproject(geom, _TO_UTM)
     raise ValueError(f"Unsupported geometry type {geom.geom_type}")
 
 

@@ -288,16 +288,17 @@ def test_migration_on_a_copy_of_the_project_database(tmp_path):
     shutil.copy(REAL_DB, path)  # never the original
     con = sqlite3.connect(path)
     tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
-    cols = {t: ", ".join(r[1] for r in con.execute(f"PRAGMA table_info({t})")) for t in tables}
-    before = {t: con.execute(f"SELECT {cols[t]} FROM {t} ORDER BY 1").fetchall() for t in tables}
+    cols = {t: ", ".join('"%s"' % r[1] for r in con.execute(f'PRAGMA table_info("{t}")')) for t in tables}  # quoted: a column may be a keyword ("check")
+    before = {t: con.execute(f'SELECT {cols[t]} FROM "{t}" ORDER BY 1').fetchall() for t in tables}
     con.close()
     _migrate(path)
     _migrate(path)  # idempotent
     con = sqlite3.connect(path)
     for t in tables:
-        assert con.execute(f"SELECT {cols[t]} FROM {t} ORDER BY 1").fetchall() == before[t], t  # columns added by migrate() are nullable extras
+        assert con.execute(f'SELECT {cols[t]} FROM "{t}" ORDER BY 1').fetchall() == before[t], t  # columns added by migrate() are nullable extras
     for t in ("planning_projects", "planning_project_links", "planning_decisions", "audit_log"):
-        assert con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] == 0
+        # migration adds no rows (the real DB may already hold audit rows written by the dataset importer)
+        assert con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] == len(before.get(t, [])), t
     trig = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
     assert {"audit_log_no_update", "audit_log_no_delete", "planning_decisions_no_update", "planning_decisions_no_delete"} <= trig
     con.execute("INSERT INTO audit_log (at, actor, actor_source, action, entity_type, entity_id, label) VALUES ('2026-11-11','t','none','create','x','1','')")

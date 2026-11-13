@@ -17,12 +17,14 @@ def _load(path: str, mtime: float):
     from pyproj import Transformer
     from shapely import STRtree
     from shapely.geometry import shape
-    from shapely.ops import transform
-    gj = json.loads(open(path).read())
+
+    from coordination.geometry import reproject
+    with open(path, encoding="utf-8") as fh:
+        gj = json.load(fh)
     t = Transformer.from_crs("EPSG:32643", "EPSG:4326", always_xy=True)
     geoms, props = [], []
     for f in gj["features"]:
-        g = transform(t.transform, shape(f["geometry"]))
+        g = reproject(shape(f["geometry"]), t)
         geoms.append(g)
         props.append({**(f.get("properties") or {}), "fid": f.get("id")})
     return geoms, props, STRtree(geoms)
