@@ -103,8 +103,13 @@ def build(src: Path, out: Path) -> dict:
                                                      ("source_csv", str(src)), ("rows", str(rows))])
     db.commit()
     db.close()
-    os.replace(tmp, out)
-    return {"rows_indexed": rows, "rows_skipped_bad_id_or_coords": bad, "duplicate_ids_skipped": dup,
+    unchanged = out.exists() and gc.sha256_file(tmp) == gc.sha256_file(out)
+    if unchanged:  # idempotent re-run: keep the existing file (same inode) so live read-only connections stay valid
+        tmp.unlink()
+    else:
+        os.replace(tmp, out)
+    return {"output_unchanged_from_previous_run": unchanged,
+            "rows_indexed": rows, "rows_skipped_bad_id_or_coords": bad, "duplicate_ids_skipped": dup,
             "species_distinct": len(species), "grid_cells_per_level": {str(s): len(g) for s, g in zip(GRID_LEVELS, grids)}}
 
 
@@ -121,7 +126,7 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / "trees_index.sqlite"
     v = build(src, out)
-    db = sqlite3.connect(out)
+    db = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
     v["rtree_rows"] = db.execute("SELECT count(*) FROM trees_rt").fetchone()[0]
     v["grid_level0_total_equals_rows"] = db.execute("SELECT sum(n) FROM grid WHERE level=0").fetchone()[0] == v["rows_indexed"]
     db.close()
