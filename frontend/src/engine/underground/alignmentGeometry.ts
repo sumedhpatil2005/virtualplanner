@@ -355,6 +355,9 @@ export interface AlignmentElementPayload {
   profile: { chainage_m: number; z_min_m: number | null; z_max_m: number | null }[];
   certainty: Certainty;
   provenance: string;
+  /** Alternative + object the element comes from, so Projects → "Add proposal elements" skips it (no duplicate). */
+  scenario_id: string | null;
+  element_ref: string;
 }
 
 /**
@@ -381,5 +384,7 @@ export function alignmentElementPayload(a: UndergroundAlignmentObject): Alignmen
     profile: prof,
     certainty: worstCertainty([...p.vertices.map(v => v.certainty), a.sectionCertainty]),
     provenance: `UrbanOS underground alignment ${a.id} (scenario ${a.scenarioId}); depths user-entered relative to a flat ground datum (no DEM)`,
+    scenario_id: a.scenarioId ?? null,
+    element_ref: a.id,
   };
 }

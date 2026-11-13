@@ -46,11 +46,14 @@ export const ConflictCheck: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }
     try {
       localStorage.setItem(USER_KEY, user.trim());
       const payload = alignmentElementPayload(a);
+      const { scenario_id: _sid, element_ref: _ref, ...patch } = payload;
       const marker = `alignment ${a.id} `;
-      const existing = (await coordinationApi.listElements(pid)).find(e => e.provenance.includes(marker));
+      // Same alignment registered here before, or from Projects → Alternatives (element_ref): update it, never duplicate.
+      const existing = (await coordinationApi.listElements(pid)).find(e => e.provenance.includes(marker)
+        || (e.element_ref === a.id && (e.scenario_id ?? null) === payload.scenario_id));
       const element = existing
         ? await coordinationApi.patchElement(existing.id, {
-          ...payload, edited_by: user.trim(),
+          ...patch, edited_by: user.trim(),
           clear_fields: [...(payload.width_m === null ? ['width_m' as const] : []), ...(payload.z_min_m === null ? ['z_min_m' as const] : []), ...(payload.z_max_m === null ? ['z_max_m' as const] : [])],
         })
         : await coordinationApi.createElement(pid, { ...payload, created_by: user.trim() });

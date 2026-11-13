@@ -129,6 +129,9 @@ describe('coordination element payload', () => {
     expect(e.width_m).toBe(6);
     expect(e.certainty).toBe('hypothetical');
     expect(e.provenance).toContain('alignment ug1 ');
+    // carries its alternative + object id so Projects' register step treats it as already registered (no duplicate)
+    expect(e.element_ref).toBe(a.id);
+    expect(e.scenario_id).toBe(a.scenarioId ?? null);
     expect(e.geometry.coordinates).toHaveLength(3);
     const unk = alignmentElementPayload(withVertexDepth(a, 1, { crownDepthM: null }));
     expect(unk.z_max_m).toBeNull();
