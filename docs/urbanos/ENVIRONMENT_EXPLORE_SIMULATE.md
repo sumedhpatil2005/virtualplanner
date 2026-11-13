@@ -40,3 +40,22 @@ catalogue's `recommended_sources`, not re-typed in the UI); SHELL_AND_DESIGN_SYS
 
 ## Verification
 See the run report at the end of this file (labels: BROWSER-VERIFIED / UNIT-TESTED / UNTESTED).
+
+## Run report (2026-11-13)
+Harness: /workspace/work/uos-env-e2e/env_check.py (backend :8317 on a copy of twincity.db + feasibility_layers.db, static
+:4517, Chromium/swiftshader), results in /workspace/work/uos-env-e2e/results*.json, screenshots
+/workspace/work/urbanos/shots/after/{env,explore,simulate}-*-{1440x900,1024x768}.png.
+- BROWSER-VERIFIED (1440x900 and 1024x768): catalogue loads 17 rows in 8 groups (12 Not imported · UNKNOWN, 5 Available
+  with source / date+zone / licence); water (1,409 features) and heritage (71) overlays draw and report their box; metro
+  toggle flips the engine `metro` layer; selected road → "Screen …" opens FeasibilityPanel in the context column (no
+  horizontal overflow); Explore search by name and by OSM id → fly to + select, summary shows OSM id, lanes, width,
+  speed limit, length; layer-tree toggle flips `buildings`; Simulate study with drawer tabs Calibration / ODME /
+  Emissions / Count checks / Through the day — every card test id (emissions-card, odme-card, calibration-panel,
+  count-checks, timeline, trust-emissions, trust-odme, trust-timeline) present exactly once in its tab and 0 times in
+  Details; after an analysis the Environment emissions summary shows the session result with the fails-validation badge.
+- UNIT-TESTED: src/engine/testing/EnvExploreModel.test.ts (grouping, DataStatus mapping, toggles only where a renderer
+  exists, search, stats incl. network-node junctions, certainty only where recorded, layer tree).
+- Known limits: junction count = placed junctions + road-network nodes (estimated from shared vertices, labelled);
+  at 1024 (one-overlay tablet layout) the inspector overlays the right part of the drawer (shell layout, not changed);
+  selecting a search hit there closes the context panel (shell rule) — reopen via the map button. Overlays are drawn
+  1.5 m above the ellipsoid (terrain off by default); with terrain on they may be hidden — UNTESTED.
