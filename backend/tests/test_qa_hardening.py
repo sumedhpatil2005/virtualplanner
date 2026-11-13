@@ -268,3 +268,28 @@ def test_tree_index_reopened_after_replacement(tmp_path, monkeypatch):
     with pytest.raises(sqlite3.ProgrammingError):
         old.execute("select 1")
     trees._close()
+
+
+def test_provenance_check_flags_mismatch_and_resolves_bare_names(tmp_path):
+    import hashlib
+    import json as _json
+
+    from datasets import provenance_check as PC
+    raw = tmp_path / "raw" / "src" / "2026-11-13"
+    raw.mkdir(parents=True)
+    (raw / "a.csv").write_bytes(b"SYNTHETIC a")
+    (raw / "b.csv").write_bytes(b"SYNTHETIC b")
+    sa, sb = (hashlib.sha256(b"SYNTHETIC " + x).hexdigest() for x in (b"a", b"b"))
+    (raw / "manifest.json").write_text(_json.dumps({"files": [{"file": "a.csv", "sha256": sa}, {"file": "b.csv", "sha256": sb}]}))
+    d = tmp_path / "derived" / "ds" / "v1"
+    d.mkdir(parents=True)
+    (d / "out.txt").write_bytes(b"out")
+    (d / "processing.json").write_text(_json.dumps({
+        "git_commit": "0000000000000000000000000000000000000000",
+        "inputs": [{"file": "a.csv", "sha256": sa}, {"path": str(raw / "b.csv"), "sha256": "f" * 64}],
+        "outputs": [{"path": "out.txt", "sha256": hashlib.sha256(b"out").hexdigest()}]}))
+    rep = PC.check(tmp_path, hash_files=True)
+    st = [i["status"] for i in rep["rows"][0]["inputs"]]
+    assert st == ["match", "MISMATCH"]
+    assert rep["rows"][0]["outputs"][0]["disk"] == "disk_match"
+    assert any("not a commit" in p for p in rep["problems"]) and any("MISMATCH" not in p and "b.csv" in p for p in rep["problems"])
