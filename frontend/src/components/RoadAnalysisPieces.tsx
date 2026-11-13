@@ -10,6 +10,7 @@ import { Button } from './ui/kit';
 import { Card, Chip, Disclosure, InfoToggle, KpiCard, LosBadge, Meter, StackedBar } from './ui/viz';
 import { TONE_FILL, losTone, type Tone } from './ui/vizTones';
 import { STATUS, explainedDirection, overloadedRuns, delayParts, causeLine } from './roadAnalysisView';
+import { TrustBadge } from './ui/badges/TrustBadge';
 
 /**
  * The visual pieces of the road analysis ("What's wrong"), rendered from the
@@ -60,9 +61,10 @@ export const StatusHeader: React.FC<{ r: RoadAnalysisResult; when: string; badge
       </p>
       <div className="flex flex-wrap gap-1.5 items-center">
         <Chip tone={r.statusConsistent ? 'neutral' : 'warn'} icon={r.statusConsistent ? CheckCircle2 : AlertTriangle} testId="status-consistency"
-          title={r.statusConsistent ? `All ${r.seeds.length} runs (seeds ${r.seeds.join(', ')}) give the same status` : `The runs give different statuses: ${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')}. The road is near a boundary between levels of service.`}>
-          {r.statusConsistent ? `${r.seeds.length}/${r.seeds.length} runs agree` : `Runs disagree: ${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')}`}
+          title={`${r.statusConsistent ? `All ${r.seeds.length} runs (seeds ${r.seeds.join(', ')}) give the same status.` : `The runs give different statuses: ${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')}. The road is near a boundary between levels of service.`} This is run-to-run stability of the simulation, not accuracy: the traffic model fails validation (TAG M3.1).`}>
+          {r.statusConsistent ? `Run-to-run stability ${r.seeds.length}/${r.seeds.length}` : `Run-to-run stability: runs disagree (${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')})`}
         </Chip>
+        <TrustBadge trust="fails_validation" testId="trust-headline" />
         {badges}
       </div>
     </section>
@@ -78,7 +80,7 @@ export const WorstKpis: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
   return (
     <div className="space-y-1.5" data-testid="kpis">
       <div className="flex items-center justify-between text-[11px] text-slate-500">
-        <span className="font-semibold uppercase tracking-wide">Worst direction</span>
+        <span className="inline-flex items-center gap-1.5"><span className="font-semibold uppercase tracking-wide">Worst direction</span><TrustBadge trust="fails_validation" testId="trust-kpis" /></span>
         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: directionColor(w.index) }} />{dirName(d)} · {Math.round(d.labelBearingDeg ?? d.bearingDeg)}°</span>
       </div>
       <div className="grid grid-cols-4 gap-1.5">

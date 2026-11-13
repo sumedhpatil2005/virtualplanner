@@ -9,6 +9,7 @@ import type { ComparisonResult } from '../engine/simulation/ScenarioComparison';
 import { GEH_PASS } from '../engine/calibration/geh';
 import { Button, Notice } from './ui/kit';
 import { DeltaRows } from './ScenarioDeltaTable';
+import { TrustBadge } from './ui/badges/TrustBadge';
 
 const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
 const gehCls = (g: number) => (g < GEH_PASS ? 'text-emerald-300' : g < 10 ? 'text-amber-300' : 'text-rose-300');
@@ -56,7 +57,7 @@ export const OdmeCard: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const usedNow = o.used && sim.analysis.output?.result.evidence.demand?.odme?.createdAt === p?.createdAt;
   return (
     <div className="space-y-2 text-xs text-slate-400 rounded-lg border border-cyan-400/20 bg-cyan-500/5 p-2" data-testid="odme-card">
-      <p className="flex items-center gap-2 text-cyan-100 font-medium"><Sigma size={13} /> Estimate demand from calibration counts</p>
+      <p className="flex items-center gap-2 flex-wrap text-cyan-100 font-medium"><Sigma size={13} /> Estimate demand from calibration counts <TrustBadge trust="fails_validation" testId="trust-odme" /></p>
       <p className="leading-snug">Adjusts the area's OD demand so the routed volumes come closer to your <strong>Calibration</strong> counts at {String(sim.timeOfDay.hour).padStart(2, '0')}:00 (Spiess 1990 gradient method on this app's equilibrium routing; cells change by a factor of 0.25–4 at most; no new OD pairs; no extra regularisation toward the estimate). <strong>Validation</strong> counts are never used for fitting; they are checked before and after. The result is a separate demand version: the baseline demand is not changed, and you choose whether to run on it.</p>
       <div className="flex items-center gap-2 flex-wrap">
         <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={kinds.includes('estimated')} onChange={e => setKinds(e.target.checked ? ['measured', 'manual', 'estimated'] : ['measured', 'manual'])} /> include estimated datasets</label>
@@ -69,12 +70,12 @@ export const OdmeCard: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
         <div className="space-y-2" data-testid="odme-report">
           <p className="leading-snug">ESTIMATED demand version: {p.iterations} iteration{p.iterations === 1 ? '' : 's'} ({p.assignments} routings, {(r.elapsedMs / 1000).toFixed(1)} s), {p.converged ? 'stopped' : 'not converged'}: {p.stopReason}. Demand {fmt(p.priorVph)} → {fmt(p.estimatedVph)} veh/h (reference hour), {p.cells} OD cells, {p.boundedCells} at a bound. Datasets: {p.calibrationDatasetIds.join(', ')}.</p>
           <div data-testid="odme-change">
-            <p className="text-slate-300 font-medium">Change against the demand estimate (TAG M3.1 Table 5) {p.changeWithinTag ? <span className="text-emerald-300">within limits</span> : <span className="text-rose-300">OUTSIDE limits</span>}</p>
+            <p className="text-slate-300 font-medium">Change against the demand estimate (TAG M3.1 Table 5) {p.changeWithinTag ? <span className="text-slate-200">within limits</span> : <span className="text-rose-300">OUTSIDE limits</span>}</p>
             <table className="w-full tabular-nums"><tbody>{p.change.map(c => (
               <tr key={c.name} className="border-t border-white/5"><td className="py-0.5 text-slate-300">{c.name}</td>
                 <td className="text-right">{c.value === null ? '–' : Math.abs(c.value) >= 100 ? fmt(c.value) : c.value.toFixed(3)}{c.name.includes('change') ? '%' : ''}</td>
                 <td className="text-right text-slate-500 pl-2">{c.within === null ? '≈ 0' : c.limit}</td>
-                <td className={`text-right pl-2 ${c.within === false ? 'text-rose-300' : c.within ? 'text-emerald-300' : 'text-slate-500'}`}>{c.within === null ? 'reported' : c.within ? 'ok' : 'breach'}</td></tr>))}</tbody></table>
+                <td className={`text-right pl-2 ${c.within === false ? 'text-rose-300' : c.within ? 'text-slate-200' : 'text-slate-500'}`}>{c.within === null ? 'reported' : c.within ? 'ok' : 'breach'}</td></tr>))}</tbody></table>
             <p className="text-[11px] text-slate-500 leading-snug">Intercepts: TAG asks "near zero" without a number, so they are reported, not judged. TAG M3.1 asks that estimation not change the prior demand significantly; a breach means the counts pull the demand far from the estimate, which usually points at the network or the demand model rather than at the counts. Source: DfT TAG M3.1 (May 2026), Table 5.</p>
           </div>
           <FitTable title="Calibration counts (fitted: not independent evidence)" rows={r.calibration} testId="odme-calibration" note="Routed volume of the area assignment before and after, at the count's road and direction. These counts were used for fitting, so a better fit here is expected." />
@@ -97,6 +98,7 @@ export const EmissionsCard: React.FC<{ result: RoadAnalysisResult | null | undef
   if (!e && !a) return <p className="text-xs text-slate-500">Run the analysis to see fuel and emissions.</p>;
   return (
     <div className="space-y-2 text-xs text-slate-400" data-testid="emissions-card">
+      <TrustBadge trust="fails_validation" label="Traffic input fails validation (TAG M3.1)" testId="trust-emissions" />
       {e && (
         <div>
           <p className="flex items-center gap-2 text-slate-300 font-medium"><Fuel size={13} /> Neighbourhood (simulated, per hour) <span className="text-[10px] uppercase tracking-wide text-amber-300">estimated</span></p>

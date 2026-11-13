@@ -54,10 +54,15 @@ describe('road analysis panel pieces', () => {
     expect(d.querySelector('[data-testid="road-status"]')!.getAttribute('data-status')).toBe('moderate');
     expect(d.body.textContent).toContain('Some delay');
     expect(d.querySelector('[data-testid="status-line"]')!.textContent).toBe('East: 37 km/h vs 50 free-flow');
-    expect(d.querySelector('[data-testid="status-consistency"]')!.textContent).toBe('3/3 runs agree');
+    // Seed agreement is run-to-run stability, not accuracy (docs/urbanos/UX_ARCHITECTURE.md §4)
+    expect(d.querySelector('[data-testid="status-consistency"]')!.textContent).toBe('Run-to-run stability 3/3');
+    expect(d.querySelector('[data-testid="status-consistency"]')!.getAttribute('title')).toContain('not accuracy');
+    // The model's validation verdict sits on the headline, not dismissable
+    expect(d.querySelector('[data-testid="trust-headline"]')!.textContent).toContain('Fails validation (TAG M3.1)');
   });
   it('KPI cards are the explained direction\'s computed figures', () => {
     const d = doc(renderToStaticMarkup(createElement(WorstKpis, { r: result() })));
+    expect(d.querySelector('[data-testid="trust-kpis"]')!.textContent).toContain('Fails validation (TAG M3.1)');
     expect(d.querySelector('[data-testid="kpi-speed"]')!.textContent).toContain('37');
     expect(d.querySelector('[data-testid="kpi-delay"]')!.textContent).toContain('15');
     expect(d.querySelector('[data-testid="kpi-vc"]')!.textContent).toContain('41%');

@@ -4,6 +4,7 @@ import { GeneratorSession } from '../engine/generator/session';
 import { CAUSE_LABEL } from '../engine/generator/diagnosis';
 import { CATEGORY_LABEL } from '../engine/generator/candidates';
 import { METRICS, METRIC_BY_ID, paretoSet, weightedRanking, explainScenario, type MetricId, type ScenarioRow } from '../engine/generator/compare';
+import { TrustBadge } from './ui/badges/TrustBadge';
 
 /**
  * Scenario generator and multi-objective comparison (docs/SCENARIO_GENERATOR.md).
@@ -101,7 +102,7 @@ export const ScenarioGeneratorPanel: React.FC = () => {
 
       {st.rows.length > 0 && (
         <div className="space-y-2" data-testid="gen-comparison">
-          <h4 className="text-[11px] font-semibold text-slate-300">Comparison (same frozen demand, hour and seeds)</h4>
+          <h4 className="text-[11px] font-semibold text-slate-300 flex items-center gap-2 flex-wrap">Comparison (same frozen demand, hour and seeds) <TrustBadge trust="fails_validation" testId="trust-generator" /></h4>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-300" data-testid="gen-objectives">
             <span className="text-slate-500">Priorities (objectives for the Pareto set):</span>
             {METRICS.map(m => <label key={m.id} className="flex items-center gap-1" title={m.definition}>
@@ -128,7 +129,7 @@ export const ScenarioGeneratorPanel: React.FC = () => {
               })}</tbody>
             </table>
           </div>
-          <p className="text-[10px] text-slate-500">★ = not beaten on every selected objective by another scenario (Pareto set). Differences within the noise threshold, or not shown by every seed, are ties. Ordinal classes are not money. n/a: no emissions model in this build.</p>
+          <p className="text-[10px] text-slate-500">★ = not beaten on every selected objective by another scenario (Pareto set). Differences within the noise threshold, or not shown by every seed, are ties. Ordinal classes are not money. n/a: that run produced no value for the metric (fuel and CO₂: no emissions result in that run). Comparisons only: the traffic model fails validation (TAG M3.1).</p>
           {pareto.filter(p => !p.inPareto).map(p => <p key={p.id} className="text-[11px] text-slate-400" data-testid="gen-dominated">{nameOf(p.id)} is dominated by {p.dominatedBy.map(d => `${nameOf(d.id)} (better on ${d.betterOn.map(x => METRIC_BY_ID.get(x)!.label.toLowerCase()).join(', ')})`).join('; ')}.</p>)}
 
           <details className="text-[11px]" data-testid="gen-weights">

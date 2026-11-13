@@ -14,6 +14,7 @@ import { ScenarioGeneratorPanel } from './ScenarioGeneratorPanel';
 import { screenlineChecks } from '../engine/calibration/screenlines';
 import { TrafficCountChecks } from './TrafficCountChecks';
 import { OdmeCard, EmissionsCompare } from './OdmeAndEmissions';
+import { TrustBadge } from './ui/badges/TrustBadge';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { Button, Notice } from './ui/kit';
 import { Card, Chip, Disclosure, InfoToggle, Meter } from './ui/viz';
@@ -243,7 +244,7 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const seeds = tl.rows.find(r => r.seeds)?.seeds ?? mode.analysisSeeds;
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3>
+      <div className="flex items-center gap-2 flex-wrap"><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3><TrustBadge trust="fails_validation" testId="trust-timeline" /></div>
       <Card testId="timeline">
         {tl.status !== 'running' && tl.rows.every(r => !r.result) && <p className="text-xs text-slate-400">Analyse the road at the morning peak, midday, the evening peak and night, on the same network, to see when it is a problem.</p>}
         <div className="flex gap-2 items-center">

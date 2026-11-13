@@ -13,7 +13,8 @@ import {
  * Traffic Data Manager (docs/TRAFFIC_DATA.md): datasets with provenance,
  * manual entry against a road picked on the map, CSV/Excel import with
  * column mapping and per-row errors, and a per-road hourly view.
- * Counts are evidence about traffic at a place, never demand.
+ * Validation counts are evidence for checking the model; Calibration counts may adjust
+ * demand (ODME / Calibrate demand) and are then never reported as validation evidence.
  */
 
 const KIND_STYLE: Record<DatasetKind, string> = {
@@ -78,7 +79,7 @@ export const TrafficDataPanel: React.FC<{ onClose: () => void }> = ({ onClose })
 
   return (
     <SidePanel label="Traffic data" wide>
-      <PanelHeader title="Traffic data" subtitle="Counts you enter or import. Evidence for checking the model, never demand." onClose={onClose} closeLabel="Close traffic data" />
+      <PanelHeader title="Traffic data" subtitle="Counts you enter or import. Validation counts check the model; Calibration counts can adjust demand." onClose={onClose} closeLabel="Close traffic data" />
       <PanelBody>
         <div data-testid="traffic-data-panel" className="space-y-4">
           <Segmented<Tab> label="Traffic data section" value={tab} onChange={setTab}
@@ -166,7 +167,7 @@ const DatasetList: React.FC<{ datasets: Dataset[] | null; sets: PcuFactorSet[]; 
           </li>
         ))}
       </ul>
-      <p className="text-[11px] text-slate-500 leading-snug">Validation datasets are compared with the simulation after a run (Simulate → Details → Checks against traffic counts). Calibration datasets are reserved for matrix estimation, which is not implemented yet. Not used: kept, but read by nothing.</p>
+      <p className="text-[11px] text-slate-500 leading-snug">Validation datasets are compared with the simulation after a run (Simulate → Details → Checks against traffic counts). Calibration datasets can adjust demand (Simulate → Details → Estimate demand from calibration counts, and Calibrate demand) and are never reported as validation evidence. Not used: kept, but read by nothing.</p>
     </Section>
   );
 };
