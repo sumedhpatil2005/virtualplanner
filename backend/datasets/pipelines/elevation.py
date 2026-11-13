@@ -86,6 +86,13 @@ def render_overlays(out: Path, hs, sl, valid, prof_utm, tr4326, shape4326) -> li
                   src_crs=prof_utm["crs"], src_nodata=np.nan, dst_transform=tr4326, dst_crs="EPSG:4326",
                   dst_nodata=np.nan, resampling=resamp)
         return dst
+    # gradients next to nodata are artefacts of the fill value: drop a 1-cell rim before warping
+    pv = np.pad(valid, 1, constant_values=False)
+    inner = valid.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            inner &= pv[1 + dy:1 + dy + valid.shape[0], 1 + dx:1 + dx + valid.shape[1]]
+    valid = inner
     hs4 = warp(hs.astype("float32"), "float32", Resampling.bilinear)
     sl4 = warp(sl, "float32", Resampling.bilinear)
     ok = np.isfinite(hs4)
