@@ -11,3 +11,11 @@ python-docx>=1.1
 fpdf2>=2.7
 shapely>=2.0
 pyproj>=3.6
+# --- dataset pipelines (backend/datasets/pipelines; offline acquisition/processing, not imported by the API) ---
+numpy>=1.26            # BSD-3-Clause
+rasterio>=1.4          # BSD-3-Clause (wheels bundle GDAL, MIT/X)
+geopandas>=1.0         # BSD-3-Clause
+pyogrio>=0.9           # MIT
+requests>=2.31         # Apache-2.0
+pystac-client>=0.8     # Apache-2.0 (Earth Search STAC)
+pysheds>=0.5           # GPL-3.0-or-later  (!) hydrology only, imported lazily in elevation.process(); see catalogue

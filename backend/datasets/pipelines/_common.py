@@ -51,6 +51,15 @@ def git_commit() -> str:
         return "UNKNOWN"
 
 
+def git_dirty() -> bool | None:
+    """True if backend/datasets has uncommitted changes (processing.json then cannot pin exact code)."""
+    try:
+        out = subprocess.check_output(["git", "status", "--porcelain", "--", "."], cwd=Path(__file__).parents[1], text=True)
+        return bool(out.strip())
+    except Exception:  # pragma: no cover
+        return None
+
+
 def bbox_intersects(a: Iterable[float], b: Iterable[float]) -> bool:
     ax0, ay0, ax1, ay1 = a
     bx0, by0, bx1, by1 = b
@@ -156,6 +165,7 @@ def write_processing(out_dir: Path, *, pipeline: str, inputs: list[Path], parame
     doc = {
         "pipeline": pipeline,
         "git_commit": git_commit(),
+        "git_dirty_datasets": git_dirty(),
         "run_at": now_ist(),
         "classification": classification,
         "suitability": suitability,

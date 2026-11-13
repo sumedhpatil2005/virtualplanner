@@ -61,7 +61,7 @@ LICENCES = {
     "osm": {
         "publisher": "OpenStreetMap contributors (Geofabrik extract)",
         "licence_name": "ODbL 1.0",
-        "quote": "UNVERIFIED-IN-THIS-RUN: OSM data is ODbL per https://www.openstreetmap.org/copyright (recorded by the earlier OSM index work)",
+        "quote": "Open Data Commons Open Database License (ODbL) [phrase present on the copyright page, checked 2026-11-13]",
         "url": "https://www.openstreetmap.org/copyright",
     },
 }
