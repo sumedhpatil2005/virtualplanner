@@ -324,10 +324,22 @@ button.uos-row:hover { background: var(--surface-2); }
 }
 
 /* Tablet only: the inspector overlays the map's right side, so Cesium's buttons move to the left, which is free
-   (one overlay at a time) */
+   (one overlay at a time) — or, with both overlays (data-dual, ≥ 1000 px in Explore/Design/Underground/Environment),
+   to the left edge of the visible map, right of the context panel. */
 @media (min-width: 768px) and (max-width: 1024.98px) {
+  .uos-shell { --ctx-tablet-w: min(var(--context-w), calc(100vw - 72px - 2rem)); }
   .uos-shell[data-inspector=open] .cesium-viewer-toolbar { right: auto !important; left: var(--sp-3) !important; top: 56px !important; }
   .uos-shell[data-inspector=open] .cesium-viewer-fullscreenContainer { right: auto !important; left: 88px !important; }
+  .uos-shell[data-inspector=open][data-context=open] .cesium-viewer-toolbar { left: calc(var(--ctx-tablet-w) + var(--sp-3)) !important; }
+  .uos-shell[data-inspector=open][data-context=open] .cesium-viewer-fullscreenContainer { left: calc(var(--ctx-tablet-w) + 88px) !important; }
+  .uos-shell[data-context=open] .uos-compass { left: calc(var(--ctx-tablet-w) + var(--sp-3)); }
+  /* Both overlays: narrower context, inspector capped so ≥ 280 px of map stays visible between them */
+  .uos-shell[data-dual] { --context-w: 296px; }
+  .uos-shell[data-dual][data-context=open] .uos-inspector { max-width: calc(100vw - 72px - var(--ctx-tablet-w) - 280px); }
+  /* The bottom drawer spans the map; overlays end above it so its tab strip and body stay reachable */
+  .uos-shell:has(.uos-drawer) :is(.uos-context, .uos-inspector) { bottom: 40px; }
+  .uos-shell:has(.uos-drawer.is-open) :is(.uos-context, .uos-inspector) { bottom: var(--drawer-h); }
+  .uos-shell:has(.uos-drawer.is-open) { --drawer-h: min(240px, 38dvh); }
 }
 
 /* ---- Phone (< 768): the rail becomes a bottom tab bar; the context panel or the inspector is a bottom sheet above
@@ -363,6 +375,8 @@ button.uos-row:hover { background: var(--surface-2); }
   .uos-chip .text-label { max-width: 5.5rem; }
   .uos-topbar .uos-trust-slot ~ * { flex-shrink: 0; }
   .uos-drawer.is-open { height: var(--sheet-h); }
+  /* The drawer's tab strip stays visible under a context/inspector sheet; an open drawer closes the sheets (store) */
+  .uos-shell:has(.uos-drawer) :is(.uos-context, .uos-inspector) { bottom: calc(var(--tabbar-h) + 40px); height: calc(var(--sheet-h) - 40px); }
   .cesium-viewer-toolbar { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .cesium-viewer-toolbar > * { margin: 0 !important; }
   .cesium-viewer-toolbar .cesium-toolbar-button, .cesium-viewer-toolbar .cesium-sceneModePicker-wrapper { width: 44px !important; height: 44px !important; }

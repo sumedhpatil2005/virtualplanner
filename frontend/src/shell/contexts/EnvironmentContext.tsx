@@ -11,6 +11,7 @@ import { groupCatalogue, dataStatusOf, MAP_TOGGLES } from '../../components/envi
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useSelectedId } from '../../hooks/useAppMode';
+import { SelectionDetailsButton } from '../SelectionDetailsButton';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { isProposalObject } from '../../engine/feasibility/proposal';
 import { hourLabel } from '../../engine/simulation/timeOfDay';
@@ -152,7 +153,7 @@ export const EnvironmentContext: React.FC = () => {
     <div className="space-y-5">
       <PanelSection title="Constraint screening">
         {screenable
-          ? <button type="button" className="uos-btn uos-btn-sm" data-testid="env-screen-proposal" onClick={() => setScreening(screenable.id)}><ScanSearch size={13} aria-hidden />Screen “{screenable.name || screenable.type}”</button>
+          ? <div className="flex flex-wrap gap-2"><button type="button" className="uos-btn uos-btn-sm" data-testid="env-screen-proposal" onClick={() => setScreening(screenable.id)}><ScanSearch size={13} aria-hidden />Screen “{screenable.name || screenable.type}”</button><SelectionDetailsButton /></div>
           : <p className="text-label text-text-2" data-testid="env-screen-hint">Select a road, flyover or double-deck on the map to screen it against the constraint layers.</p>}
       </PanelSection>
 

@@ -18,7 +18,7 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import { TopBar } from './TopBar';
 import { WorkspaceRail } from './WorkspaceRail';
 import { CommandPalette } from './CommandPalette';
-import { useShellStore, viewportFor } from './useShellStore';
+import { dualOverlay, useShellStore, viewportFor } from './useShellStore';
 import { WORKSPACES, workspaceById, workspaceForMode, type WorkspaceId } from './workspaces';
 import { ExploreContext } from './contexts/ExploreContext';
 import { DesignContext } from './contexts/DesignContext';
@@ -64,7 +64,8 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
   const drawerOpen = useShellStore(s => s.drawerOpen);
   const drawerTab = useShellStore(s => s.drawerTab);
   const viewport = useShellStore(s => s.viewport);
-  const { setContextOpen, setInspectorOpen, setDrawerOpen, setDrawerTab, setViewport, syncWorkspace } = useShellStore.getState();
+  const width = useShellStore(s => s.width);
+  const { setContextOpen, setInspectorOpen, setDrawerOpen, setDrawerTab, setViewport, syncWorkspace, revealSelection } = useShellStore.getState();
 
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
 
   // Viewport class (phone / tablet / laptop / desktop)
   useEffect(() => {
-    const on = () => setViewport(viewportFor(window.innerWidth));
+    const on = () => setViewport(viewportFor(window.innerWidth), window.innerWidth);
     on();
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
@@ -96,8 +97,8 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
     if (mode === 'simulate') setInspectorOpen(true);
   }, [mode, syncWorkspace, setInspectorOpen]);
 
-  // A new selection opens the inspector
-  useEffect(() => { if (selectedId) setInspectorOpen(true); }, [selectedId, setInspectorOpen]);
+  // A new selection opens the inspector (on one-overlay sizes Explore/Environment keep their panel, which shows it)
+  useEffect(() => { if (selectedId) revealSelection(); }, [selectedId, revealSelection]);
 
   const openHelp = useCallback(() => setIsHelpOpen(true), []);
   useKeyboardShortcuts({ onRequestDelete: setPendingDeleteId, onToggleHelp: () => setIsHelpOpen(o => !o) });
@@ -139,8 +140,8 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
     : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
     : <InfoPanel onClose={() => setInspectorOpen(false)} />;
   const showInspector = !!inspectorContent && inspectorOpen;
-  const oneOverlay = viewport === 'phone' || viewport === 'tablet';
-  const showContext = contextOpen && !(oneOverlay && showInspector);
+  const dual = dualOverlay(viewport, width, workspace);
+  const showContext = contextOpen && !(!dual && showInspector);
 
   const ws = workspaceById(workspace);
   const Context = CONTEXTS[workspace];
@@ -155,6 +156,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
       data-mode={mode}
       data-context={showContext ? 'open' : 'closed'}
       data-inspector={showInspector ? 'open' : 'closed'}
+      data-dual={dual && (viewport === 'tablet') ? 'true' : undefined}
       data-context-wide={WIDE_CONTEXT.includes(workspace) ? 'true' : undefined}
     >
       <TopBar onHelp={openHelp} trust={trust} />

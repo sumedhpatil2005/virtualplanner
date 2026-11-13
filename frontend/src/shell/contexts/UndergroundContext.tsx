@@ -7,7 +7,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { CertaintyBadge } from '../../components/ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../useEngineObjects';
-import { useShellStore } from '../useShellStore';
+import { dualOverlay, useShellStore } from '../useShellStore';
 import { lengthM } from './geo';
 import { DEFAULT_DEPTH_M, UTILITY_LABEL, utilityCertainty } from './utilityCertainty';
 import { ALIGNMENT_KIND_LABEL, alignmentProfile, worstCertainty } from '../../engine/underground/alignmentGeometry';
@@ -78,9 +78,9 @@ const AlignmentList: React.FC = () => {
               style={active?.id === a.id ? { background: 'var(--surface-2)' } : undefined}
               onClick={() => {
                 setActive(a.id);
-                // On tablet / phone only one overlay fits: selecting would swap this panel for the inspector, so just fly there
+                // Where only one overlay fits (phone, narrow tablet), selecting would swap this panel for the inspector, so just fly there
                 const st = useShellStore.getState();
-                if (st.viewport === 'desktop' || st.viewport === 'laptop') engineInstance.selection.selectSingle(a.id);
+                if (dualOverlay(st.viewport, st.width, st.workspace)) engineInstance.selection.selectSingle(a.id);
                 engineInstance.flyToObject(a.id);
                 st.setDrawerOpen(true);
               }}>

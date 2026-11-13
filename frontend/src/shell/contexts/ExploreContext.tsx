@@ -6,6 +6,7 @@ import { Disclosure } from '../../components/ui/Disclosure';
 import { CertaintyBadge } from '../../components/ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../useEngineObjects';
 import { useSelectedId } from '../../hooks/useAppMode';
+import { SelectionDetailsButton } from '../SelectionDetailsButton';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { Layer } from '../../engine/layers/LayerManager';
 import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter';
@@ -129,7 +130,10 @@ const SelectedSummary: React.FC = () => {
           ))}
         </dl>
       )}
-      <button type="button" className="uos-btn uos-btn-sm" onClick={() => engineInstance.flyToObject(o.id)}>Fly to</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="uos-btn uos-btn-sm" onClick={() => engineInstance.flyToObject(o.id)}>Fly to</button>
+        <SelectionDetailsButton />
+      </div>
     </div>
   );
 };
