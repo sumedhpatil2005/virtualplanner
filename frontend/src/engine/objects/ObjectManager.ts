@@ -140,13 +140,14 @@ export class ObjectManager {
 
   public async syncDeleteMultiple(ids: string[]) {
     // Sent after any single save of these objects still in flight, so a save arriving late cannot bring one back
-    await this.writesSettled(ids);
+    // With nothing pending the request goes out at once, as before the per-object queue existed
+    if (ids.some(id => this.writes.has(id))) await this.writesSettled(ids);
     await apiDeleteBatch('/api/objects', ids);
   }
 
   public async syncPostMultiple(objs: CityObject[]) {
     const payload = objs.map(o => this.mapToSchema(o));
-    await this.writesSettled(objs.map(o => o.id));
+    if (objs.some(o => this.writes.has(o.id))) await this.writesSettled(objs.map(o => o.id));
     await apiPostBatch('/api/objects/batch', payload);
   }
 
