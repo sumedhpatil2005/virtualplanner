@@ -10,9 +10,10 @@ on top of the backend in COORDINATION_AND_SUBSURFACE.md (no backend change). Wor
   ground, `depths[i] = { crownDepthM, certainty }` per vertex (m below ground, + down; `null` = UNKNOWN, never 0), kind
   (bored tunnel · underground metro · cut-and-cover · utility trunk · storm drain), typical section (circular outer
   diameter, or box width × height; m; `null` = UNKNOWN) with its own certainty.
-- **Ground is a flat datum.** The repo has no DEM (ENGINEERING_GIS_RESEARCH §E7), so depths are relative to "ground = 0" and
-  the profile's ground line says "Ground = flat datum 0 m · no terrain data — UNKNOWN". Not a design, structural check,
-  geology model or settlement assessment.
+- **Ground (updated 2026-11-13, Phase 2).** Depths are relative to ground. Where the Copernicus GLO-30 DSM covers the
+  alignment, the Profile draws the DSM ground line on an elevation axis (m EGM2008) and shows crown elevation + depth below
+  DSM; outside coverage (or if the terrain API fails) the flat datum is kept and labelled UNKNOWN. Details:
+  TERRAIN_AND_SUBSURFACE_DATA.md §4. Still not a design, structural check, geology model or settlement assessment.
 - Stored like every other city object (ObjectManager): scenario copy-on-write, versions (change sets) and Undo/Redo apply;
   backend rows carry depths/section in `properties` (no backend change needed).
 
@@ -27,6 +28,7 @@ on top of the backend in COORDINATION_AND_SUBSURFACE.md (no backend change). Wor
 | `engine/underground/viewRect.ts` | lon/lat box around alignments ("Only around alignments") |
 | `engine/editing/EditingEngine.ts` | new mode `draw_underground` (no snapping to the surface network) + tool settings |
 | `components/tools.ts` | tool "Draw underground alignment" (Tunnel, `TrainFrontTunnel`, category Underground, no hotkey) |
+| `components/underground/ElevationProfile.tsx`, `SubsurfaceEvidence.tsx`, `useTerrain.ts`; `engine/underground/terrainProfile.ts`; `lib/terrainApi.ts` | Phase 2: DEM ground line, evidence tab (TERRAIN_AND_SUBSURFACE_DATA.md) |
 | `components/underground/*` | `AlignmentForms` (tool settings + profile editor table), `SectionViews` (Profile/Cross-section SVG), `SubsurfaceRecords` (list + AGS4/CSV/JSON import), `ConflictCheck`, `ViewControls`, `undergroundStore`, `useSubsurfaceRecords`, `conflictClasses`, `common` |
 | `shell/contexts/UndergroundContext.tsx` (+ `.runtime.ts`, `.tabs.tsx`) | context panel; runtime wiring (view on enter/leave workspace, renderer on object/alternative/selection change); drawer tabs |
 
@@ -91,7 +93,8 @@ Small edits outside owned files: `AppShell.tsx` (one import + `underground: UNDE
   translucency on imagery is likewise not visible (no imagery), only the globe state is verified.
 
 ## 5. Not done / UNKNOWN
-- No terrain ground line (needs an imported DEM, EGR §E7). No cutaway/clipping polygon, no depth-filter slider (PUX §3.3
+- Terrain ground line: DONE in Phase 2 (DSM, screening only — not bare earth). Subsurface evidence tab (NWDP wells, SoilGrids,
+  PMC sewers QL-D, boreholes "required: site investigation"): TERRAIN_AND_SUBSURFACE_DATA.md §5. No cutaway/clipping polygon, no depth-filter slider (PUX §3.3
   items 2–3 beyond opacity/X-ray). Boreholes are not projected onto the long-section. Records are not shown in the profile.
 - Vertex depths are edited in the table, not by dragging in the SVG. Plan vertices are edited by redrawing (no vertex drag).
 - No engineering clearances are pre-filled (none cited); conflict results are screening only. OSM metro and road structure
