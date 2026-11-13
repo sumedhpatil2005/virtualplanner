@@ -21,6 +21,8 @@ import { TrafficSignalSource } from '../simulation/trafficSignals';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
 import type { Certainty } from '../objects/certainty';
+import type { UndergroundAlignmentKind, UndergroundSection } from '../objects/types';
+import { buildAlignment, DRAWING_DEFAULTS } from '../underground/alignmentFactory';
 
 /** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
 export const DEFAULT_BUILDING_FLOORS = 4;
@@ -52,7 +54,7 @@ function boxesOverlap(c: readonly (readonly number[])[], minX: number, minY: num
   return a <= maxX && cc >= minX && b <= maxY && d >= minY;
 }
 
-export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover';
+export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
 
 export class EditingEngine {
   private activeMode: EditingMode = 'select';
@@ -78,6 +80,21 @@ export class EditingEngine {
   public utilityDepthCertainty: Certainty = 'hypothetical';
   /** null = unknown diameter (never stored as 0). */
   public utilityDiameterMm: number | null = null;
+  /** Underground alignment tool (docs/urbanos/UNDERGROUND_WORKSPACE.md): drawing defaults are HYPOTHETICAL placeholders. */
+  public undergroundKind: UndergroundAlignmentKind = 'bored_tunnel';
+  public undergroundCrownDepthM: number | null = DRAWING_DEFAULTS.bored_tunnel.crownDepthM;
+  public undergroundDepthCertainty: Certainty = 'hypothetical';
+  public undergroundSection: UndergroundSection = { ...DRAWING_DEFAULTS.bored_tunnel.section };
+  public undergroundSectionCertainty: Certainty = 'hypothetical';
+  /** Switches the alignment kind and resets depth / section to that kind's drawing defaults. */
+  public setUndergroundKind(kind: UndergroundAlignmentKind) {
+    this.undergroundKind = kind;
+    this.undergroundCrownDepthM = DRAWING_DEFAULTS[kind].crownDepthM;
+    this.undergroundSection = { ...DRAWING_DEFAULTS[kind].section };
+    this.undergroundDepthCertainty = 'hypothetical';
+    this.undergroundSectionCertainty = 'hypothetical';
+    this.notify();
+  }
 
   public getIsImporting(): boolean {
     return this.isImporting;
@@ -182,7 +199,8 @@ export class EditingEngine {
   public addDrawingPoint(point: [number, number, number]) {
     // A throttled hover preview may still describe an older pointer location.
     // A study-area boundary is not a road: it does not snap to road points.
-    const snap = this.activeMode === 'import_osm' ? null : this.findSnap(point);
+    // An underground alignment is not joined to the surface network: no snapping either.
+    const snap = this.activeMode === 'import_osm' || this.activeMode === 'draw_underground' ? null : this.findSnap(point);
     const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
 
     // A double-click also fires two single clicks at the same spot; ignore
@@ -677,6 +695,13 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       };
+    } else if (this.activeMode === 'draw_underground') {
+      minPoints(2, 'An underground alignment');
+      newObj = buildAlignment({
+        id, scenarioId, createdAt, points: [...this.drawingPoints], kind: this.undergroundKind,
+        crownDepthM: this.undergroundCrownDepthM, depthCertainty: this.undergroundDepthCertainty,
+        section: this.undergroundSection, sectionCertainty: this.undergroundSectionCertainty,
+      });
     } else if (this.activeMode === 'draw_flyover') {
       minPoints(2, 'A flyover');
       // Ground-level points only: ObjectManager.add → applyFlyoverElevationProfile

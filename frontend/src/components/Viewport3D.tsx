@@ -82,6 +82,7 @@ const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = 
   draw_metro: n => `Drawing Elevated Metro Line: click to add points, double-click or Enter to finish (${n} points)`,
   draw_metro_flyover: n => `Drawing Metro + Flyover: click to add points, double-click or Enter to finish (${n} points)`,
   draw_building: n => `Drawing Building Footprint: click 3+ corners, double-click or Enter to extrude (${n} corners)`,
+  draw_underground: n => `Underground alignment: click plan points on the ground, double-click or Enter to finish (${n} points). Depths are set per vertex in the Underground panel`,
   draw_utility: n => `Laying Utility Conduit: click to add points, double-click or Enter to finish (${n} points)`,
   draw_zone: n => `Drawing Demand Zone: click 3+ corners, double-click or Enter to finish (${n} corners)`,
   draw_junction: () => 'Placing Junction: click on the map to place one',

@@ -6,6 +6,7 @@ import type { RoadClassification, BuildingUsage, UtilityType } from '../../engin
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import type { Certainty } from '../ui/badges/honesty';
 import { ImportAreaPanel } from './ImportAreaPanel';
+import { UndergroundToolSettings } from '../underground/AlignmentForms';
 
 const field = 'flex flex-col gap-0.5';
 const lbl = 'text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5';
@@ -122,6 +123,7 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
     </div>
   );
 
+  if (mode === 'draw_underground') return <UndergroundToolSettings />;
   if (mode === 'import_osm') return <ImportAreaPanel />;
   return null;
 };

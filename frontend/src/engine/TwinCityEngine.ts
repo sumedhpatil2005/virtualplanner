@@ -1275,7 +1275,7 @@ export class TwinCityEngine {
               color: Color.YELLOW.withAlpha(0.9),
               dashLength: 12
             }),
-            clampToGround: mode === 'draw_road' || mode === 'draw_utility'
+            clampToGround: mode === 'draw_road' || mode === 'draw_utility' || mode === 'draw_underground'
           }
         });
       } else {
@@ -1345,7 +1345,7 @@ export class TwinCityEngine {
       }
     }
 
-    if (mode === 'draw_road' || mode === 'draw_utility') {
+    if (mode === 'draw_road' || mode === 'draw_utility' || mode === 'draw_underground') {
       this.drawPreviewEntity = this.viewer.entities.add({
         polyline: {
           positions: cartesians,
