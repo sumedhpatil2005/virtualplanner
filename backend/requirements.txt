@@ -9,3 +9,5 @@ osmium>=4.0
 openpyxl>=3.1
 python-docx>=1.1
 fpdf2>=2.7
+shapely>=2.0
+pyproj>=3.6
