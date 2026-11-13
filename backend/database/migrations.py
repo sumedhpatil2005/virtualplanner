@@ -16,11 +16,25 @@ SCENARIO_COLUMNS = {
 }
 
 
+PLANNING_PROJECT_COLUMNS = {
+    "preferred_scenario_id": "VARCHAR",
+}
+
+
 def migrate(engine) -> list[str]:
     """Adds missing columns; returns the statements run (empty when the schema is current)."""
     done: list[str] = []
     insp = inspect(engine)
-    if "scenarios" not in insp.get_table_names():
+    tables = insp.get_table_names()
+    if "planning_projects" in tables:
+        have_pp = {c["name"] for c in insp.get_columns("planning_projects")}
+        with engine.begin() as conn:
+            for name, sql_type in PLANNING_PROJECT_COLUMNS.items():
+                if name not in have_pp:
+                    stmt = f"ALTER TABLE planning_projects ADD COLUMN {name} {sql_type}"
+                    conn.execute(text(stmt))
+                    done.append(stmt)
+    if "scenarios" not in tables:
         return done
     have = {c["name"] for c in insp.get_columns("scenarios")}
     with engine.begin() as conn:

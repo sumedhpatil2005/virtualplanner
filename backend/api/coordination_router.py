@@ -395,6 +395,49 @@ def project_conflicts(pid: str, include_clear: bool = False, db: Session = Depen
             "note": "Findings never edit either project. 'No conflict within available data' is not proof of no conflict."}
 
 
+CONFLICT_EXPORT_DISCLAIMER = ("Coordination screening findings from records in this tool. Not an engineering assessment, statutory approval, "
+                             "NOC or permit. 'No conflict within available data' is not proof of no conflict; empty depth/width = UNKNOWN.")
+CONFLICT_EXPORT_COLUMNS = ["finding_id", "class", "class_label", "status", "status_by", "status_note", "raised_by_project",
+                           "other_project", "element_a_id", "b_type", "b_ref", "horizontal_distance_m", "vertical_gap_m",
+                           "certainty", "permission_triggers", "reasons", "run_id", "run_stale", "created_at"]
+
+
+@router.get("/projects/{pid}/conflicts/export")
+def export_conflicts(pid: str, format: Literal["csv"] = "csv", requested_by: str = Query(default=""),
+                     include_clear: bool = False, db: Session = Depends(get_db)):
+    """Conflict summary (CSV) of the issues visible to this project; recorded as an `export` audit entry with the file's sha256."""
+    import csv
+    import io
+
+    from fastapi import Response
+
+    from planning import audit as _audit
+
+    data = project_conflicts(pid, include_clear=include_clear, db=db)
+    buf = io.StringIO()
+    buf.write(f"# {CONFLICT_EXPORT_DISCLAIMER}\n")
+    buf.write(f"# project={pid} exported_at={datetime.datetime.utcnow().isoformat(timespec='seconds')}Z engine={ENGINE_VERSION}\n")
+    w = csv.writer(buf)
+    w.writerow(CONFLICT_EXPORT_COLUMNS)
+    for i in data["issues"]:
+        st = i.get("run_stale") or {}
+        w.writerow([i["id"], i["class"], i["class_label"], i["status"], i["status_by"] or "", i["status_note"] or "",
+                    i["raised_by_project"], i["other_project"] or "", i["element_a_id"], i["b_type"], i["b_ref"],
+                    "" if i["horizontal_distance_m"] is None else round(i["horizontal_distance_m"], 2),
+                    "" if i["vertical_gap_m"] is None else round(i["vertical_gap_m"], 2), i["certainty"],
+                    "; ".join(f"{t['label']} ({t['distance_m']:.1f} m <= {t['threshold_m']} m)" for t in i["permission_triggers"]),
+                    " | ".join(i["reasons"]), i["run_id"],
+                    "UNKNOWN" if st.get("stale") is None else ("stale" if st.get("stale") else "current"), i["created_at"]])
+    body = buf.getvalue().encode("utf-8")
+    sha = hashlib.sha256(body).hexdigest()
+    _audit.record(db, action="export", entity_type="project_report", entity_id=pid, actor=requested_by or None,
+                  label="CSV conflict summary", parent_type="project", parent_id=pid, after_hash=f"sha256:{sha}")
+    db.commit()
+    return Response(content=body, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="conflict-summary-{pid}.csv"', "X-Report-SHA256": sha,
+        "Access-Control-Expose-Headers": "X-Report-SHA256, Content-Disposition"})
+
+
 class StatusIn(BaseModel):
     status: Literal["open", "acknowledged", "resolved"]
     actor: str = Field(min_length=1)

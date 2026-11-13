@@ -44,6 +44,8 @@ class PlanningProjectEntity(Base):
     baseline_id = Column(String, nullable=False, default="base")
     baseline_fingerprint = Column(String, nullable=False)  # of the baseline when the project was created
     status = Column(String, nullable=False, default="draft")
+    # The alternative (an attached scenario) the project team marks as preferred; a working flag, not a decision.
+    preferred_scenario_id = Column(String, nullable=True)
     created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=_now)
     updated_at = Column(DateTime, default=_now, onupdate=_now)

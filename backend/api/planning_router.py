@@ -51,6 +51,7 @@ class ProjectPatch(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = None
     status: Optional[Literal["draft", "under_study", "under_review"]] = None  # 'decision_recorded' only by recording a decision
+    preferred_scenario_id: Optional[str] = Field(default=None, description="an attached scenario; '' clears. A working flag, not a decision")
 
 
 class LinkIn(BaseModel):
@@ -129,7 +130,7 @@ def _project_out(db: Session, p: PlanningProjectEntity, full: bool = False) -> d
     d = {"id": p.id, "name": p.name, "description": p.description, "area_id": p.area_id,
          "bbox": [p.min_lon, p.min_lat, p.max_lon, p.max_lat] if p.min_lon is not None else None,
          "baseline_id": p.baseline_id, "baseline_fingerprint": p.baseline_fingerprint, "status": p.status,
-         "status_label": PROJECT_STATUS_LABEL[p.status], "created_by": p.created_by, "created_at": _iso(p.created_at), "updated_at": _iso(p.updated_at),
+         "status_label": PROJECT_STATUS_LABEL[p.status], "preferred_scenario_id": p.preferred_scenario_id, "created_by": p.created_by, "created_at": _iso(p.created_at), "updated_at": _iso(p.updated_at),
          "link_count": db.query(func.count(PlanningProjectLinkEntity.id)).filter(PlanningProjectLinkEntity.project_id == p.id).scalar()}
     if full:
         cur = baseline_fingerprint(db, p.baseline_id)
@@ -217,6 +218,11 @@ def patch_project(pid: str, body: ProjectPatch, db: Session = Depends(get_db)):
             v = getattr(body, k)
             if v is not None:
                 setattr(p, k, v)
+        if body.preferred_scenario_id is not None:
+            sid = body.preferred_scenario_id or None
+            if sid and not db.query(PlanningProjectLinkEntity).filter_by(project_id=pid, entity_type="scenario", entity_id=sid).first():
+                raise HTTPException(422, "preferred_scenario_id must be a scenario attached to the project")
+            p.preferred_scenario_id = sid
         db.commit()
     return _project_out(db, p, full=True)
 
