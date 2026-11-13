@@ -78,10 +78,22 @@ Small edits to existing components (no engine logic touched; tools.ts and Proper
 
 - ≥1280: docked context 320 (432 for Projects), inspector at its panel's own width (22 rem / 27 rem).
 - 1025–1279: context 296.
-- **Tablet 768–1024**: rail 64 px with 10 px labels; context panel and inspector **overlay** the map; the store allows only
-  one at a time (opening one closes the other); shell controls ≥ 40 px.
-- **< 768**: rail becomes a bottom tab bar (scrolls sideways: 7 × 64 px); context or inspector is a bottom sheet (52 dvh)
-  above it, one at a time; the old < 920 px sheet rules (whole sheet scrolls, sticky footer, 44 px targets, enlarged
+- **Tablet 768–1024**: rail 72 px with 10 px labels; context panel and inspector **overlay** the map; shell controls ≥ 40 px.
+  - **Dual overlay** (polish pass, `dualOverlay()` in `useShellStore.ts`): when the window is ≥ 1000 px wide
+    (`DUAL_OVERLAY_MIN_WIDTH`) and the workspace is Explore, Design, Underground or Environment
+    (`DUAL_OVERLAY_WORKSPACES`), context (296 px) and inspector may both be open; the inspector is capped so ≥ 280 px of
+    map stays visible between them (measured 303 px at 1024×768). Shell carries `data-dual="true"`; Cesium's buttons and
+    the compass move right of the context panel. Projects (432 px context) and Simulate (study panel = inspector) keep
+    one at a time.
+  - **Selection on one-overlay sizes** (768 portrait, phone): in Explore and Environment (`SUMMARY_IN_CONTEXT`), whose
+    context panel shows the selection (Explore "Selected" summary; Environment "Screen …"), a new selection keeps the
+    context panel and does not open the inspector; an **Open details** button (`open-inspector`, real: opens the
+    inspector) appears there instead. Elsewhere the selection opens the inspector as before (`revealSelection`).
+  - **Drawer**: the drawer spans the map width; context and inspector end above it (bottom = 40 px strip when collapsed,
+    `--drawer-h` = min(240 px, 38 dvh) when open), so drawer tabs and body are never covered.
+- **< 768**: rail becomes a bottom tab bar (scrolls sideways: 7 × 70 px); context or inspector is a bottom sheet (52 dvh)
+  above it, one at a time; with a drawer the sheets sit above its 40 px tab strip, and drawer / context / inspector are
+  mutually exclusive (opening one closes the others — store); the old < 920 px sheet rules (whole sheet scrolls, sticky footer, 44 px targets, enlarged
   Cesium buttons) are kept for the embedded panels.
 
 ## 5. Preserved contracts (AUD §4)
@@ -102,8 +114,11 @@ harnesses that clicked it from any state must click `open-planning` first). `#sc
 - Simulate drawer tabs (Calibration, ODME, Emissions, Count checks, Through the day) are **not** moved: the same
   components (with data-testids such as `emissions-card`, `timeline-*`) render inside SimulationPanel's Details/Improve
   tabs, and mounting them twice would duplicate test ids. Moving them needs SimulationPanel to drop its copies.
-- Light theme tokens exist but no toggle is exposed: existing panels still use hard-coded dark Tailwind colours, so a
-  light shell around dark panels would be half-themed. Expose the toggle once panels use tokens.
+- **Light theme: left off (decision of the polish pass, 2026-11-13).** Tokens exist, but the embedded panels
+  (`PropertiesPanel`, `SimulationPanel`, `FeasibilityPanel`, `TrafficDataPanel`, `JunctionPanel`, `InfoPanel`, `ui/kit.tsx`,
+  RoadAnalysis/ODME/Calibration cards) still hard-code dark Tailwind colours (`bg-slate-950/90`, `text-slate-*`,
+  `border-white/10`, …). A light shell around them would be half-themed and fail contrast, so no toggle is exposed.
+  Prerequisite: move `ui/kit.tsx` and those panels to token utilities (`bg-surface-*`, `text-text-*`).
 - Underground has no ground translucency / depth slider / profile yet (UX_ARCHITECTURE §7) — listed as not available, no fake controls.
 - `Bridge`, `Tunnel` tools: not shown (no mode behind them).
 
@@ -125,3 +140,17 @@ Run 2026-11-13 on this branch (worktree uos-wt-shell), backend on a copy of twin
   Fonts blocked, Cesium ion 401 for asset 2 via the sandbox proxy).
 - Not browser-verified: Investigation Requirements Document generate/download from Reports (no saved assessment in the
   test DB); Alt+1…7; drawer expand; light theme (no toggle).
+
+## 8. Tablet layout and visual consistency pass (2026-11-13, worktree uos-wt-polish)
+
+Shell changes: `useShellStore.ts` (`width`, `dualOverlay`, `revealSelection`, phone drawer exclusivity), `AppShell.tsx`
+(uses them; `data-dual`), `SelectionDetailsButton.tsx` (new), Explore/Environment contexts (Open details), Underground
+alignment list (selects when dual overlay allows), `index.css` (tablet dual/drawer rules, phone sheet above drawer strip,
+inspector flattens div-rooted panels such as PropertiesPanel, Environment screening fills the context column).
+Consistency: in embedded panels, text below 11 px raised to 11 px (`text-[10px]` → `text-[11px]`: PropertiesPanel,
+TrafficDataPanel, RoadAnalysisPanel, OdmeAndEmissions) and `text-slate-600` → `text-slate-500` (contrast on dark);
+`ui/kit.tsx` `Segmented` wraps instead of clipping its last option in a 296 px column; the Simulate drawer's "Hourly
+demand profile" heading uses the token heading style. Text walls moved under the design-system `Disclosure` (text
+unchanged, data-testids unchanged): SimulationPanel "What the distance means", TrafficDataPanel "How datasets are used"
+and import "File format". FeasibilityPanel's one-line screening disclaimer and SimulationPanel/TrafficDataPanel
+headers stay visible (honesty notices, one sentence). No engine logic, backend or test expectation changed.
