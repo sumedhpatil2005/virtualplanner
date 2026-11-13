@@ -166,7 +166,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
       {showContext && (
         <section className="uos-context" aria-label={`${ws.label} panel`} data-testid="context-panel">
           <header className="uos-context-header">
-            <h2 className="text-heading font-semibold text-text-1 truncate">{ws.title}</h2>
+            <h2 className="text-heading font-semibold text-text-1 break-words leading-tight min-w-0">{ws.title}</h2>
             <IconButton icon={X} label="Collapse panel" onClick={() => setContextOpen(false)} size="sm" tooltip="left" />
           </header>
           <div className={`uos-context-body ${WIDE_CONTEXT.includes(workspace) ? 'is-flush' : ''}`}>

@@ -3,10 +3,12 @@ import { planningApi, type AuditEvent, type Linkable, type Project } from '../..
 import { coordinationApi, type ProjectIssue, type ProjectStale, type ProposalElement } from '../../lib/coordinationApi';
 import { geometryBounds } from '../../lib/planningProjects';
 import { engineInstance } from '../../engine/TwinCityEngine';
+import { formatWhen } from '../../lib/formatWhen';
+export { formatWhen };
 
 export const inputCls = 'w-full rounded-lg bg-white/[0.05] border border-white/10 px-2 py-1.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/60';
 export const labelCls = 'block text-xs text-slate-400 mb-1';
-export const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '–');
+export const when = (iso: string | null | undefined) => formatWhen(iso);
 
 export const ACTION_LABEL: Record<string, string> = { create: 'created', update: 'changed', delete: 'deleted', export: 'exported' };
 export const ENTITY_LABEL: Record<string, string> = {

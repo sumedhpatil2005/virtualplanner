@@ -11,11 +11,12 @@ import { Disclosure } from '../../components/ui/Disclosure';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TrustBadge } from '../../components/ui/badges';
 import { StaleBadge } from '../../components/projects/common';
+import { formatWhen } from '../../lib/formatWhen';
 import { useShellStore } from '../useShellStore';
 import { DataCatalogueSection } from '../../components/data/DataCatalogueSection';
 
 const who = () => localStorage.getItem('td-user') ?? '';
-const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
+const when = (iso: string | null | undefined) => formatWhen(iso, 'never');
 
 /**
  * Reports: a catalogue of the report endpoints that exist, each with scope, inputs, validation status and last generated.
