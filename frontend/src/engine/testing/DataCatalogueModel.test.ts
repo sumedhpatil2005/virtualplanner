@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   UNKNOWN, bestDate, catalogueSummary, dataStatusValue, featureFailsValidation, filterDatasets, footprint, formatBytes, groupDatasets,
-  featureNames, groupFeatures, provenanceRows, qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, withPendingVersions, workspaceLabel,
+  featureNames, groupFeatures, pendingNote, provenanceRows, qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, withPendingVersions, workspaceLabel,
 } from '../../components/data/dataCatalogueModel';
 import type { DsDataset, DsVersion, FeatureReadiness } from '../../lib/datasetsApi';
 
@@ -131,6 +131,9 @@ describe('labels in words (QA 2026-11-14)', () => {
   });
   it('feature ids become names; datasets with a pending newer version are counted', () => {
     expect(featureNames(['explore.terrain_overlay', 'x.flow_paths'], [{ id: 'explore.terrain_overlay', name: 'Terrain overlay' }])).toEqual(['Terrain overlay', 'Flow paths']);
+    const dem = ds({ active_version: version({ id: 'a', version_label: 'v1' }), pending_version_ids: ['b', 'c'],
+      versions: [version({ id: 'a', version_label: 'v1' }), version({ id: 'b', version_label: 'v2' }), version({ id: 'c', version_label: 'v3' })] });
+    expect(pendingNote(dem)).toMatch(/^Active version v1 · v2, v3 pending review/);
     expect(withPendingVersions([ds({ active_version: version(), pending_version_ids: ['v3'] }), ds({ pending_version_ids: ['v2'] }), ds()])).toBe(1);
   });
 });

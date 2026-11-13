@@ -77,6 +77,14 @@ export function featureNames(ids: string[], features: { id: string; name: string
   return ids.map(id => by.get(id) ?? humanise(id.split('.').slice(-1)[0]));
 }
 
+/** "Active version v1 · v2, v3 pending review — …": which version is in use and which wait for a reviewer, by label. */
+export function pendingNote(d: Pick<DsDataset, 'pending_version_ids' | 'active_version' | 'versions'>): string {
+  const label = (id: string) => d.versions?.find(v => v.id === id)?.version_label ?? id;
+  const pend = d.pending_version_ids.map(label);
+  const act = d.active_version ? `Active version ${d.active_version.version_label}` : 'No active version';
+  return `${act} · ${pend.join(', ')} pending review — ${d.active_version ? 'the active version stays in use until a reviewer activates a newer one' : 'nothing is used until a reviewer activates one'}.`;
+}
+
 /** Datasets whose active version stays in use while a newer version waits for review. */
 export const withPendingVersions = (list: DsDataset[]): number => list.filter(d => d.active_version && d.pending_version_ids.length > 0).length;
 

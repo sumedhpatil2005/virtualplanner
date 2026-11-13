@@ -81,7 +81,7 @@ html, body, #root {
    ================================================================================================================ */
 
 .uos-shell {
-  position: fixed; inset: 0; overflow: hidden; z-index: 0;
+  position: fixed; inset: 0; overflow: hidden; overflow: clip; z-index: 0; /* clip: never a scroll container, so scrollIntoView / focus cannot shift the whole shell (QA 2026-11-14) */
   display: grid;
   grid-template-columns: var(--rail-w) auto minmax(0, 1fr) auto;
   grid-template-rows: var(--topbar-h) minmax(0, 1fr);
@@ -142,7 +142,7 @@ html, body, #root {
 .uos-context-header { display: flex; align-items: center; gap: var(--sp-2); height: 44px; padding: 0 var(--sp-2) 0 var(--sp-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .uos-context-header h2 { flex: 1; }
 .uos-context-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-4); overscroll-behavior: contain; }
-.uos-context-body.is-flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.uos-context-body.is-flush { padding: 0; overflow: hidden; overflow: clip; display: flex; flex-direction: column; }
 
 /* ---- Stage (map) ---- */
 .uos-stage { grid-area: stage; position: relative; overflow: hidden; min-width: 0; }

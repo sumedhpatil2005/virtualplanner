@@ -11,7 +11,7 @@ import { useShellStore } from '../../shell/useShellStore';
 import {
   CHECK_LABEL, CHECK_TONE, DATA_CLASS_HELP, DATA_CLASS_LABEL, DATA_CLASS_TONE, DEP_STATE_LABEL, FEATURE_STATUS_LABEL, UNKNOWN,
   CHECK_STATUS_LABEL, dataStatusValue, featureFailsValidation, featureNames, filterDatasets, footprint, groupDatasets, groupFeatures, provenanceRows, puneRect,
-  qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, workspaceLabel,
+  pendingNote, qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, workspaceLabel,
 } from './dataCatalogueModel';
 import { useDataCatalogue, type DataView } from './useDataCatalogue';
 
@@ -162,7 +162,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
         )}
         {d.pending_version_ids.length > 0 && (
           <p className="text-label" style={{ color: TONE_COLOR.warn }} data-testid="pending-note">
-            {d.pending_version_ids.length} newer version(s) pending review — the active version is unchanged until a reviewer activates one.
+            {pendingNote(d)}
           </p>
         )}
       </header>
@@ -216,7 +216,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
           {(d.versions ?? []).slice().reverse().map(x => (
             <li key={x.id} className="uos-card space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-label text-text-1 font-medium">{x.version_label}</span>
+                <span className="text-label text-text-1 font-medium">Version {x.version_label}</span>
                 <span className="uos-data-chip" data-testid={`version-status-${x.version_label}`}>{reviewStatusLabel(x.review_status)}</span>
                 <span className="text-meta text-text-3">{ORIGIN_LABEL[x.origin] ?? x.origin} · registered {x.created_at?.slice(0, 16).replace('T', ' ') ?? UNKNOWN} UTC</span>
                 {x.review_status === 'pending_review' && (
@@ -236,7 +236,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
                 </div>
               ))}
               {(x.files ?? []).length > 0 && (
-                <ul className="text-meta text-text-3">{(x.files ?? []).map(f => <li key={f.id} className="truncate" title={f.path}>{f.role}: {f.path} · sha256 {f.sha256 ? f.sha256.slice(0, 12) + '…' : UNKNOWN}</li>)}</ul>
+                <ul className="text-meta text-text-3">{(x.files ?? []).map(f => <li key={f.id} className="break-all" title={f.path}>{f.role}: {f.path} · sha256 {f.sha256 ? f.sha256.slice(0, 12) + '…' : UNKNOWN}</li>)}</ul>
               )}
             </li>
           ))}
