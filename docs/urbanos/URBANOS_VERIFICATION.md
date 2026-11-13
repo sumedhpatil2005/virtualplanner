@@ -64,7 +64,14 @@ and stored `synthetic=true`; feasibility and conflict findings are screening.
 
 ## 3. AFTER screenshots and contact sheet
 
-_(filled in below)_
+- 19 AFTER shots mirroring the BEFORE names: `/workspace/work/urbanos/shots/after/final-1440x900-*.png` (1024 set not captured: QA run stopped).
+- Workspace sets: `underground-*`, `projects-*`, `reports-*`, `env-*`, `explore-*`, `simulate-*`, `polish-<WxH>-*` (1440, 1024, 768, 390).
+- Contact sheet (coordinator, ImageMagick, 6 pairs): `/workspace/work/urbanos/shots/before_after_contact.png`.
+
+## 6. Final gates on the branch tip (coordinator, 2026-11-13 ~20:05 IST, after polish + QA fix integrated)
+- tsc -p tsconfig.app.json 0 errors; oxlint 0 errors / 8 warnings; vite build OK.
+- vitest full suite: 85 files passed, 6 skipped, 705 tests passed, 7 skipped; 1 worker failed to START for `EditScope.test.ts` (pool timeout under load) → re-run alone: 11/11 pass. Total 92 files / 716 passed / 7 skipped / 0 failed.
+- pytest (fresh env after sandbox restart, OSM index not set): 118 passed, 0 failed.
 
 ## 4. What is not tested (UNTESTED here)
 
