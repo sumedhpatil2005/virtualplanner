@@ -333,6 +333,7 @@ button.uos-row:hover { background: var(--surface-2); }
    to the left edge of the visible map, right of the context panel. */
 @media (min-width: 768px) and (max-width: 1024.98px) {
   .uos-shell { --ctx-tablet-w: min(var(--context-w), calc(100vw - 72px - 2rem)); }
+  .uos-shell[data-context-wide] { --ctx-tablet-w: min(432px, calc(100vw - 72px - 2rem)); } /* Projects/Reports: compass, notice and Cesium buttons clear the wide panel */
   .uos-shell[data-inspector=open] .cesium-viewer-toolbar { right: auto !important; left: var(--sp-3) !important; top: 56px !important; }
   .uos-shell[data-inspector=open] .cesium-viewer-fullscreenContainer { right: auto !important; left: 88px !important; }
   .uos-shell[data-inspector=open][data-context=open] .cesium-viewer-toolbar { left: calc(var(--ctx-tablet-w) + var(--sp-3)) !important; }
