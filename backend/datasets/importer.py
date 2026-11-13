@@ -52,6 +52,44 @@ def load_overrides(path: str | None = None) -> tuple[dict, str | None]:
     return (ds if isinstance(ds, dict) else {}), hashlib.sha256(raw).hexdigest()
 
 
+def load_source_labels(path: str | None = None) -> dict:
+    """sources.<id> {name, publisher, reason} from the overrides file (fill-only labels); empty when absent."""
+    p = path or os.environ.get("URBANOS_CLASSIFICATION_OVERRIDES") or OVERRIDES_PATH
+    try:
+        with open(p, "rb") as f:
+            doc = json.loads(f.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    src = doc.get("sources") if isinstance(doc, dict) else None
+    return src if isinstance(src, dict) else {}
+
+
+def apply_labels(db: Session, overrides: dict, sources: dict) -> list[str]:
+    """Fill-only human-readable labels: a dataset title that is still its bare id, a source name that is still its bare id,
+    a source publisher that is still UNKNOWN. Never replaces a stated value. Returns what changed."""
+    from .models import DsSourceEntity
+    changed: list[str] = []
+    for did, ov in overrides.items():
+        t = (ov or {}).get("title")
+        d = db.get(DsDatasetEntity, did) if t else None
+        if d is not None and d.title == d.id:
+            d.title = str(t)
+            changed.append(f"dataset {did}: title")
+    for sid, ov in sources.items():
+        s = db.get(DsSourceEntity, sid)
+        if s is None or not isinstance(ov, dict):
+            continue
+        if ov.get("name") and s.name == s.id:
+            s.name = str(ov["name"])
+            changed.append(f"source {sid}: name")
+        if ov.get("publisher") and (s.publisher or "UNKNOWN") == "UNKNOWN":
+            s.publisher = str(ov["publisher"])
+            changed.append(f"source {sid}: publisher")
+    if changed:
+        db.flush()
+    return changed
+
+
 def _override_note(ov: dict, sha: str | None, applied: list[str]) -> str:
     return (f"Classification ({', '.join(applied)}) from the registry overrides file backend/datasets/classification_overrides.json"
             f" (sha256 {(sha or 'UNKNOWN')[:12]}…): {ov.get('reason', 'no reason recorded')}")
@@ -474,11 +512,12 @@ def scan(db: Session, root: str | None = None) -> dict:
                         report.append(register_dir(db, dirpath, kind, root, overrides, ov_sha))
                 except Exception as e:  # noqa: BLE001 — one bad directory never stops the scan
                     report.append({"dir": os.path.relpath(dirpath, root), "result": "error", "reason": str(e)[:400]})
+    labels = apply_labels(db, overrides, load_source_labels())
     summary: dict[str, int] = {}
     for r in report:
         summary[r["result"]] = summary.get(r["result"], 0) + 1
     return {"root": root, "exists": True, "entries": report, "summary": summary,
-            "classification_overrides": {"path": OVERRIDES_PATH, "sha256": ov_sha, "datasets": len(overrides)}}
+            "classification_overrides": {"path": OVERRIDES_PATH, "sha256": ov_sha, "datasets": len(overrides)}, "labels_filled": labels}
 
 
 def main(argv=None) -> None:
