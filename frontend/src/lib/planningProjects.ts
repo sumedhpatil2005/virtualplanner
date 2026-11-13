@@ -5,7 +5,7 @@
  * Honesty rules: a depth / height we do not have is `null` (= UNKNOWN), never 0; a proposal's design values are
  * `hypothetical` (design inputs), never `measured`; "no conflict within available data" is not proof of no conflict.
  */
-import type { Certainty, ConflictClass, ElementInput, ElementKind, ProjectIssue, StaleVerdict } from './coordinationApi';
+import type { Certainty, ConflictClass, ConflictFinding, ElementInput, ElementKind, ProjectIssue, StaleVerdict } from './coordinationApi';
 
 // ── Proposal elements from an alternative's change set ───────────────────────────────────────────────────────────
 
@@ -172,14 +172,20 @@ export function openActionableCount(issues: readonly ProjectIssue[]): number {
   return issues.filter(i => ACTIONABLE.has(i.class) && i.status === 'open').length;
 }
 
-/** What the other side of a finding is, in words. */
-export function otherSideLabel(i: ProjectIssue, projectNames: Readonly<Record<string, string>>, thisProject: string): string {
-  if (i.other_project) {
-    const nm = projectNames[i.other_project] ?? i.other_project;
-    return i.raised_by_project === thisProject ? `Project “${nm}”` : `Project “${nm}” (raised by them)`;
-  }
-  // 'building' is returned by the backend since engine 1.1; kept out of the shared b_type union (Underground maps every member)
+/** Layer names for layer-level findings (b_type "layer": b_ref is the layer id the backend checked). */
+export const LAYER_NAME: Readonly<Record<string, string>> = {
+  baseline_road: 'Existing roads (base city)', osm_metro: 'Existing metro (OpenStreetMap)', subsurface_utility: 'Utility records',
+  building: 'Building footprints', project_element: 'Other projects\u2019 elements', geometry: 'Element geometry',
+};
+
+/**
+ * Side B of a finding in words, without project names (both Underground's conflict check and Projects → Conflicts use it).
+ * 'building' is returned by the backend since engine 1.1; kept out of the shared b_type union.
+ */
+export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'evidence'>): string {
   switch (i.b_type as string) {
+    case 'project_element': return 'Other project element';
+    case 'project': return 'Other project';
     case 'baseline_road': return 'Existing road (base city)';
     case 'osm_metro': return 'Existing metro (OpenStreetMap)';
     case 'subsurface_utility': {
@@ -191,9 +197,23 @@ export function otherSideLabel(i: ProjectIssue, projectNames: Readonly<Record<st
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
       return b.source === 'osm' ? 'Existing building (OSM footprint)' : 'Possible building (ML footprint)';
     }
-    case 'layer': return `Layer: ${i.b_ref}`;
+    case 'layer': return `Layer: ${LAYER_NAME[i.b_ref] ?? i.b_ref.replace(/_/g, ' ')}`;
     default: return i.b_ref;
   }
+}
+
+/** Whether b_ref adds anything after sideBLabel (a record / footprint / road id), or only repeats the layer. */
+export function sideBRefShown(i: Pick<ConflictFinding, 'b_type'>): boolean {
+  return i.b_type !== 'layer' && i.b_type !== 'project';
+}
+
+/** What the other side of a finding is, in words. */
+export function otherSideLabel(i: ProjectIssue, projectNames: Readonly<Record<string, string>>, thisProject: string): string {
+  if (i.other_project) {
+    const nm = projectNames[i.other_project] ?? i.other_project;
+    return i.raised_by_project === thisProject ? `Project “${nm}”` : `Project “${nm}” (raised by them)`;
+  }
+  return sideBLabel(i);
 }
 
 const BLD_SOURCE: Record<string, string> = { osm: 'OpenStreetMap (volunteer-mapped)', google_open_buildings_v3: 'Google Open Buildings v3 (ML)', ms_global_ml_buildings: 'Microsoft ML footprints' };

@@ -1463,9 +1463,14 @@ export class TwinCityEngine {
           material: isSelected
             ? Color.fromCssColorString('#0284c7').withAlpha(0.3)
             : Color.fromCssColorString('#0284c7').withAlpha(0.12),
-          outline: true,
-          outlineColor: isSelected ? Color.CYAN : Color.fromCssColorString('#0284c7'),
-          outlineWidth: isSelected ? 4.0 : 2.0
+          // Ground-clamped polygons cannot draw outlines (Cesium warns and drops them): the edge is a clamped polyline instead
+          outline: false
+        },
+        polyline: {
+          positions: [...pts, pts[0]],
+          clampToGround: true,
+          width: isSelected ? 4.0 : 2.0,
+          material: isSelected ? Color.CYAN : Color.fromCssColorString('#0284c7')
         }
       });
       this.areaEntities.push(entity);
@@ -1518,10 +1523,15 @@ export class TwinCityEngine {
           polygon: {
             hierarchy: pts,
             material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.25 : 0.08) * zoneOpacity),
-            outline: true,
-            outlineColor: (isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e')).withAlpha(zoneOpacity),
-            outlineWidth: isSelected ? 4.0 : 2.0,
+            // Ground-clamped polygons cannot draw outlines (Cesium warns and drops them): the edge is a clamped polyline instead
+            outline: false,
             classificationType: ClassificationType.BOTH
+          },
+          polyline: {
+            positions: [...pts, pts[0]],
+            clampToGround: true,
+            width: isSelected ? 4.0 : 2.0,
+            material: (isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e')).withAlpha(zoneOpacity)
           },
           label: {
             text: zone.name,

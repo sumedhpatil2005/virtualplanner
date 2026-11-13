@@ -6,7 +6,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges';
 import { coordinationApi, type ConflictStatus, type ProjectIssue } from '../../lib/coordinationApi';
 import { planningClient } from '../../lib/planningClient';
-import { groupIssuesByClass, otherSideEvidence, otherSideLabel, ACTIONABLE } from '../../lib/planningProjects';
+import { groupIssuesByClass, otherSideEvidence, otherSideLabel, sideBLabel, ACTIONABLE } from '../../lib/planningProjects';
 import { StaleBadge } from './common';
 import { inputCls, when, flyToGeometry, type Act, type ProjectBundle } from './projectData';
 
@@ -97,7 +97,7 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
       <Disclosure>
         <ul className="text-xs text-slate-400 space-y-0.5">
           {i.reasons.map((r, k) => <li key={k}>{r}</li>)}
-          <li>Finding {i.id} · run {i.run_id} · side B {i.b_type} {i.b_ref}</li>
+          <li>Finding {i.id} · run {i.run_id} · side B: {sideBLabel(i)} (ref {i.b_ref})</li>
         </ul>
       </Disclosure>
     </li>

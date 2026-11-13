@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FolderKanban, ShieldQuestion } from 'lucide-react';
-import { coordinationApi, type ConflictClass, type ConflictFinding } from '../../lib/coordinationApi';
+import { coordinationApi, type ConflictClass } from '../../lib/coordinationApi';
 import { planningApi, type Project } from '../../engine/planning/planningApi';
 import type { UndergroundAlignmentObject } from '../../engine/objects/types';
 import { alignmentElementPayload } from '../../engine/underground/alignmentGeometry';
@@ -11,10 +11,8 @@ import { field, input, inputStyle, lbl, labelStyle, note } from './common';
 import { USER_KEY } from './useSubsurfaceRecords';
 import { useUndergroundStore } from './undergroundStore';
 import { CLASS_ORDER, CLASS_TEXT } from './conflictClasses';
+import { sideBLabel, sideBRefShown } from '../../lib/planningProjects';
 
-const B_LABEL: Record<ConflictFinding['b_type'], string> = {
-  project_element: 'Other project', baseline_road: 'Existing road (baseline)', osm_metro: 'Metro (OSM)', subsurface_utility: 'Utility record', layer: 'Layer', project: 'Project',
-};
 
 export const ClassBadge: React.FC<{ cls: ConflictClass; count?: number }> = ({ cls, count }) => (
   <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-meta font-semibold" style={{ border: `1px solid ${CLASS_TEXT[cls].color}`, color: CLASS_TEXT[cls].color }}
@@ -110,8 +108,8 @@ export const ConflictCheck: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }
               <li key={f.id} className="uos-card text-meta text-text-2" data-testid="ug-finding">
                 <div className="flex flex-wrap items-center gap-2">
                   <ClassBadge cls={f.class} />
-                  <span className="text-text-1">{B_LABEL[f.b_type] ?? f.b_type}</span>
-                  <span className="truncate" title={f.b_ref}>{f.b_ref}</span>
+                  <span className="text-text-1" data-testid="ug-finding-side-b">{sideBLabel(f)}</span>
+                  {sideBRefShown(f) && !/ record /.test(sideBLabel(f)) && <span className="truncate min-w-0" title={f.b_ref}>{f.b_ref}</span>}
                 </div>
                 <div className="tabular-nums">
                   plan distance {f.horizontal_distance_m === null ? 'Unknown' : `${f.horizontal_distance_m.toFixed(1)} m`} · vertical gap {f.vertical_gap_m === null ? 'Unknown' : `${f.vertical_gap_m.toFixed(1)} m`} · <CertaintyBadge certainty={f.certainty} compact />

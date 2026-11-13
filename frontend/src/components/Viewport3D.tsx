@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { cesiumIonToken } from '../lib/cesiumToken';
+import { watchImageryErrors } from '../lib/baseImageryErrors';
 import {
   Viewer,
   Ion,
@@ -37,6 +38,9 @@ export const Viewport3D: React.FC = () => {
       terrainProvider: undefined // Default ellipsoid or generic terrain
     });
 
+    // A failed base-map request is reported to the user once, not dumped to the console as a raw RequestErrorEvent
+    const stopImageryWatch = watchImageryErrors(viewer.imageryLayers, msg => (window as any).showToast?.(msg, 'error'));
+
     // Disable default double-click camera tracking/zoom
     viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
@@ -60,6 +64,7 @@ export const Viewport3D: React.FC = () => {
 
     // Cleanup: release engine resources bound to this viewer before destroying it
     return () => {
+      stopImageryWatch();
       engineInstance.dispose();
       viewer.destroy();
     };
