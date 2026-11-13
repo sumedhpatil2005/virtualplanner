@@ -40,27 +40,16 @@ def _inside_allowed(path: str) -> bool:
 
 
 def _check_update_url(cfg: dict) -> None:
-    """update_check.url is probed by the server (HEAD/GET): http(s) to a public host only (no SSRF to loopback,
-    link-local or private addresses, no file:// or other schemes)."""
-    import ipaddress
-    import socket
-    from urllib.parse import urlparse
+    """update_check.url is probed by the server (HEAD/GET): http(s) to a public host only (datasets.updates guards the
+    probe and every redirect the same way)."""
     url = (cfg or {}).get("url")
     if not url:
         return
-    u = urlparse(str(url))
-    if u.scheme not in ("http", "https") or not u.hostname:
-        raise HTTPException(400, "update_check.url must be an http(s) URL")
     if (cfg or {}).get("method") not in (None, "http_head", "ckan"):
         raise HTTPException(400, "update_check.method must be http_head or ckan")
-    try:
-        addrs = {ai[4][0] for ai in socket.getaddrinfo(u.hostname, None)}
-    except OSError:
-        addrs = set()  # unresolvable now: the probe itself will fail and be recorded as an error
-    for a in addrs:
-        ip = ipaddress.ip_address(a.split("%")[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            raise HTTPException(400, f"update_check.url resolves to a non-public address ({ip})")
+    why = updates.non_public_reason(url)
+    if why:
+        raise HTTPException(400, why)
 
 
 @router.get("/vocabulary")

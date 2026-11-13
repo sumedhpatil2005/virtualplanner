@@ -12,6 +12,7 @@ redirects to login pages (any non-2xx is an error, recorded).
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 
 from sqlalchemy.orm import Session
@@ -22,9 +23,40 @@ from .registry import _j, active_version, add_version, new_id, versions_of
 UA = "UrbanOS-dataset-registry/1.0 (update check; one request per manual check)"
 
 
+def non_public_reason(url: str) -> str | None:
+    """None when `url` is http(s) to a host that resolves only to public addresses; else why not (SSRF guard for the
+    server-side probe: no loopback / private / link-local / reserved targets, no other schemes)."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(str(url))
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return "update_check.url must be an http(s) URL"
+    try:
+        addrs = {ai[4][0] for ai in socket.getaddrinfo(u.hostname, None)}
+    except OSError:
+        return None  # unresolvable now: the probe fails and is recorded as an error
+    for a in addrs:
+        ip = ipaddress.ip_address(a.split("%")[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return f"update_check.url resolves to a non-public address ({ip})"
+    return None
+
+
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        why = non_public_reason(newurl)
+        if why:
+            raise urllib.error.URLError(f"redirect refused: {why}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _http(method: str, url: str, timeout: float = 15.0) -> tuple[int, dict, bytes]:
+    why = non_public_reason(url)
+    if why:
+        raise ValueError(why)
     req = urllib.request.Request(url, method=method, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 (URL comes from the registry)
+    with urllib.request.build_opener(_PublicRedirects).open(req, timeout=timeout) as r:  # noqa: S310 (public http(s) only)
         body = r.read(2_000_000) if method == "GET" else b""
         return r.status, {k.lower(): v for k, v in r.headers.items()}, body
 

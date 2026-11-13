@@ -349,3 +349,17 @@ def test_building_read_cap_is_reported_and_queries_per_box(monkeypatch):
     monkeypatch.setattr(S, "BUILDING_MAX", 2)
     segs, meta = S.building_segments(boxes)
     assert meta["capped"] is True and meta["read"] == 2
+
+
+def test_update_probe_refuses_non_public_targets_and_redirects():
+    import urllib.error
+    import urllib.request
+
+    from datasets import updates
+    with pytest.raises(ValueError):
+        updates._http("HEAD", "http://127.0.0.1:1/x")
+    assert updates.non_public_reason("file:///etc/passwd") and updates.non_public_reason("http://10.0.0.1/")
+    h = updates._PublicRedirects()
+    req = urllib.request.Request("https://example.org/a")
+    with pytest.raises(urllib.error.URLError):
+        h.redirect_request(req, None, 302, "Found", {}, "http://169.254.169.254/latest/meta-data")
