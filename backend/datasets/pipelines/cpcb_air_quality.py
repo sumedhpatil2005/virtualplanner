@@ -59,7 +59,7 @@ def main(argv=None):
     p.add_argument("--raw-date", required=True)
     p.add_argument("--version")
     a = p.parse_args(argv)
-    home = gc.data_home() / "raw"
+    home = gc.raw_root()
     pdf = home / "cpcb_caaqms_station_list" / a.raw_date / "caaqms_list_All_India.pdf"
     text = subprocess.check_output(["pdftotext", "-layout", str(pdf), "-"], text=True)
     stations = {s["station_id"]: s for s in parse_station_lines(text)

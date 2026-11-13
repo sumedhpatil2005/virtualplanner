@@ -3,7 +3,8 @@
 Storage convention (docs/urbanos/PUNE_DATA_AVAILABILITY.md §0):
   raw     : $URBANOS_DATA_HOME/raw/<source_id>/<YYYY-MM-DD>/<original filename> + manifest.json
   derived : $URBANOS_DATA_HOME/derived/<dataset_id>/<version>/... + processing.json
-URBANOS_DATA_HOME defaults to /workspace/work/urbanos-data (outside the repo; raw files
+URBANOS_DATA_ROOT (alias URBANOS_DATA_HOME) defaults to /workspace/work/urbanos-data;
+URBANOS_RAW_DIR / URBANOS_DERIVED_DIR override the two sub-roots (outside the repo; raw files
 are never committed and never modified after download).
 
 Only the standard library + shapely/pyproj are used so the pipelines run in the
@@ -32,7 +33,16 @@ _last_request = [0.0]
 
 
 def data_home() -> Path:
-    return Path(os.environ.get("URBANOS_DATA_HOME", "/workspace/work/urbanos-data"))
+    """Same env names as the sibling pipelines (_common.py): URBANOS_DATA_ROOT; URBANOS_DATA_HOME kept as alias."""
+    return Path(os.environ.get("URBANOS_DATA_ROOT") or os.environ.get("URBANOS_DATA_HOME") or "/workspace/work/urbanos-data")
+
+
+def raw_root() -> Path:
+    return Path(os.environ.get("URBANOS_RAW_DIR") or data_home() / "raw")
+
+
+def derived_root() -> Path:
+    return Path(os.environ.get("URBANOS_DERIVED_DIR") or data_home() / "derived")
 
 
 def now_ist() -> str:
@@ -61,13 +71,13 @@ def git_commit() -> str:
 
 
 def raw_dir(source_id: str, date: str | None = None) -> Path:
-    d = data_home() / "raw" / source_id / (date or today_ist())
+    d = raw_root() / source_id / (date or today_ist())
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def derived_dir(dataset_id: str, version: str) -> Path:
-    d = data_home() / "derived" / dataset_id / version
+    d = derived_root() / dataset_id / version
     d.mkdir(parents=True, exist_ok=True)
     return d
 

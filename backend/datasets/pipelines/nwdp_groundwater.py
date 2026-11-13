@@ -163,7 +163,7 @@ def main(argv=None):
     p.add_argument("--raw-date", required=True)
     p.add_argument("--version")
     a = p.parse_args(argv)
-    raw = gc.data_home() / "raw" / SOURCE_ID / a.raw_date
+    raw = gc.raw_root() / SOURCE_ID / a.raw_date
     man = {e["file"]: e for e in json.loads((raw / "manifest.json").read_text())["files"]}
     ver = a.version or a.raw_date
     out = gc.derived_dir(DATASET_ID, ver)

@@ -159,7 +159,7 @@ def main(argv=None):
     p.add_argument("--version", default=None)
     args = p.parse_args(argv)
     years = parse_years(args.years)
-    raw = gc.data_home() / "raw" / SOURCE_ID / args.raw_date if args.raw_date else download(years)
+    raw = gc.raw_root() / SOURCE_ID / args.raw_date if args.raw_date else download(years)
     out = process(raw, years, args.version or raw.name)
     print(out)
 

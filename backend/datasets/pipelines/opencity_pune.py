@@ -234,7 +234,7 @@ LINE_LAYERS = {"pmc_sewage_pipelines", "pmc_stormwater_drains", "pmc_nallas", "p
 
 
 def derive(raw_date: str, version: str | None = None, only: list[str] | None = None) -> list[Path]:
-    rd = gc.data_home() / "raw" / SOURCE_ID / raw_date
+    rd = gc.raw_root() / SOURCE_ID / raw_date
     manifest = json.loads((rd / "manifest.json").read_text())
     outs = []
     for entry in manifest["files"]:

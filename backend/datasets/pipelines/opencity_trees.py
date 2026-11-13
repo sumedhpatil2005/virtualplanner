@@ -83,7 +83,7 @@ def main(argv=None):
     p.add_argument("--version")
     a = p.parse_args(argv)
     csv.field_size_limit(sys.maxsize)
-    rd = gc.data_home() / "raw" / SOURCE_ID / a.raw_date
+    rd = gc.raw_root() / SOURCE_ID / a.raw_date
     man = json.loads((rd / "manifest.json").read_text())["files"]
     parts = sorted([e for e in man if e.get("ckan_dataset") == "pune-tree-census-2019"],
                    key=lambda e: int(e["ckan_resource_name"].rsplit(" ", 1)[-1]))
