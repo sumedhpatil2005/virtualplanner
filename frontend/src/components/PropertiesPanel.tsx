@@ -269,7 +269,7 @@ export const PropertiesPanel: React.FC = () => {
         >
           <ArrowLeft size={16} /> Back
         </button>
-        <span className="flex-1 text-sm text-slate-400 truncate text-right">
+        <span className="flex-1 min-w-0 text-sm text-slate-400 text-right break-words">
           {selectedObj ? `Editing ${(TYPE_LABELS as Record<string, string>)[selectedObj.type]?.toLowerCase() ?? 'object'}` : ''}
         </span>
         {selectedObj && engineInstance.objects.getById(selectedObj.id) && (
@@ -291,7 +291,7 @@ export const PropertiesPanel: React.FC = () => {
             {/* Identity Group */}
             <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
               <div className="flex justify-between items-center text-xs text-indigo-400 uppercase font-mono">
-                <span>{selectedObj.type} ID: {selectedObj.id.slice(0, 8)}</span>
+                <span><span className="normal-case font-sans">{(TYPE_LABELS as Record<string, string>)[selectedObj.type] ?? selectedObj.type.replace(/_/g, ' ')}</span> · ID {selectedObj.id.slice(0, 8)}</span>
                 <span className="bg-indigo-950/80 px-2 py-0.5 rounded text-xs border border-indigo-500/20">
                   {selectedObj.scenarioId === 'base' ? 'BASE STATE' : 'PROPOSED STATE'}
                 </span>

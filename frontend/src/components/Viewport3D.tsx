@@ -4,10 +4,12 @@ import { watchImageryErrors } from '../lib/baseImageryErrors';
 import {
   Viewer,
   Ion,
+  type ProviderViewModel,
   Cartesian3,
   Math as CesiumMath,
   ScreenSpaceEventType
 } from 'cesium';
+import * as CesiumNs from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { EditingMode } from '../engine/editing/EditingEngine';
 
@@ -23,8 +25,16 @@ export const Viewport3D: React.FC = () => {
       Ion.defaultAccessToken = ionToken;
     }
 
+    // The base-layer picker's own models, with its default (first) one selected explicitly: otherwise the widget first
+    // creates a default world-imagery layer that the picker immediately replaces (a second, wasted ion request whose
+    // failure nobody could listen to)
+    // (exported at runtime by Cesium but missing from its type declarations)
+    const imageryModels = (CesiumNs as unknown as { createDefaultImageryProviderViewModels: () => ProviderViewModel[] }).createDefaultImageryProviderViewModels();
+
     // Initialize Cesium Viewer with clean, clutter-free options
     const viewer = new Viewer(containerRef.current, {
+      imageryProviderViewModels: imageryModels,
+      selectedImageryProviderViewModel: imageryModels[0],
       animation: false, // Custom scenario timelines
       timeline: false,  // Custom simulation slider
       geocoder: false,
