@@ -60,3 +60,30 @@ describe('Explore inspector dates', () => {
     expect(readableWhen('Fri 2026-11-13 9:48 PM IST (UTC+05:30)')).toBe('Fri 2026-11-13 9:48 PM IST (UTC+05:30)');
   });
 });
+
+describe('base imagery notice on the map', () => {
+  const layer = (base: boolean) => {
+    const fns: ((e: unknown) => void)[] = [];
+    return { isBaseLayer: () => base, errorEvent: { addEventListener: (f: (e: unknown) => void) => { fns.push(f); } }, fail: (e: unknown) => fns.forEach(f => f(e)) };
+  };
+  const coll = (first: ReturnType<typeof layer>) => {
+    const added: ((l: unknown) => void)[] = [];
+    return { c: { length: 1, get: () => first, layerAdded: { addEventListener: (f: (l: unknown) => void) => { added.push(f); return () => {}; } } }, add: (l: unknown) => added.forEach(f => f(l)) };
+  };
+
+  it('says why there is no imagery while the failed base layer is the base, and clears when another base replaces it', async () => {
+    const { watchBaseImageryState } = await import('../../lib/baseImageryErrors');
+    const first = layer(true); const t = coll(first); const states: (string | null)[] = [];
+    watchBaseImageryState(t.c as never, s => states.push(s));
+    first.fail({ statusCode: 401 });
+    expect(states.at(-1)).toBe('No base imagery: access refused (HTTP 401). City data is unaffected.');
+    t.add(layer(false));                 // an environment / terrain overlay: the notice stays
+    expect(states.at(-1)).toMatch(/HTTP 401/);
+    const next = layer(true); t.add(next); // the picker put another base layer in
+    expect(states.at(-1)).toBeNull();
+    first.fail({ statusCode: 401 });     // a late error of the replaced layer is not shown
+    expect(states.at(-1)).toBeNull();
+    next.fail({});
+    expect(states.at(-1)).toBe('No base imagery: no response. City data is unaffected.');
+  });
+});

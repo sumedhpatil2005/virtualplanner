@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { cesiumIonToken } from '../lib/cesiumToken';
-import { watchImageryErrors } from '../lib/baseImageryErrors';
+import { watchBaseImageryState, watchImageryErrors } from '../lib/baseImageryErrors';
 import {
   Viewer,
   Ion,
@@ -15,6 +15,7 @@ import type { EditingMode } from '../engine/editing/EditingEngine';
 
 export const Viewport3D: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [imageryError, setImageryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,6 +51,8 @@ export const Viewport3D: React.FC = () => {
 
     // A failed base-map request is reported to the user once, not dumped to the console as a raw RequestErrorEvent
     const stopImageryWatch = watchImageryErrors(viewer.imageryLayers, msg => (window as any).showToast?.(msg, 'error'));
+    // ...and stays noted on the map while the base layer is the failed one
+    const stopBaseState = watchBaseImageryState(viewer.imageryLayers, setImageryError);
 
     // Disable default double-click camera tracking/zoom
     viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
@@ -75,6 +78,7 @@ export const Viewport3D: React.FC = () => {
     // Cleanup: release engine resources bound to this viewer before destroying it
     return () => {
       stopImageryWatch();
+      stopBaseState();
       engineInstance.dispose();
       viewer.destroy();
     };
@@ -84,6 +88,14 @@ export const Viewport3D: React.FC = () => {
     <div className="relative w-full h-full">
       {/* Target element for Cesium container */}
       <div ref={containerRef} className="w-full h-full absolute inset-0" />
+
+      {imageryError && (
+        <div role="status" data-testid="base-imagery-notice"
+          className="absolute bottom-2 z-10 rounded px-2 py-1 text-[11px] leading-snug pointer-events-none"
+          style={{ left: 84, maxWidth: 'min(340px, calc(100% - 150px))', background: 'rgba(15,20,28,0.85)', color: 'var(--text-2, #a9b3c1)', border: '1px solid var(--border, #2a3340)' }}>
+          {imageryError}
+        </div>
+      )}
 
       {/* Overlay to show current drawing tool tips */}
       <DrawingHUD />
