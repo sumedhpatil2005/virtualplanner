@@ -144,7 +144,7 @@ export const EnvironmentContext: React.FC = () => {
 
   const screenObj = screening ? engineInstance.objects.getById(screening) : undefined;
   if (screenObj && isProposalObject(screenObj)) {
-    return <div className="uos-embed-panel" data-testid="env-feasibility"><FeasibilityPanel obj={screenObj} onBack={() => setScreening(null)} /></div>;
+    return <div className="uos-embed-panel [&>div]:!w-full [&>div]:!rounded-none [&>div]:!border-0" data-testid="env-feasibility"><FeasibilityPanel obj={screenObj} onBack={() => setScreening(null)} /></div>;
   }
 
   const groups = layers ? groupCatalogue(layers) : [];

@@ -155,13 +155,13 @@ export const ExploreContext: React.FC = () => {
           <MetricTile label="Buildings" value={stats.buildings.toLocaleString()} />
           <MetricTile label="Junctions" value={stats.junctions.toLocaleString()} />
         </div>
-        <p className="text-meta text-text-3">Computed from the objects loaded in this alternative ({stats.roads.toLocaleString()} road pieces). Areas not imported are not counted.</p>
+        <p className="text-meta text-text-3 flex flex-wrap items-center gap-1">Computed from the objects loaded in this alternative ({stats.roads.toLocaleString()} road pieces). Junctions: {stats.networkNodes.toLocaleString()} road-network nodes where 3+ arms meet <CertaintyBadge certainty="estimated" compact note="Derived from shared road vertices, not a junction inventory." /> plus {stats.placedJunctions.toLocaleString()} placed. Areas not imported are not counted.</p>
       </PanelSection>
       <PanelSection title="Layers">
         <LayerTree proposals={stats.proposals} />
       </PanelSection>
       <Disclosure>
-        <p className="text-label text-text-2">Road km sums the great-circle length of every loaded road centreline (each carriageway drawn separately counts separately). Search matches object names and OpenStreetMap ids of loaded objects only. Toggles change the existing layer registry; environment overlays draw GET /api/feasibility/site-data.</p>
+        <p className="text-label text-text-2">Road km sums the great-circle length of every loaded road centreline (each carriageway drawn separately counts separately). Network nodes: vertices shared by two or more road pieces (matched at about 0.1 m) where at least three arms meet; flyovers crossing without a shared vertex are not counted. Search matches object names and OpenStreetMap ids of loaded objects only. Toggles change the existing layer registry; environment overlays draw GET /api/feasibility/site-data.</p>
       </Disclosure>
     </div>
   );

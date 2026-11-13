@@ -21,7 +21,8 @@ describe('environment catalogue grouping', () => {
   });
   it('not imported is never available; available keeps source/date/licence', () => {
     expect(dataStatusOf(row('a', 'air', 'not_imported', { source: 'x' }))).toEqual({ status: 'not_imported' });
-    expect(dataStatusOf(row('w', 'water', 'available', { source: 'OSM', licence: 'ODbL', data_date: '2026-11-02T00:00:00Z' }))).toEqual({ status: 'available', source: 'OSM', date: '2026-11-02', licence: 'ODbL' });
+    expect(dataStatusOf(row('w', 'water', 'available', { source: 'OSM', licence: 'ODbL', data_date: '2026-11-02T00:00:00Z' }))).toEqual({ status: 'available', source: 'OSM', date: '2026-11-02 UTC', licence: 'ODbL' });
+    expect(dataStatusOf(row('h', 'heritage', 'available', { data_date: 'Mon 2026-11-02 2:51 AM IST (UTC+05:30)' })).status === 'available' && (dataStatusOf(row('h', 'heritage', 'available', { data_date: 'Mon 2026-11-02 2:51 AM IST (UTC+05:30)' })) as { date: string }).date).toBe('2026-11-02 IST');
   });
   it('only layers with a renderer get a map toggle', () => {
     expect(Object.keys(MAP_TOGGLES).sort()).toEqual(['osm_heritage', 'osm_metro', 'osm_railway', 'osm_water']);
@@ -49,7 +50,11 @@ describe('explore model', () => {
     const s = cityStats(objs);
     expect(s.roads).toBe(3);
     expect(s.buildings).toBe(1);
+    // r1 end meets r2 start at 73.85: 2 arms only (a bend), so no network node; plus one placed junction
+    expect(s.networkNodes).toBe(0);
     expect(s.junctions).toBe(1);
+    const t = cityStats([...objs, road('r4', 'X', 4444, [[73.85, 18.51, 0], [73.85, 18.52, 0]])]);
+    expect(t.networkNodes).toBe(1);
     expect(s.proposals).toBe(1);
     // 0.01° of longitude at 18.52°N ≈ 1.055 km
     expect(lineLengthKm([[73.84, 18.52], [73.85, 18.52]])).toBeCloseTo(1.055, 2);

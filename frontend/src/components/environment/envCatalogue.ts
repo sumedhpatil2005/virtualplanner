@@ -49,11 +49,16 @@ export const MAP_TOGGLES: Record<string, { kind: 'overlay'; key: OverlayKey } | 
 
 export type OverlayKey = 'water' | 'heritage' | 'railway';
 
-/** "Mon 2026-11-02 2:51 AM IST (UTC+05:30)" → "2026-11-02"; ISO → date part; null → null. */
+/**
+ * "Mon 2026-11-02 2:51 AM IST (UTC+05:30)" → "2026-11-02 IST" (the date stays in the zone the backend stated it in);
+ * ISO with Z → "2026-11-02 UTC"; other ISO → date part; null → null.
+ */
 export function shortDate(s: string | null | undefined): string | null {
   if (!s) return null;
   const m = /(\d{4}-\d{2}-\d{2})/.exec(s);
-  return m ? m[1] : s;
+  if (!m) return s;
+  const zone = /\d(?::\d{2})?\s*(?:AM|PM)\s+([A-Z]{2,5})\b/.exec(s)?.[1] ?? (/T[\d:.]+(Z|\+00:?00)$/.test(s) ? 'UTC' : null);
+  return zone ? `${m[1]} ${zone}` : m[1];
 }
 
 /** DataStatus value for a catalogue row: available rows carry the row's own source/date/licence (missing → shown as unknown). */

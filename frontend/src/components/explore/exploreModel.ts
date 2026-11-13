@@ -120,14 +120,33 @@ export function lineLengthKm(coords: number[][]): number {
   return km;
 }
 
-/** Stats of the loaded objects: road km (centrelines, both carriageways counted as drawn), buildings, junctions. */
-export function cityStats(objects: readonly CityObject[]): { roadKm: number; roads: number; buildings: number; junctions: number; proposals: number } {
-  let roadKm = 0, roads = 0, buildings = 0, junctions = 0, proposals = 0;
+/**
+ * Stats of the loaded objects: road km (centrelines, each carriageway counted as drawn), buildings, junctions.
+ * Junctions = placed junction objects + road-network nodes (estimated from geometry): a vertex shared by at least two
+ * road pieces where at least three arms meet (an end counts one arm, a pass-through vertex two). Vertices are matched
+ * at ~0.1 m (1e-6°). Grade-separated crossings that share no vertex are not counted.
+ */
+export function cityStats(objects: readonly CityObject[]): { roadKm: number; roads: number; buildings: number; junctions: number; placedJunctions: number; networkNodes: number; proposals: number } {
+  let roadKm = 0, roads = 0, buildings = 0, placedJunctions = 0, proposals = 0;
+  const nodes = new Map<string, { arms: number; roads: number; last: string }>();
   for (const o of objects) {
     if (o.scenarioId !== 'base') proposals++;
-    if (o.type === 'road') { roads++; roadKm += lineLengthKm(o.coordinates as number[][]); }
+    if (o.type === 'road') {
+      roads++;
+      const cs = o.coordinates as number[][];
+      roadKm += lineLengthKm(cs);
+      cs.forEach((c, i) => {
+        const k = `${Math.round(c[0] * 1e6)},${Math.round(c[1] * 1e6)}`;
+        const n = nodes.get(k) ?? { arms: 0, roads: 0, last: '' };
+        n.arms += i === 0 || i === cs.length - 1 ? 1 : 2;
+        if (n.last !== o.id) { n.roads++; n.last = o.id; }
+        nodes.set(k, n);
+      });
+    }
     else if (o.type === 'building') buildings++;
-    else if (o.type === 'junction') junctions++;
+    else if (o.type === 'junction') placedJunctions++;
   }
-  return { roadKm, roads, buildings, junctions, proposals };
+  let networkNodes = 0;
+  for (const n of nodes.values()) if (n.roads >= 2 && n.arms >= 3) networkNodes++;
+  return { roadKm, roads, buildings, junctions: placedJunctions + networkNodes, placedJunctions, networkNodes, proposals };
 }
