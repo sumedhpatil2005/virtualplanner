@@ -137,7 +137,7 @@ def acquire() -> list[Path]:
                 ents.append(download(row["Url"], d, f"India_qk{row['QuadKey']}.csv.gz",
                                      note=f"whole original tile quadkey {row['QuadKey']} (geojsonl in .csv.gz)"))
     write_manifest(d, {"source_id": "ms_global_ml_buildings", "licence": licence_block("ms_global_ml_buildings"),
-                       "classification": "derived (ML detections from Bing imagery 2014-2024)"}, ents)
+                       "classification": "inferred (ML detections from Bing imagery 2014-2024)"}, ents)
     dirs.append(d)
     # Google Open Buildings v3
     d = raw_dir("google_open_buildings_v3")
@@ -156,7 +156,7 @@ def acquire() -> list[Path]:
                                          "whose centroid lat/long fall in the study bbox; rows byte-identical to source",
                                    **({"stream": info} if info else {})))
     write_manifest(d, {"source_id": "google_open_buildings_v3", "licence": licence_block("google_open_buildings_v3"),
-                       "classification": "derived (ML detections, inference May 2023)"}, ents)
+                       "classification": "inferred (ML detections, inference May 2023)"}, ents)
     dirs.append(d)
     return dirs
 
@@ -344,7 +344,7 @@ def process() -> Path:
             "height_m", "osm_building", "geometry"]
     merged = pd.concat([g.reindex(columns=cols) for g in src.values()], ignore_index=True)
     merged = gpd.GeoDataFrame(merged, geometry="geometry", crs=ENGINEERING_EPSG)
-    merged["class"] = np.where(merged.source == "osm", "observed(community-mapped)", "derived(ML)")
+    merged["class"] = np.where(merged.source == "osm", "observed(community-mapped)", "inferred(ML)")  # ML detection = inferred
     merged["status"] = np.select(
         [merged.source == "osm",
          merged.in_osm.fillna(False).astype(bool),

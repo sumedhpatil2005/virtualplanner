@@ -57,6 +57,21 @@ def _override_note(ov: dict, sha: str | None, applied: list[str]) -> str:
             f" (sha256 {(sha or 'UNKNOWN')[:12]}…): {ov.get('reason', 'no reason recorded')}")
 
 
+def _class_correction(man: dict | None, proc: dict | None, ov: dict | None) -> dict | None:
+    """An explicit, reasoned correction of a manifest-STATED class (overrides entry `correct_stated_class`:
+    {"from": <stated class word>, "to": <class>, "reason": ...}). Fill-only overrides never replace a stated value; this
+    does, only when the stated class word matches `from`. Raw manifests are not edited."""
+    c = (ov or {}).get("correct_stated_class")
+    if not isinstance(c, dict) or c.get("to") not in DATA_CLASSES or not c.get("reason"):
+        return None
+    m = {**(proc or {}), **(man or {})}
+    stated = _first(m, "data_class", "classification", "class")
+    word = re.match(r"\s*([A-Za-z]+)", str(stated or ""))
+    if not word or word.group(1).lower() != str(c.get("from", "")).lower():
+        return None
+    return {"stated": str(stated), "to": c["to"], "reason": c["reason"]}
+
+
 def _ov_suitability(ov: dict) -> str:
     """Engineering needs a stated accuracy and an official source at registration: never from the overrides file."""
     return "screening" if ov.get("suitability") == "engineering" else ov["suitability"]
@@ -244,6 +259,11 @@ def register_dir(db: Session, d: str, kind: str, root: str, overrides: dict | No
     if man is None and proc is None:
         return {"dir": rel, "result": "skipped", "reason": "no manifest.json / processing.json"}
     fp = fingerprint("dir-registration", rel, man_sha, proc_sha)
+    corr = _class_correction(man, proc, (overrides or {}).get(parts[1] if len(parts) > 1 else ""))
+    if corr:
+        # a corrected classification is different registry metadata for the same files: it registers as a NEW version
+        # (pending review when one is active; the active version is never replaced or edited)
+        fp = fingerprint("dir-registration", rel, man_sha, proc_sha, {"class_correction": corr["to"]})
     existing = find_version_by_fingerprint(db, fp)
     if existing is not None:
         applied = apply_override_to_registered(db, existing.id, overrides or {}, overrides_sha) if overrides else []
@@ -274,6 +294,9 @@ def register_dir(db: Session, d: str, kind: str, root: str, overrides: dict | No
             m["suitability"] = _ov_suitability(ov)
             ov_applied.append(f"suitability {m['suitability']}" + (" (engineering is not accepted from the overrides file)" if ov["suitability"] == "engineering" else ""))
     lic_meta = m.get("licence") if isinstance(m.get("licence"), dict) else (m.get("license") if isinstance(m.get("license"), dict) else {})
+    if corr:
+        warnings.append(f"data class corrected from '{corr['stated']}' to {corr['to']} by the registry overrides file: {corr['reason']}")
+        m["data_class"] = corr["to"]
 
     if source_id:
         access = _first(m, "access_method", default=_first(src_meta, "access_method"))

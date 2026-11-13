@@ -293,3 +293,37 @@ def test_provenance_check_flags_mismatch_and_resolves_bare_names(tmp_path):
     assert st == ["match", "MISMATCH"]
     assert rep["rows"][0]["outputs"][0]["disk"] == "disk_match"
     assert any("not a commit" in p for p in rep["problems"]) and any("MISMATCH" not in p and "b.csv" in p for p in rep["problems"])
+
+
+def test_stated_class_correction_registers_new_pending_version(client, monkeypatch):
+    import hashlib
+    import json as _json
+    import os as _os
+    import tempfile
+    root = tempfile.mkdtemp(prefix="urbanos-qa-class-")
+    d = _os.path.join(root, "raw", "t_ml_fp", "2026-11-13")
+    _os.makedirs(d)
+    with open(_os.path.join(d, "fp.csv"), "wb") as f:
+        f.write(b"SYNTHETIC footprints")
+    man = {"source_id": "t_ml_fp", "licence": "SYNTHETIC", "classification": "derived (ML detections)", "suitability": "screening",
+           "files": [{"file": "fp.csv", "sha256": hashlib.sha256(b"SYNTHETIC footprints").hexdigest()}]}
+    with open(_os.path.join(d, "manifest.json"), "w") as f:
+        _json.dump(man, f)
+    ov = _os.path.join(root, "ov.json")
+    monkeypatch.setenv("URBANOS_CLASSIFICATION_OVERRIDES", _os.path.join(root, "absent.json"))
+    client.post("/api/datasets/import", json={"root": root})
+    first = client.get("/api/datasets/t_ml_fp").json()["active_version"]
+    assert first["data_class"] == "derived"
+    with open(ov, "w") as f:
+        _json.dump({"datasets": {"t_ml_fp": {"theme": "buildings", "data_class": "inferred", "suitability": "screening", "reason": "SYN",
+                                            "correct_stated_class": {"from": "derived", "to": "inferred", "reason": "SYNTHETIC ML"}}}}, f)
+    monkeypatch.setenv("URBANOS_CLASSIFICATION_OVERRIDES", ov)
+    rep = client.post("/api/datasets/import", json={"root": root}).json()
+    e = next(x for x in rep["entries"] if "t_ml_fp" in x["dir"])
+    assert e["result"] == "registered" and e["review_status"] == "pending_review"
+    ds = client.get("/api/datasets/t_ml_fp").json()
+    assert ds["active_version"]["id"] == first["id"] and ds["active_version"]["data_class"] == "derived"  # active untouched
+    new = next(v for v in ds["versions"] if v["id"] == e["version_id"])
+    assert new["data_class"] == "inferred" and "SYNTHETIC ML" in new["notes"]
+    rep2 = client.post("/api/datasets/import", json={"root": root}).json()  # idempotent
+    assert next(x for x in rep2["entries"] if "t_ml_fp" in x["dir"])["result"] == "unchanged"
