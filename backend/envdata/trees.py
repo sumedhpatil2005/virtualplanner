@@ -31,6 +31,14 @@ def _conn() -> sqlite3.Connection:
     return c
 
 
+_WHERE = ("r.maxx>=? AND r.minx<=? AND r.maxy>=? AND r.miny<=? "
+          "AND t.lon>=? AND t.lon<=? AND t.lat>=? AND t.lat<=?")
+
+
+def _args(b):
+    return (b[0], b[2], b[1], b[3], b[0], b[2], b[1], b[3])
+
+
 def _levels(c) -> list[float]:
     r = c.execute("SELECT value FROM meta WHERE key='grid_levels_deg'").fetchone()
     return [float(x) for x in r[0].split(",")]
@@ -61,15 +69,15 @@ def query(bbox: Sequence[float], limit: int = 2000) -> dict:
     # exact count via the R*Tree when the box is small enough that the finest grid estimate is modest
     est = sum(r["n"] for r in _grid_sum(c, finest, levels[finest], bbox))
     total = None
-    if est <= 200000:
-        total = c.execute("SELECT count(*) FROM trees_rt WHERE minx>=? AND maxx<=? AND miny>=? AND maxy<=?",
-                          (bbox[0], bbox[2], bbox[1], bbox[3])).fetchone()[0]
+    # R*Tree bounds are float32 (rounded outward): select by overlap, then filter on the exact float64 coordinates
+    if est <= 60000:
+        total = c.execute("SELECT count(*) FROM trees_rt r JOIN trees t ON t.id=r.id WHERE " + _WHERE, _args(bbox)).fetchone()[0]
     if total is not None and total <= limit:
         rows = c.execute(
             """SELECT t.id, t.lon, t.lat, t.girth_cm, t.height_m, t.canopy_dia_m, t.condition, t.ownership, t.ward, t.is_rare,
                       s.botanical_name, s.common_name, s.local_name
                FROM trees_rt r JOIN trees t ON t.id=r.id LEFT JOIN species s ON s.id=t.species_id
-               WHERE r.minx>=? AND r.maxx<=? AND r.miny>=? AND r.maxy<=?""", (bbox[0], bbox[2], bbox[1], bbox[3])).fetchall()
+               WHERE """ + _WHERE, _args(bbox)).fetchall()
         return {"mode": "points", "total": total, "returned": len(rows), "limit": limit, "points": [dict(r) for r in rows]}
     level = pick_level(bbox, levels)
     s = levels[level]
@@ -90,7 +98,7 @@ def count_in_polygon(geom_4326: dict) -> dict:
     b = g.bounds
     c = _conn()
     rows = c.execute("""SELECT t.lon, t.lat, t.condition, t.is_rare FROM trees_rt r JOIN trees t ON t.id=r.id
-                        WHERE r.minx>=? AND r.maxx<=? AND r.miny>=? AND r.maxy<=?""", (b[0], b[2], b[1], b[3])).fetchall()
+                        WHERE """ + _WHERE, _args(b)).fetchall()
     from shapely.prepared import prep
     pg = prep(g)
     inside = [r for r in rows if pg.contains(Point(r["lon"], r["lat"]))]

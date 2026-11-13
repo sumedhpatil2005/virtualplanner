@@ -29,9 +29,9 @@ def parse_ist(s: str) -> str | None:
 
 
 @lru_cache(maxsize=2)
-def _aq(mtime: float):
+def _aq(path: str, mtime: float):
     import pandas as pd
-    df = pd.read_csv(paths.derived(*AQ, "aq_15min_pune.csv"))
+    df = pd.read_csv(path)
     # stored as ISO 8601 with +05:30; the human form is accepted too (parse_ist)
     ts = df["timestamp_ist"].astype(str)
     iso = ts.where(ts.str.match(r"^\d{4}-\d{2}-\d{2}T"), ts.map(lambda x: parse_ist(x) or ""))
@@ -41,7 +41,8 @@ def _aq(mtime: float):
 
 
 def aq_frame():
-    return _aq(paths.derived(*AQ, "aq_15min_pune.csv").stat().st_mtime)
+    p = paths.derived(*AQ, "aq_15min_pune.csv")
+    return _aq(str(p), p.stat().st_mtime)
 
 
 def aq_stations() -> dict:

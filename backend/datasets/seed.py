@@ -281,6 +281,15 @@ FEATURES = [
     ("population.census_2011_table", "projects", "Population", "Census 2011 ward table (historical, listed — not mappable)", "partial",
      "2011 census wards have no boundary file: the table is listed, never drawn or joined to current wards.",
      [("population", "census2011_pune_wards", S, True, "Census 2011 ward table")]),
+    # Environment data wiring (docs/urbanos/ENVIRONMENT_DATA.md, appended 2026-11-13)
+    ("environment.surface_water", "environment", "Environment", "Surface water and water indices (JRC GSW, Sentinel-2 MNDWI)", None, None,
+     [("water_features", None, S, True, "JRC GSW occurrence"), ("satellite_imagery", None, S, False, "Sentinel-2 MNDWI/NDVI")]),
+    ("environment.rainfall", "environment", "Environment", "Rainfall statistics (descriptive; not IDF)", None, None,
+     [("rainfall", None, S, True, "IMD 0.25° grid, CHIRPS, IMD district")]),
+    ("environment.soil", "environment", "Environment", "Soil properties (screening)", None, None,
+     [("soil", None, S, True, "SoilGrids 250 m")]),
+    ("environment.terrain_hydrology", "environment", "Environment", "Derived streams and catchments (DSM-based screening)", None, None,
+     [("dem", None, S, True, "Copernicus GLO-30 derived flow paths/catchments")]),
 ]
 
 
@@ -295,8 +304,14 @@ WIRING = {
     "underground.metro_clearance": (True, "OSM metro plan only; no structure levels exist."),
     "underground.ground_model": (False, "No ground model code."),
     "environment.constraint_overlays": (True, "Feasibility layers via /api/feasibility/site-data."),
-    "environment.air_quality": (False, "No reader."), "environment.noise": (False, "No reader."),
-    "environment.heat": (False, "No reader."), "environment.vegetation": (False, "Land cover not drawn or used yet."),
+    "environment.air_quality": (True, "Environment → Air: CPCB/MPCB/IITM station series via /api/env-data/air (no surface)."),
+    "environment.noise": (False, "No reader."),
+    "environment.heat": (False, "No reader."),
+    "environment.vegetation": (True, "Environment: WorldCover overlay + class areas, Sentinel-2 NDVI, tree census bbox API (/api/env-data)."),
+    "environment.surface_water": (True, "Environment: JRC GSW occurrence + Sentinel-2 MNDWI overlays (/api/env-data)."),
+    "environment.rainfall": (True, "Environment → Rainfall panel (/api/env-data/rainfall); descriptive only, not IDF."),
+    "environment.soil": (True, "Environment: SoilGrids overlay (/api/env-data)."),
+    "environment.terrain_hydrology": (True, "Environment: derived streams (bbox API) + catchments overlay (/api/env-data)."),
     "environment.seismic": (False, "No reader."),
     "flood.screening": (False, "No flood-screening code reads a DEM or flood lines yet."),
     "flood.drainage_model": (False, "No SWMM integration."),
