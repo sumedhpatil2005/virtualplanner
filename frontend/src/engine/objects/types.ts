@@ -1,4 +1,4 @@
-export type CityObjectType = 'road' | 'building' | 'junction' | 'flyover' | 'utility' | 'metro_line' | 'metro_station' | 'zone' | 'gateway' | 'metro_flyover';
+export type CityObjectType = 'road' | 'building' | 'junction' | 'flyover' | 'utility' | 'metro_line' | 'metro_station' | 'zone' | 'gateway' | 'metro_flyover' | 'underground_alignment';
 
 export interface BaseCityObject {
   id: string;
@@ -307,7 +307,36 @@ export interface MetroFlyoverObject extends BaseCityObject {
   surfaceRoadIds?: string[];
 }
 
-export type CityObject = RoadObject | BuildingObject | JunctionObject | FlyoverObject | UtilityObject | MetroLineObject | MetroStationObject | ZoneObject | GatewayObject | MetroFlyoverObject;
+export type CityObject = RoadObject | BuildingObject | JunctionObject | FlyoverObject | UtilityObject | MetroLineObject | MetroStationObject | ZoneObject | GatewayObject | MetroFlyoverObject | UndergroundAlignmentObject;
+
+/** What an underground alignment is (docs/urbanos/UNDERGROUND_WORKSPACE.md). Planning geometry only, no design. */
+export type UndergroundAlignmentKind = 'bored_tunnel' | 'underground_metro' | 'cut_and_cover' | 'utility_trunk' | 'storm_drain';
+
+/** Cross-section entered by the user. Dimensions in metres (outer extent); null = UNKNOWN (never 0). */
+export type UndergroundSection =
+  | { shape: 'circular'; diameterM: number | null }
+  | { shape: 'box'; widthM: number | null; heightM: number | null };
+
+/** Depth at one plan vertex: crown (top of structure) below ground in metres, positive down. null = UNKNOWN. */
+export interface UndergroundVertexDepth {
+  crownDepthM: number | null;
+  certainty: import('./certainty').Certainty;
+}
+
+/**
+ * A buried linear structure drawn on the ground (plan polyline) with a depth per vertex and a typical cross-section.
+ * Ground is a flat datum (no DEM in the repo), so depths are relative to that datum. Stored like every other city
+ * object, so scenario copy-on-write, versions and undo apply.
+ */
+export interface UndergroundAlignmentObject extends BaseCityObject {
+  type: 'underground_alignment';
+  coordinates: [number, number, number][]; // plan vertices on the ground (z ignored)
+  alignmentKind: UndergroundAlignmentKind;
+  section: UndergroundSection;
+  sectionCertainty: import('./certainty').Certainty;
+  /** One entry per coordinate (same order). */
+  depths: UndergroundVertexDepth[];
+}
 
 export interface ZoneObject extends BaseCityObject {
   type: 'zone';
