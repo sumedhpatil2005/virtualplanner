@@ -156,6 +156,10 @@ export const EnvironmentContext: React.FC = () => {
           : <p className="text-label text-text-2" data-testid="env-screen-hint">Select a road, flyover or double-deck on the map to screen it against the constraint layers.</p>}
       </PanelSection>
 
+      <PanelSection title="Emissions">
+        <EmissionsSummary />
+      </PanelSection>
+
       <PanelSection title="Environmental data"
         aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Recheck data status"><RefreshCw size={12} aria-hidden />Recheck</button>}>
         {loading && !layers && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading the catalogue…</p>}
@@ -176,10 +180,6 @@ export const EnvironmentContext: React.FC = () => {
 
       <PanelSection title="Scene layers">
         <div className="flex items-center gap-2 text-label text-text-1"><span className="flex-1">Buildings (loaded city model)</span><EngineLayerToggle layerId="buildings" label="Buildings" /></div>
-      </PanelSection>
-
-      <PanelSection title="Emissions">
-        <EmissionsSummary />
       </PanelSection>
 
       <Disclosure>

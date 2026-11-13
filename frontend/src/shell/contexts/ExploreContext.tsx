@@ -82,7 +82,7 @@ const ObjectSearch: React.FC<{ objects: ReturnType<typeof useEngineObjects> }> =
     <div className="space-y-1.5">
       <label className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2 h-9 focus-within:border-accent">
         <Search size={14} aria-hidden className="text-text-3" />
-        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name or OSM id" aria-label="Search city objects by name or OSM id"
+        <input type="text" value={q} onChange={e => setQ(e.target.value)} placeholder="Name or OSM id" aria-label="Search city objects by name or OSM id"
           data-testid="explore-search" className="flex-1 bg-transparent text-body text-text-1 outline-none placeholder:text-text-3 min-w-0" />
         {q && <button type="button" aria-label="Clear search" onClick={() => setQ('')} className="text-text-3 hover:text-text-1"><X size={14} aria-hidden /></button>}
       </label>
@@ -151,7 +151,7 @@ export const ExploreContext: React.FC = () => {
       </PanelSection>
       <PanelSection title="Loaded city" aside={alt?.name}>
         <div className="grid grid-cols-3 gap-2" data-testid="explore-counts">
-          <MetricTile label="Road km" value={stats.roadKm.toLocaleString(undefined, { maximumFractionDigits: 1 })} />
+          <MetricTile label="Road km" value={stats.roadKm.toLocaleString(undefined, { maximumFractionDigits: stats.roadKm >= 100 ? 0 : 1 })} />
           <MetricTile label="Buildings" value={stats.buildings.toLocaleString()} />
           <MetricTile label="Junctions" value={stats.junctions.toLocaleString()} />
         </div>
