@@ -18,4 +18,5 @@ geopandas>=1.0         # BSD-3-Clause
 pyogrio>=0.9           # MIT
 requests>=2.31         # Apache-2.0
 pystac-client>=0.8     # Apache-2.0 (Earth Search STAC)
-pysheds>=0.5           # GPL-3.0-or-later  (!) hydrology only, imported lazily in elevation.process(); see catalogue
+Pillow>=10            # MIT-CMU (HPND); web overlay PNGs
+# pysheds removed 2026-11-13 (GPL-3.0-or-later): hydrology is our own numpy D8 in datasets/pipelines/_hydro.py

@@ -1,4 +1,5 @@
-"""Copernicus DEM GLO-30 (+ NASADEM comparison) -> clipped DEM, hillshade, slope, hydrology (pysheds).
+"""Copernicus DEM GLO-30 (+ NASADEM comparison) -> clipped DEM, hillshade, slope, hydrology (own numpy D8),
+web overlays (hillshade / slope PNG in EPSG:4326 with bounds + legend).
 
 CLI: python -m datasets.pipelines.elevation [acquire|process|all]
 Copernicus DEM is a DSM (includes buildings and trees): every hydrology output is DERIVED, SCREENING only.
@@ -13,11 +14,9 @@ from pathlib import Path
 
 import numpy as np
 
-if not hasattr(np, "in1d"):  # pysheds 0.5 still calls np.in1d (removed in NumPy 2.4)
-    np.in1d = np.isin  # type: ignore[attr-defined]
-
 from ._common import (DERIVED_DIR, ENGINEERING_EPSG, PUNE_BBOX, download, file_entry, now_ist,
                       one_degree_tiles, raw_dir, today_ist, write_manifest, write_processing)
+from . import _hydro as H
 from ._raster import diff_stats, hillshade, priority_flood_epsilon, raster_check, slope_degrees, write_cog
 from .licences import licence_block
 
@@ -25,7 +24,8 @@ COP_URL = ("https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N{
            "Copernicus_DSM_COG_10_N{lat:02d}_00_E{lon:03d}_00_DEM.tif")
 NASADEM_URL = "https://nasademeuwest.blob.core.windows.net/nasadem-cog/v001/NASADEM_HGT_n{lat:02d}e{lon:03d}.tif"
 NASADEM_TOKEN = "https://planetarycomputer.microsoft.com/api/sas/v1/token/nasademeuwest/nasadem-cog"
-VERSION = "v1"
+VERSION = "v2"              # v2: own numpy D8 hydrology (pysheds removed); v1 kept on disk (pysheds 0.5)
+PYSHEDS_VERSION = "v1"
 STREAM_THRESHOLD_KM2 = 1.0      # contributing area that starts a mapped stream
 OUTLET_THRESHOLD_KM2 = 10.0     # edge outlets whose catchments are delineated
 UTM_RES = 30.0
@@ -40,26 +40,82 @@ def km2_to_cells(km2: float, cell_m: float) -> int:
     return max(1, int(round(km2 * 1e6 / (cell_m * cell_m))))
 
 
-D8_OFFSETS = {64: (-1, 0), 128: (-1, 1), 1: (0, 1), 2: (1, 1), 4: (1, 0), 8: (1, -1), 16: (0, -1), 32: (-1, -1)}
+D8_OFFSETS = H.OFFSETS
+drainage_outlets = H.drainage_outlets  # re-export (tests, older callers)
+
+SLOPE_CLASSES = [  # (upper bound deg, RGBA, label) - display classes only, not a design criterion
+    (2.0, (26, 152, 80, 150), "0-2 deg"), (5.0, (145, 207, 96, 150), "2-5 deg"), (10.0, (254, 224, 139, 160), "5-10 deg"),
+    (20.0, (252, 141, 89, 170), "10-20 deg"), (90.1, (215, 48, 39, 180), "> 20 deg")]
 
 
-def drainage_outlets(fdir: np.ndarray, acc: np.ndarray, valid: np.ndarray, min_cells: int) -> list[tuple[int, int]]:
-    """Valid cells with acc >= min_cells whose D8 receiver is off-grid / invalid, or that have no direction
-    (pysheds marks sinks/flats with 0, -1, -2). Sorted by accumulation, largest first."""
-    h, w = fdir.shape
-    res = []
-    ys, xs = np.where(valid & (acc >= min_cells))
-    for y, x in zip(ys.tolist(), xs.tolist()):
-        d = int(fdir[y, x])
-        if d not in D8_OFFSETS:
-            res.append((y, x))
-            continue
-        dy, dx = D8_OFFSETS[d]
-        ny, nx = y + dy, x + dx
-        if not (0 <= ny < h and 0 <= nx < w) or not valid[ny, nx]:
-            res.append((y, x))
-    res.sort(key=lambda p: -acc[p])
-    return res
+def compare_with_version(old_dir: Path, fd_a, acc_a, labels, valid, thr, n_streams) -> dict:
+    """Agreement of this run with an archived version (v1 = pysheds) on the same grid."""
+    import rasterio
+    try:
+        with rasterio.open(old_dir / "flowdir_d8_esri_epsg32643.tif") as s1:
+            ofd = s1.read(1)
+        with rasterio.open(old_dir / "flowacc_cells_epsg32643.tif") as s2:
+            oacc = s2.read(1)
+        with rasterio.open(old_dir / "catchments_edge_outlets_epsg32643.tif") as s3:
+            ocat = s3.read(1)
+        if ofd.shape != fd_a.shape:
+            return {"skipped": f"grid mismatch {ofd.shape} vs {fd_a.shape}"}
+        res = H.compare(fd_a, ofd, acc_a, oacc, valid, thr, labels, ocat)
+        res["stream_features"] = {"this": n_streams,
+                                  "old": len(json.loads((old_dir / "streams_derived_epsg32643.geojson").read_text())["features"])}
+        res["old_version"] = old_dir.name
+        res["a_is"] = "this version (numpy D8)"
+        res["b_is"] = f"{old_dir.name} (pysheds 0.5; -1/-2 = unresolved-flat codes, counted as no-receiver)"
+        return res
+    except Exception as e:  # pragma: no cover
+        return {"skipped": repr(e)}
+
+
+def render_overlays(out: Path, hs, sl, valid, prof_utm, tr4326, shape4326) -> list[Path]:
+    """Hillshade + slope PNG on the EPSG:4326 DEM grid (study bbox) for Cesium SingleTileImageryProvider."""
+    import rasterio
+    from PIL import Image
+    from rasterio.warp import Resampling, reproject
+
+    h, w = shape4326
+    west, north = tr4326.c, tr4326.f
+    east, south = west + w * tr4326.a, north + h * tr4326.e
+    def warp(a, dtype, resamp):
+        dst = np.full((h, w), np.nan, "float32")
+        reproject(np.where(valid, a, np.nan).astype("float32"), dst, src_transform=prof_utm["transform"],
+                  src_crs=prof_utm["crs"], src_nodata=np.nan, dst_transform=tr4326, dst_crs="EPSG:4326",
+                  dst_nodata=np.nan, resampling=resamp)
+        return dst
+    hs4 = warp(hs.astype("float32"), "float32", Resampling.bilinear)
+    sl4 = warp(sl, "float32", Resampling.bilinear)
+    ok = np.isfinite(hs4)
+    rgba = np.zeros((h, w, 4), "uint8")
+    g = np.nan_to_num(hs4).clip(0, 255).astype("uint8")
+    rgba[..., 0] = rgba[..., 1] = rgba[..., 2] = g
+    rgba[..., 3] = np.where(ok, 170, 0)
+    fh = out / "overlay_hillshade_epsg4326.png"
+    Image.fromarray(rgba, "RGBA").save(fh, optimize=True)
+    rgba = np.zeros((h, w, 4), "uint8")
+    lo = -1.0
+    for hi, col, _ in SLOPE_CLASSES:
+        m = np.isfinite(sl4) & (sl4 > lo) & (sl4 <= hi)
+        rgba[m] = col
+        lo = hi
+    fs = out / "overlay_slope_epsg4326.png"
+    Image.fromarray(rgba, "RGBA").save(fs, optimize=True)
+    meta = {"bounds_wgs84": {"west": west, "south": south, "east": east, "north": north},
+            "crs": "EPSG:4326 (equirectangular PNG, row 0 = north)", "size_px": [w, h],
+            "source": "Copernicus DEM GLO-30 (DSM, 2021 release; TanDEM-X acquisitions 2011-2015)",
+            "classification": "derived", "suitability": "visualisation",
+            "overlays": {
+                "hillshade": {"file": fh.name, "legend": "Hillshade, sun azimuth 315 deg, altitude 45 deg (relief shading, no units)"},
+                "slope": {"file": fs.name, "legend": [{"label": lab, "rgba": list(col)} for _, col, lab in SLOPE_CLASSES],
+                          "units": "degrees, central differences on 30 m UTM grid; DSM: building/tree edges show as steep"}},
+            "attribution": "produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space "
+                           "GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved"}
+    fm = out / "overlays.json"
+    fm.write_text(json.dumps(meta, indent=2))
+    return [fh, fs, fm]
 
 
 def acquire() -> Path:
@@ -145,56 +201,56 @@ def process() -> Path:
     sl[~np.isfinite(dem)] = np.nan
     fsl = write_cog(out / "slope_deg_epsg32643.tif", sl, prof)
 
-    # ---- hydrology (pysheds) ----
-    from pysheds.grid import Grid
-
-    # Conditioning: Priority-Flood+epsilon (own implementation, see _raster.py) because pysheds 0.5
-    # resolve_flats leaves unresolved flats (-1/-2) on the flattened river surfaces of COP-DEM.
-    cond = priority_flood_epsilon(dem, np.isfinite(dem), eps=EPSILON_M)
+    # ---- hydrology (own numpy D8; pysheds/GPL removed in v2) ----
+    # Conditioning: Priority-Flood+epsilon (Barnes 2014, _raster.py); D8 / accumulation / catchments / streams:
+    # _hydro.py. v1 (pysheds 0.5 on the same conditioned DEM) is kept on disk for comparison.
+    valid = np.isfinite(dem)
+    cond = priority_flood_epsilon(dem, valid, eps=EPSILON_M)
     pc = prof.copy(); pc.update(dtype="float64", nodata=np.nan)
     fcond = out / "dem_hydro_conditioned_pfeps_epsg32643_float64.tif"
     import rasterio as _rio
     with _rio.open(fcond, "w", **{**pc, "driver": "GTiff"}) as dst:
         dst.write(cond, 1)
-    grid = Grid.from_raster(str(fcond))
-    infl = grid.read_raster(str(fcond))
-    flooded = infl
-    dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
-    fdir = grid.flowdir(infl, dirmap=dirmap)
-    acc = grid.accumulation(fdir, dirmap=dirmap)
-    filled = np.asarray(flooded, "float32")
+    fd_a = H.flow_direction(cond, valid, UTM_RES)
+    acc_a = H.accumulation(fd_a, cond, valid).astype("float32")
+    filled = np.where(valid, cond, np.nan).astype("float32")
     ffill = write_cog(out / "dem_filled_epsg32643.tif", filled, prof)
     pfd = prof.copy(); pfd.update(dtype="int32", nodata=0)
-    ffd = write_cog(out / "flowdir_d8_esri_epsg32643.tif", np.asarray(fdir, "int32"), pfd)
-    acc_a = np.asarray(acc, "float32")
+    ffd = write_cog(out / "flowdir_d8_esri_epsg32643.tif", fd_a, pfd)
     facc = write_cog(out / "flowacc_cells_epsg32643.tif", acc_a, prof)
     thr = km2_to_cells(STREAM_THRESHOLD_KM2, UTM_RES)
-    streams = grid.extract_river_network(fdir, acc > thr, dirmap=dirmap)
+    feats = []
+    for i, seg in enumerate(H.stream_segments(fd_a, acc_a, thr)):
+        coords = [list(tr * (x + 0.5, y + 0.5)) for y, x in seg]
+        feats.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": coords},
+                      "properties": {"id": i, "class": "derived", "suitability": "screening",
+                                     "max_acc_cells": float(max(acc_a[y, x] for y, x in seg)),
+                                     "source": "Copernicus DEM GLO-30 (DSM), Priority-Flood+eps + own numpy D8 "
+                                               "(datasets/pipelines/_hydro.py), threshold %s km2" % STREAM_THRESHOLD_KM2}})
+    streams = {"type": "FeatureCollection", "features": feats,
+               "crs": {"type": "name", "properties": {"name": f"urn:ogc:def:crs:EPSG::{ENGINEERING_EPSG}"}}}
     fstr = out / "streams_derived_epsg32643.geojson"
-    for i, f in enumerate(streams["features"]):
-        f["properties"] = {"id": i, "class": "derived", "suitability": "screening",
-                           "source": "Copernicus DEM GLO-30 (DSM) via pysheds D8, threshold %s km2" % STREAM_THRESHOLD_KM2}
-    streams["crs"] = {"type": "name", "properties": {"name": f"urn:ogc:def:crs:EPSG::{ENGINEERING_EPSG}"}}
     fstr.write_text(json.dumps(streams))
-    # catchments for edge outlets with large contributing area
+    # catchments for edge outlets with large contributing area (disjoint by construction)
     othr = km2_to_cells(OUTLET_THRESHOLD_KM2, UTM_RES)
-    valid = np.isfinite(dem)
-    fd_a = np.asarray(fdir)
+    cand = H.drainage_outlets(fd_a, acc_a, valid, othr)
+    lab0 = H.label_catchments(fd_a, cond, cand, valid)
     labels = np.zeros(acc_a.shape, "int32")
     outlets = []
-    for y, x in drainage_outlets(fd_a, acc_a, valid, othr):
-        if labels[y, x]:
-            continue
-        c = np.asarray(grid.catchment(x=x, y=y, fdir=fdir, dirmap=dirmap, xytype="index"), bool)
-        new = c & (labels == 0)
-        if new.sum() < othr:
+    for k, (y, x) in enumerate(cand):
+        m = lab0 == k + 1
+        if m.sum() < othr:
             continue
         lid = len(outlets) + 1
-        labels[new] = lid
+        labels[m] = lid
         X, Y = tr * (x + 0.5, y + 0.5)
-        outlets.append({"id": lid, "row": y, "col": x, "x": X, "y": Y, "area_km2": round(float(new.sum()) * UTM_RES ** 2 / 1e6, 2)})
+        outlets.append({"id": lid, "row": y, "col": x, "x": X, "y": Y, "area_km2": round(float(m.sum()) * UTM_RES ** 2 / 1e6, 2)})
     fcat = write_cog(out / "catchments_edge_outlets_epsg32643.tif", labels, pfd)
     (out / "catchment_outlets.json").write_text(json.dumps(outlets, indent=2))
+    pysheds_cmp = compare_with_version(out.parent / PYSHEDS_VERSION, fd_a, acc_a, labels, valid, thr, len(feats))
+
+    # ---- web overlays (EPSG:4326 PNG + bounds, for Explore) ----
+    overlays = render_overlays(out, hs, sl, valid, prof, mtr, dem4326.shape)
 
     # ---- NASADEM comparison ----
     cmp = {}
@@ -216,15 +272,18 @@ def process() -> Path:
     except Exception as e:  # pragma: no cover
         cmp = {"skipped": repr(e)}
         fdiff = None
-    outputs = [f4326, f32643, fhs, fsl, ffill, fcond, ffd, facc, fstr, fcat, out / "catchment_outlets.json"] + ([fdiff] if fdiff else [])
+    outputs = [f4326, f32643, fhs, fsl, ffill, fcond, ffd, facc, fstr, fcat, out / "catchment_outlets.json"] + \
+        ([fdiff] if fdiff else []) + overlays
     validation = {"rasters": [raster_check(p) for p in outputs if p.suffix == ".tif"],
                   "stream_features": len(streams["features"]), "catchments": len(outlets),
                   "catchments_area_km2": round(sum(o["area_km2"] for o in outlets), 1),
                   "nasadem_comparison": cmp,
+                  "comparison_with_pysheds_v1": pysheds_cmp,
                   "depression_fill_mean_m": float(np.nanmean(filled - demf)),
                   "depression_fill_max_m": float(np.nanmax(filled - demf))}
     write_processing(out, pipeline="datasets.pipelines.elevation", inputs=tiles, parameters={
-        "bbox": PUNE_BBOX, "utm_res_m": UTM_RES, "resampling": "bilinear", "hydro_conditioning": "Priority-Flood+epsilon (Barnes 2014), eps=%g m" % EPSILON_M, "hydro_lib": "pysheds 0.5 D8 flowdir/accumulation/catchment/extract_river_network",
+        "bbox": PUNE_BBOX, "utm_res_m": UTM_RES, "resampling": "bilinear", "hydro_conditioning": "Priority-Flood+epsilon (Barnes 2014), eps=%g m" % EPSILON_M, "hydro_lib": "own numpy D8 (datasets/pipelines/_hydro.py; replaces GPL pysheds used in v1)",
+        "supersedes_for_hydrology": PYSHEDS_VERSION,
         "stream_threshold_km2": STREAM_THRESHOLD_KM2, "outlet_threshold_km2": OUTLET_THRESHOLD_KM2},
         outputs=outputs, validation=validation, suitability="screening",
         notes="DSM (buildings/trees included): flow paths in dense urban fabric follow rooftops/tree canopy, not drains. "
