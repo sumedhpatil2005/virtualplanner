@@ -1,15 +1,15 @@
 import React from 'react';
-import { Toolbar } from '../../components/Toolbar';
+import ToolPalette from '../../components/design/ToolPalette';
 import { ScenarioSelector } from '../../components/ScenarioSelector';
 import { PanelSection } from '../../components/ui/Panel';
 
 /**
- * MOUNT POINT for the Design tool palette. Today it renders the existing Toolbar (tools.ts, hotkeys 1–9) unchanged.
+ * MOUNT POINT for the Design tool palette. Renders the categorised ToolPalette (tools.ts categories, hotkeys 1–9). Only one bar is mounted at a time (each owns an import-progress overlay).
  * The categorised ToolPalette built by the design-tools work replaces the body of this one component; nothing else in
  * the shell needs to change.
  */
 export const DesignToolPalette: React.FC = () => (
-  <div className="uos-embed-toolbar" data-slot="design-tool-palette"><Toolbar /></div>
+  <div data-slot="design-tool-palette"><ToolPalette /></div>
 );
 
 /**
