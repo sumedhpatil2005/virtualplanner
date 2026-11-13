@@ -95,7 +95,8 @@ html, body, #root {
   grid-area: top; display: flex; align-items: center; gap: var(--sp-3);
   padding: 0 var(--sp-3); background: var(--surface-1); border-bottom: 1px solid var(--border); min-width: 0; z-index: 40;
 }
-.uos-wordmark { font-size: var(--fs-heading); font-weight: 700; letter-spacing: -.01em; color: var(--text-1); white-space: nowrap; }
+.uos-wordmark { font-size: var(--fs-heading); font-weight: 700; letter-spacing: -.01em; color: var(--text-1); white-space: nowrap; flex-shrink: 0; }
+.uos-topbar > div:first-child { flex-shrink: 0; }
 .uos-ws-title { border-left: 1px solid var(--border); padding-left: var(--sp-2); }
 .uos-chip {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; max-width: 100%;
@@ -304,7 +305,8 @@ button.uos-row:hover { background: var(--surface-2); }
    one-at-a-time); touch targets ≥ 40 px ---- */
 @media (max-width: 1024.98px) {
   .uos-shell { grid-template-columns: 72px 0 minmax(0, 1fr) 0; --rail-w: 72px; }
-  .uos-context, .uos-inspector { position: absolute; top: var(--topbar-h); bottom: 0; box-shadow: var(--shadow-float); }
+  /* grid-area: auto makes the shell (not the zero-width grid column) their containing block */
+  .uos-context, .uos-inspector { grid-area: auto; position: absolute; top: var(--topbar-h); bottom: 0; box-shadow: var(--shadow-float); }
   .uos-context { left: 72px; width: min(var(--context-w), calc(100vw - 72px - 2rem)); }
   .uos-shell[data-context-wide] .uos-context { width: min(432px, calc(100vw - 72px - 2rem)); }
   .uos-inspector { right: 0; max-width: calc(100vw - 72px); }
@@ -319,6 +321,13 @@ button.uos-row:hover { background: var(--surface-2); }
   .uos-shell :is(.uos-context, .uos-inspector, .uos-topbar, .uos-popover) :is(button, [role=button], [role=tab]) { min-width: 40px; }
   .uos-shell .uos-icon-btn-sm { width: 40px; height: 40px; }
   .uos-palette-item { min-height: 44px; }
+}
+
+/* Tablet only: the inspector overlays the map's right side, so Cesium's buttons move to the left, which is free
+   (one overlay at a time) */
+@media (min-width: 768px) and (max-width: 1024.98px) {
+  .uos-shell[data-inspector=open] .cesium-viewer-toolbar { right: auto !important; left: var(--sp-3) !important; top: 56px !important; }
+  .uos-shell[data-inspector=open] .cesium-viewer-fullscreenContainer { right: auto !important; left: 88px !important; }
 }
 
 /* ---- Phone (< 768): the rail becomes a bottom tab bar; the context panel or the inspector is a bottom sheet above
@@ -351,7 +360,8 @@ button.uos-row:hover { background: var(--surface-2); }
   .uos-search { padding: 0 8px; }
   .uos-search .uos-kbd { display: none; }
   .uos-chip { padding: 0 8px; }
-  .uos-chip .text-label { max-width: 7.5rem; }
+  .uos-chip .text-label { max-width: 5.5rem; }
+  .uos-topbar .uos-trust-slot ~ * { flex-shrink: 0; }
   .uos-drawer.is-open { height: var(--sheet-h); }
   .cesium-viewer-toolbar { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .cesium-viewer-toolbar > * { margin: 0 !important; }
