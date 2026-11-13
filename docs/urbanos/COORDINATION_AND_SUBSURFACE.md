@@ -116,6 +116,35 @@ NOT AN ENGINEERING CLEARANCE". **No engineering clearance is seeded** (no IRC/IS
   (z_min) UNKNOWN. Whether ASCE 38 is used in India is UNKNOWN.
 - Provenance: file sha256, publisher, source URL, licence (`UNKNOWN` default), data date, importer, timestamp; all audited.
 
+## 6a. Reference networks and building footprints (engine 1.1, 2026-11-13 — INFRASTRUCTURE_DATA.md)
+
+- **PMC sewer + storm drains as records.** `python -m coordination.pmc_import --imported-by "<name>"` imports, from the
+  infrastructure index, the PMC sewer network (44,482) and the labelled storm drains (9,187) as `subsurface_datasets`
+  `ssd_ref_<layer>_<sha12>` with records `utility_type` sewer / storm_drain, owner PMC, **ASCE 38 QL-D**, survey method
+  "records … DESIGN levels, unverified". Depth only where cover and invert levels are published: z_min = −(deepest invert
+  depth), z_max = −(shallowest invert depth − internal diameter); certainty `estimated`; otherwise z NULL, certainty `unknown`
+  (all storm drains). Stated coverage NULL (completeness UNKNOWN) → no record nearby gives `unknown_no_coverage`, never clear.
+  Idempotent by input sha256; a changed input becomes a new dataset with `supersedes_id`. Records are bulk-inserted (the
+  dataset row is audited; individual reference records are not). Width = diameter (sewer); storm drains width UNKNOWN.
+- **Extents side table** `subsurface_record_extents` (record_id, lon/lat bbox; additive). Detection reads only utility
+  records whose extent meets the project's padded bbox (records without an extent row are always read).
+  `GET /subsurface/records` without a bbox omits reference-network records (`reference_datasets_not_listed`;
+  `include_reference=true` lists them); with a bbox it pre-filters by extent.
+- **Building footprints (side B `building`).** From the infrastructure index (merged OSM + Microsoft + Google) within the
+  project's padded boxes. OSM footprints and ML-only candidates are read; an ML footprint that agrees with OSM is
+  represented by the OSM footprint (not reported twice). Footprint polygon = known width; z_max = OSM height tag else
+  UNKNOWN; foundation depth (z_min) always UNKNOWN → an overlap is at best `potential_conflict`. Evidence carries source,
+  source id, class (OSM observed / ML inferred), confidence (Google only), OSM-agreement status, height basis. Layer row:
+  `no_conflict_within_available_data` when the element lies inside the index extent with no overlap (wording: OSM
+  completeness and ML recall UNKNOWN), `unknown_no_coverage` when the index is not available.
+- Run inputs record `infra_index` (index fingerprint); a rebuilt index makes the run stale (`infra_index_changed`).
+  `ENGINE_VERSION` → `coordination-engine 1.1 (2026-11-13: …)`, so earlier runs show `engine_version_changed`.
+- Projects → Conflicts shows a source line per building / record finding (UI: `otherSideEvidence`).
+- Tests: `backend/tests/test_infra_data.py` (UNIT-TESTED, SYNTHETIC index): QL-D record with design depth → vertically
+  separated with gap; record without levels → potential; OSM footprint overlap → potential with source/class/UNKNOWN height;
+  ML twin not duplicated; reference records excluded from the unfiltered list. `test_coordination.py` unchanged and passing
+  with and without the real index (`URBANOS_DATA_DIR`).
+
 ## 7. Environment catalogue (EGR §C, UX §8)
 
 17 rows: flood lines, groundwater, soil, geology (GSI single-user licence), air quality, noise, land-surface temperature, land
@@ -133,7 +162,8 @@ layers in this work (none implemented → none offered).
 - Protected-monument limits are not imported, so the AMASR rules have nothing to fire against unless a user enters a
   `protected_monument` element.
 - No ground model: `z_ref=msl` elements are treated as depth UNKNOWN. No DEM-based checks.
-- Utilities: only what is imported; coverage only as stated by the importer. No utility network from PMC/MSEDCL/MNGL exists.
+- Utilities: only what is imported; coverage only as stated by the importer. PMC sewer + storm drains are now importable as
+  QL-D records (§6a); no MSEDCL / MNGL / water-supply network exists.
 - Borehole interpolation, long-section projection, georeferencing helper (EGR §E1/E6/E7) — not implemented.
 - Engine build / feasibility engine version cannot be compared server-side (listed in `not_checked`).
 - The UI (Underground/Environment workspaces) is not part of this work; the typed client is UNTESTED in a browser (tsc + oxlint clean).

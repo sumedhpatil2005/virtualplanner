@@ -8,7 +8,7 @@ import { setMuniLayerVisible, useMuniStore } from './municipalOverlay';
  * Explore layer-tree groups "Municipal infrastructure (PMC via OpenCity)" and "Buildings (OSM + Microsoft + Google)",
  * plus the Census 2011 table listed as not mappable. Data: GET /api/infra/layers; features per view, capped.
  */
-export function useInfraCatalogue(): { cat: InfraCatalogue | null; error: string | null } {
+function useInfraCatalogue(): { cat: InfraCatalogue | null; error: string | null } {
   const [cat, setCat] = useState<InfraCatalogue | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
