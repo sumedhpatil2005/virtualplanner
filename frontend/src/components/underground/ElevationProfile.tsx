@@ -117,8 +117,7 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-meta text-text-2" data-testid="ug-profile-vertices">
         {L.ep.vertices.map((v, i) => (
           <span key={i} data-testid="ug-profile-vertex">
-            V{i + 1} ch {Math.round(v.chainageM)} m · crown {v.crownElevM === null ? 'Unknown' : `${v.crownElevM.toFixed(1)} m EGM2008`} · {v.crownDepthM === null ? 'depth Unknown' : `${v.crownDepthM.toFixed(1)} m below DSM`}
-            {v.groundM === null ? ' · ground Unknown' : ` (DSM ${v.groundM.toFixed(1)} m)`}
+            V{i + 1} ch {Math.round(v.chainageM)} m · crown {v.crownElevM === null ? 'elevation Unknown' : `${v.crownElevM.toFixed(1)} m EGM2008`} · {v.crownDepthM === null ? 'depth Unknown' : v.groundM === null ? `depth ${v.crownDepthM.toFixed(1)} m below ground (ground Unknown: outside DEM coverage)` : `${v.crownDepthM.toFixed(1)} m below DSM (DSM ${v.groundM.toFixed(1)} m)`}
           </span>
         ))}
         {L.ep.runs.map((r, i) => r.minCoverM !== null && (

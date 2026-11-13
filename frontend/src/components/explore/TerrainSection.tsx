@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { useSelectedId } from '../../hooks/useAppMode';
+import { useEngineObjects } from '../../shell/useEngineObjects';
 import { clearReadout, loadOverlayMeta, repPoint, sampleReadout, setCursorReadout, setTerrainOverlay, useTerrainOverlayStore, type Readout, type TerrainOverlayKey } from './terrainOverlay';
 
 const LABEL: Record<TerrainOverlayKey, string> = { hillshade: 'Hillshade (DEM)', slope: 'Slope classes (DEM)' };
@@ -16,12 +17,14 @@ export const TerrainSection: React.FC = () => {
   const st = useTerrainOverlayStore();
   const selId = useSelectedId();
   useEffect(() => { void loadOverlayMeta(); }, []);
+  useEngineObjects();   // re-render on object edits so a moved selection is re-sampled
+  const selObj = selId ? engineInstance.objects.getById(selId) : undefined;
+  const selPt = selObj ? repPoint(selObj as { coordinates?: unknown }) : null;
+  const selKey = selPt ? `${selPt[0].toFixed(7)},${selPt[1].toFixed(7)}` : null;
   useEffect(() => {
-    const o = selId ? engineInstance.objects.getById(selId) : undefined;
-    const p = o ? repPoint(o as { coordinates?: unknown }) : null;
-    if (p) void sampleReadout(p[0], p[1], 'selection');
+    if (selKey) { const [lon, lat] = selKey.split(',').map(Number); void sampleReadout(lon, lat, 'selection'); }
     else clearReadout('selection');
-  }, [selId]);
+  }, [selKey]);
   const m = st.meta;
   const slopeLegend = m && Array.isArray(m.overlays.slope.legend) ? m.overlays.slope.legend : [];
   return (

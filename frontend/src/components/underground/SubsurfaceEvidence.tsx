@@ -41,13 +41,13 @@ export const SubsurfaceEvidenceView: React.FC = () => {
   return (
     <div className="flex flex-col gap-2 text-meta text-text-2" data-testid="ug-evidence">
       <div className="text-text-3">{e.honesty} Distances in EPSG:32643. Chainages are measured on UTM 43N and can differ from the editor's by ≤0.1 %.</div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr)' }}>
+      <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))' }}>
         <section className={box} style={boxStyle} data-testid="ug-ev-wells">
           <div className="text-text-1 font-medium">Groundwater wells within {gw.radius_km} km · {gw.wells.length} <span className="text-text-3 font-normal">— point observation, not interpolated</span></div>
           <div className="text-text-3">{gw.statement} Source: NWDP (CGWB / GSDA manual readings), {gw.dataset.dataset_id} {gw.dataset.version ?? ''}.</div>
           {gw.wells.length === 0
             ? <div data-testid="ug-ev-wells-none">{gw.status}. Groundwater level at the alignment: UNKNOWN.</div>
-            : <table className="w-full"><thead><tr className="text-text-3"><th className={th}>Well</th><th className={th}>Distance</th><th className={th}>Latest (m bgl)</th><th className={th}>Date</th><th className={th}>Series</th></tr></thead>
+            : <div className="overflow-x-auto"><table className="w-full"><thead><tr className="text-text-3"><th className={th}>Well</th><th className={th}>Distance</th><th className={th}>Latest, m bgl</th><th className={th}>Date</th><th className={th}>Series</th></tr></thead>
               <tbody>{gw.wells.map(w => (
                 <tr key={w.station_id} data-testid="ug-ev-well">
                   <td className={td} title={`${w.station_id} · ${w.agency ?? ''} · well depth ${n(w.well_depth_m)} · aquifer ${w.aquifer ?? 'Unknown'}`}>{w.village ?? w.station_id} <span className="text-text-3">{w.agency}</span></td>
@@ -55,7 +55,7 @@ export const SubsurfaceEvidenceView: React.FC = () => {
                   <td className={td}>{w.latest ? w.latest.depth_m_bgl.toFixed(2) : 'Unknown'}</td>
                   <td className={td}>{w.latest?.date ?? '—'}</td>
                   <td className={td}><Sparkline w={w} /> <span className="text-text-3">{w.n_obs} observations since {w.first_date ?? 'Unknown'}</span></td>
-                </tr>))}</tbody></table>}
+                </tr>))}</tbody></table></div>}
         </section>
         <section className={box} style={boxStyle} data-testid="ug-ev-boreholes">
           <div className="text-text-1 font-medium">Boreholes within {bh.radius_km} km · {bh.records.length}</div>
