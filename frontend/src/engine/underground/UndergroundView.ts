@@ -35,9 +35,20 @@ interface Saved {
   enabled: boolean; front: number; back: number; rectangle: unknown; undergroundColor: unknown; depthTest: boolean; collision: boolean;
 }
 
-const UNDERGROUND_TINT = Color.fromCssColorString('#1e293b').withAlpha(0.6); // dark slate, PRODUCT_UX_RESEARCH §3.3
+/** Cesium value factories (injectable so the state logic is testable without the real Cesium module). */
+export interface UndergroundViewDeps {
+  rectangle: (deg: [number, number, number, number] | null) => unknown;
+  tint: () => unknown;
+}
+const cesiumDeps: UndergroundViewDeps = {
+  rectangle: deg => (deg ? Rectangle.fromDegrees(...deg) : Rectangle.MAX_VALUE),
+  tint: () => Color.fromCssColorString('#1e293b').withAlpha(0.6), // dark slate, PRODUCT_UX_RESEARCH §3.3
+};
 
 export class UndergroundView {
+  private deps: UndergroundViewDeps;
+  constructor(deps: UndergroundViewDeps = cesiumDeps) { this.deps = deps; }
+
   private saved: Saved | null = null;
   private viewer: ViewerLike | null = null;
   private settings: UndergroundViewSettings = { ...DEFAULT_UNDERGROUND_SETTINGS };
@@ -101,8 +112,8 @@ export class UndergroundView {
     const alpha = xray ? Math.min(groundOpacity, 0.5) : groundOpacity;
     g.translucency.frontFaceAlpha = alpha;
     g.translucency.backFaceAlpha = alpha;
-    g.translucency.rectangle = rectangleDeg ? Rectangle.fromDegrees(...rectangleDeg) : Rectangle.MAX_VALUE;
-    g.undergroundColor = UNDERGROUND_TINT;
+    g.translucency.rectangle = this.deps.rectangle(rectangleDeg);
+    g.undergroundColor = this.deps.tint();
     // Opaque ground hides buried geometry correctly; X-ray turns the terrain depth test off
     g.depthTestAgainstTerrain = !xray && !translucent;
     v.scene.screenSpaceCameraController.enableCollisionDetection = false;
