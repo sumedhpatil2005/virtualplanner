@@ -4,6 +4,11 @@ Status 2026-11-14 00:30 IST: **v1 active, v2 and v3 `pending_review`. Nothing wa
 human decision: Reports → Data catalogue → dataset `elevation_copdem30` → Versions → v3 → **Activate** (reviewer name
 required), or `POST /api/datasets/versions/{id}/review {"decision":"activate","reviewer":"<name>","note":"…"}`.
 
+
+**Update Sat 2026-11-14 12:22 IST: v3 ACTIVATED** (`dsv_0d0e82a8c181` active, v1 `dsv_394ee44c2555` superseded, v2 still
+pending_review) through `POST /api/datasets/versions/{id}/review` after a measured re-comparison — see
+[DEM_V1_V3_COMPARISON.md](DEM_V1_V3_COMPARISON.md). The registry and the app now agree on v3. The text below is the
+pre-activation recommendation, kept as written.
 ## Recommendation
 **Activate v3** (supersedes v1; reject v2 or leave it superseded-by-skip). Suitability stays **screening**, class stays
 **derived** (Copernicus GLO-30 is a DSM: buildings and trees included; not bare earth; no Pune-specific vertical accuracy).

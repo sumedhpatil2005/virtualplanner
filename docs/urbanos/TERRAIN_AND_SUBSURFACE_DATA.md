@@ -30,6 +30,8 @@ samples. Tests: `backend/tests/test_data_paths.py` (UNIT-TESTED).
 - Result: API vs raw-tile bilinear RMSE **0.42 m**, mean +0.005 m, best at zero offset; COP − NASADEM RMSE 3.93 → 2.77 m
   (LE90 5.93 → 4.38 m). Hydrology re-derived on the corrected grid: 702 stream segments (v2 705), 5 edge-outlet catchments
   ≥ 10 km² (v2 6). The API, Explore streams/catchments and the registry feature notes now use v3; v1/v2 stay on disk unchanged.
+- Registry: v3 **active** since 2026-11-14 12:22 IST (v1 superseded) — measured v1/v3 comparison and decision in
+  [DEM_V1_V3_COMPARISON.md](DEM_V1_V3_COMPARISON.md).
 
 ## 2. Elevation pipeline v2: pysheds (GPL-3.0) removed
 - `python -m datasets.pipelines.elevation process` → `derived/elevation_copdem30/v2/` (HEADLESS-RUN 2026-11-13 22:1x IST, git
